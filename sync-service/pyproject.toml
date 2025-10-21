@@ -1,0 +1,25 @@
+[project]
+name = "nilmia-sync-service"
+version = "0.1.0"
+description = "Service de synchronisation de données timestampées"
+requires-python = ">=3.13"
+dependencies = [
+    "celery[redis]>=5.4.0",
+    "flower>=2.0.1",
+    "psycopg[binary]>=3.2.1",
+    "pymysql>=1.1.1",
+    "sqlalchemy>=2.0.35",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.9.2",
+    "pydantic-settings>=2.5.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+]

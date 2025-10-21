@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Models
+*.pkl
+*.pth
+*.pt
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Celery
+celerybeat-schedule
+celerybeat.pid

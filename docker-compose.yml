@@ -1,0 +1,231 @@
+services:
+  # Base de données locale TimescaleDB
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: nilmia-timescaledb
+    environment:
+      POSTGRES_DB: local_data
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: Europe/Paris
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nilmia-network
+
+  # Redis pour Celery
+  redis:
+    image: redis:7-alpine
+    container_name: nilmia-redis
+    environment:
+      TZ: Europe/Paris
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - nilmia-network
+
+  # Service de synchronisation - Worker Celery
+  sync-worker:
+    build:
+      context: ./sync-service
+      dockerfile: Dockerfile
+    container_name: nilmia-sync-worker
+    command: celery -A src.tasks.celery_app worker --loglevel=info
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sync-service/src:/app/src
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+
+  # Celery Beat - Planificateur de tâches
+  sync-beat:
+    build:
+      context: ./sync-service
+      dockerfile: Dockerfile
+    container_name: nilmia-sync-beat
+    command: celery -A src.tasks.celery_app beat --loglevel=info
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sync-service/src:/app/src
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+
+  # Flower - Interface de monitoring Celery
+  flower:
+    build:
+      context: ./sync-service
+      dockerfile: Dockerfile
+    container_name: nilmia-flower
+    command: celery -A src.tasks.celery_app flower --port=5555
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - sync-worker
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+
+  # pgAdmin - Interface web d'administration TimescaleDB
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nilmia-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      TZ: Europe/Paris
+    ports:
+      - "8080:80"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-config/pgadmin-servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin-config/pgpass:/pgadmin4/pgpass:ro
+      - ./pgadmin-config/init-pgadmin.sh:/init-pgadmin.sh:ro
+    entrypoint: ["/init-pgadmin.sh"]
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+
+  # Initialisation de la base au démarrage
+  init-db:
+    build:
+      context: ./sync-service
+      dockerfile: Dockerfile
+    container_name: nilmia-init-db
+    command: python -c "from src.database import db_manager; db_manager.init_local_db(); print('Databases initialized')"
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - nilmia-network
+    restart: "no"
+
+  # NILM Service - Worker Celery avec GPU
+  nilm-worker:
+    build:
+      context: ./nilm-service
+      dockerfile: Dockerfile
+    container_name: nilmia-nilm-worker
+    command: celery -A src.tasks.celery_app worker --loglevel=info -Q nilm --pool=solo
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sync-worker:
+        condition: service_started
+    volumes:
+      - ./nilm-service/src:/app/src
+      - ./models:/app/models
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # NILM Beat - Planificateur de tâches NILM
+  nilm-beat:
+    build:
+      context: ./nilm-service
+      dockerfile: Dockerfile
+    container_name: nilmia-nilm-beat
+    command: celery -A src.tasks.celery_app beat --loglevel=info
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./nilm-service/src:/app/src
+      - ./models:/app/models
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+
+  # Initialisation de la base NILM au démarrage
+  init-nilm-db:
+    build:
+      context: ./nilm-service
+      dockerfile: Dockerfile
+    container_name: nilmia-init-nilm-db
+    command: python -c "from src.database import db_manager; db_manager.init_nilm_db(); print('NILM database initialized')"
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    networks:
+      - nilmia-network
+    restart: "no"
+
+volumes:
+  timescaledb_data:
+  redis_data:
+  pgadmin_data:
+  nilm_uv_cache:
+
+networks:
+  nilmia-network:
+    driver: bridge
