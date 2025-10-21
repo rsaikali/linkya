@@ -220,6 +220,56 @@ services:
       - nilmia-network
     restart: "no"
 
+  # Backend API FastAPI
+  backend:
+    build:
+      context: ./backend-service
+      dockerfile: Dockerfile
+    container_name: nilmia-backend
+    environment:
+      TZ: Europe/Paris
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      sync-worker:
+        condition: service_started
+    volumes:
+      - ./backend-service/src:/app/src
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend React
+  frontend:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile
+    container_name: nilmia-frontend
+    environment:
+      TZ: Europe/Paris
+      REACT_APP_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./frontend-service/src:/app/src
+      - ./frontend-service/public:/app/public
+      - /app/node_modules
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+
 volumes:
   timescaledb_data:
   redis_data:

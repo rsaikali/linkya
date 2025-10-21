@@ -37,6 +37,8 @@ start: ## Démarre l'application complète (build + up + info)
 	@echo "🗄️  pgAdmin (TimescaleDB): http://localhost:8080"
 	@echo "🗄️  TimescaleDB: localhost:5432"
 	@echo "🔴 Redis: localhost:6379"
+	@echo "🌐 Backend API: http://localhost:8000"
+	@echo "🎨 Frontend React: http://localhost:3000"
 	@echo ""
 	@echo "🧠 Service NILM activé avec GPU"
 	@echo "   - Training automatique toutes les 24h"
@@ -92,6 +94,16 @@ check: ## Vérifie l'état des services et affiche les statistiques
 	else \
 		echo "❌ pgAdmin"; \
 	fi
+	@if docker ps | grep nilmia-backend | grep -q healthy; then \
+		echo "✅ Backend API"; \
+	else \
+		echo "❌ Backend API"; \
+	fi
+	@if docker ps | grep nilmia-frontend | grep -q Up; then \
+		echo "✅ Frontend React"; \
+	else \
+		echo "❌ Frontend React"; \
+	fi
 	@echo ""
 	@echo "=========================================="
 	@echo "📊 Statistiques de la base de données"
@@ -117,10 +129,12 @@ check: ## Vérifie l'état des services et affiche les statistiques
 	@echo "🌐 URLs d'accès"
 	@echo "=========================================="
 	@echo ""
-	@echo "Flower (monitoring) : http://localhost:5555"
+	@echo "Flower (monitoring)  : http://localhost:5555"
 	@echo "pgAdmin (TimescaleDB): http://localhost:8080"
-	@echo "TimescaleDB         : localhost:5432"
-	@echo "Redis               : localhost:6379"
+	@echo "Backend API          : http://localhost:8000"
+	@echo "Frontend React       : http://localhost:3000"
+	@echo "TimescaleDB          : localhost:5432"
+	@echo "Redis                : localhost:6379"
 	@echo ""
 	@echo "=========================================="
 	@echo "📝 Commandes rapides"
@@ -161,6 +175,31 @@ pgadmin: ## Ouvre pgAdmin dans le navigateur
 	@echo "pgAdmin: http://localhost:8080"
 	@echo "Email: admin@example.com | Password: admin"
 	@echo "Ouvrez http://localhost:8080 dans votre navigateur"
+
+backend: ## Affiche l'URL du backend et teste l'API
+	@echo "Backend API: http://localhost:8000"
+	@echo ""
+	@echo "📊 Test de l'API:"
+	@curl -s http://localhost:8000/health | jq . || echo "❌ Backend non accessible"
+
+frontend: ## Ouvre le frontend dans le navigateur
+	@echo "Frontend React: http://localhost:3000"
+	@echo "Ouvrez http://localhost:3000 dans votre navigateur"
+
+api-latest: ## Récupère la dernière consommation via l'API
+	@echo "📊 Dernière consommation:"
+	@curl -s http://localhost:8000/api/consumption/latest | jq .
+
+api-history: ## Récupère l'historique via l'API (usage: make api-history HOURS=24)
+	@echo "📈 Historique de consommation (${HOURS} heures):"
+	@curl -s "http://localhost:8000/api/consumption/history?hours=${HOURS}" | jq '.data | length' || echo "Erreur"
+
+# Valeur par défaut pour HOURS
+HOURS ?= 24
+
+api-detections: ## Récupère les détections via l'API
+	@echo "🔌 Détections d'appareils:"
+	@curl -s http://localhost:8000/api/detections | jq '.detections | length' || echo "Erreur"
 
 nilm-train: ## Lance l'entraînement du modèle NILM
 	@echo "🧠 Lancement de l'entraînement du modèle NILM..."
