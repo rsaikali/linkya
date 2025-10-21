@@ -15,7 +15,7 @@ Keep it simple, pas d'over engineering, mais reste complet dans tes actions.
 Ne crée pas de scripts inutiles, efface les une fois que tu les as utilisés et qu'ils sont inutiles.
 Chaque service a son propre Dockerfile et est documenté dans ce fichier.
 Mets à jour périodiquement cette documentation au fur et à mesure de l'évolution du projet.
-Pas de fichiers markdown de rapport inutiles.
+Pas de fichiers de documentation et de rapports inutiles de toutes tes actions, uniquement ce fichier AGENTS.md et le README.md à la racine.
 
 ## Configuration
 

@@ -11,6 +11,7 @@ dependencies = [
     "pydantic>=2.9.2",
     "pydantic-settings>=2.6.0",
     "python-dotenv>=1.0.1",
+    "celery[redis]>=5.4.0",
 ]
 
 [build-system]

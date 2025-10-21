@@ -48,12 +48,21 @@ La table `linky_realtime` contient les données de consommation Linky :
 ### Détection d'appareils NILM (nilm-service)
 - 🧠 Détection automatique d'appareils électriques par IA
 - 🔄 Training périodique automatique (toutes les 24h)
-- � Analyse en temps réel (toutes les 5 minutes)
+- 📊 Analyse en temps réel (toutes les 5 minutes)
 - 🎯 Signatures complexes (cycles, variations, pics de consommation)
 - 🚀 Accélération GPU avec CUDA
 - ✏️ Ajout manuel de signatures d'appareils
 - ✅ Validation/correction des détections
 - 📈 Statistiques de consommation par appareil
+
+### Interface utilisateur (frontend)
+- 📱 Dashboard temps réel de consommation électrique
+- 🎯 **Sélection de plages horaires sur le graphique** pour créer des signatures d'appareils
+- 🗂️ Autocomplete pour sélectionner ou créer des appareils
+- ⏱️ Ajustement fin des plages horaires (au niveau des secondes)
+- 💾 Création instantanée de signatures entraînement NILM
+- 🔄 Streaming SSE pour mise à jour en temps réel sans polling
+- 🎨 Design responsive avec Material-UI
 
 ## �📋 Prérequis
 

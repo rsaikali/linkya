@@ -45,17 +45,26 @@ export const streamLatestConsumption = (
  * Crée une connexion SSE pour les détections NILM
  * @param {Function} onData - Callback appelé quand des données arrivent
  * @param {Function} onError - Callback appelé en cas d'erreur
- * @param {number} hours - Nombre d'heures d'historique (défaut: 24)
+ * @param {number} timeRange - Période (heures ou fraction d'heure pour minutes)
  * @param {number} updateInterval - Intervalle de mise à jour en secondes (défaut: 10)
  * @returns {EventSource} La source d'événements
  */
 export const streamDetections = (
   onData,
   onError,
-  hours = 24,
+  timeRange = 24,
   updateInterval = 10
 ) => {
-  const url = `${API_BASE_URL}/api/stream/detections?hours=${hours}&update_interval=${updateInterval}`;
+  // Convertir les courtes périodes en minutes
+  let url;
+  if (timeRange < 1) {
+    const minutes = Math.ceil(timeRange * 60);
+    url = `${API_BASE_URL}/api/stream/detections?minutes=${minutes}&update_interval=${updateInterval}`;
+  } else {
+    const hours = Math.ceil(timeRange);
+    url = `${API_BASE_URL}/api/stream/detections?hours=${hours}&update_interval=${updateInterval}`;
+  }
+  
   const eventSource = new EventSource(url);
 
   eventSource.onmessage = (event) => {

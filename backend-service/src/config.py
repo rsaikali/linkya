@@ -1,6 +1,8 @@
 """Configuration du backend FastAPI."""
 
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from celery import Celery
 
 
 class Settings(BaseSettings):
@@ -19,6 +21,10 @@ class Settings(BaseSettings):
     api_description: str = "API REST pour accéder aux données Linky et NILM"
     cors_origins: list[str] = ["http://localhost:3000", "http://frontend:3000"]
 
+    # Configuration Celery
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/0"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
@@ -31,3 +37,21 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# Instance Celery singleton - initialisée une seule fois
+_celery_app: Celery | None = None
+
+
+def get_celery_app() -> Celery:
+    """Retourne l'instance Celery singleton."""
+    global _celery_app
+    
+    if _celery_app is None:
+        _celery_app = Celery(
+            "nilmia-backend",
+            broker=settings.celery_broker_url,
+            backend=settings.celery_result_backend
+        )
+    
+    return _celery_app
