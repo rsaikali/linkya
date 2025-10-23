@@ -100,7 +100,7 @@ function AppliancesList() {
   if (error) {
     return (
       <Card>
-        <CardHeader title="Appareils détectés" avatar={<ElectricMeter />} />
+        <CardHeader title="Signature d'appareils" avatar={<ElectricMeter />} />
         <CardContent>
           <Alert severity="error">{error}</Alert>
         </CardContent>
@@ -111,8 +111,8 @@ function AppliancesList() {
   return (
     <Card>
       <CardHeader
-        title="Appareils détectés"
-        subheader={`${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} détecté${appliances.length !== 1 ? 's' : ''}`}
+        title="Signature d'appareils"
+        subheader={`${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} détectable${appliances.length !== 1 ? 's' : ''}`}
         avatar={<ElectricMeter />}
       />
       <CardContent>

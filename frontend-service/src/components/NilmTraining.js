@@ -281,14 +281,13 @@ const NilmTraining = () => {
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                    <TableCell>Version</TableCell>
+                    <TableCell>État</TableCell>
+                    <TableCell>Qualité</TableCell>
                     <TableCell>Date</TableCell>
                     <TableCell>Durée</TableCell>
                     <TableCell>Signatures</TableCell>
                     <TableCell>Classes</TableCell>
                     <TableCell>Métriques</TableCell>
-                    <TableCell>Qualité</TableCell>
-                    <TableCell>État</TableCell>
                     <TableCell align="center">Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -298,9 +297,33 @@ const NilmTraining = () => {
                     return (
                       <TableRow key={model.id} hover>
                         <TableCell>
-                          <Typography variant="body2" fontFamily="monospace">
-                            {model.version}
-                          </Typography>
+                            {model.is_active ? (
+                              <Chip
+                                icon={<SuccessIcon />}
+                                label="Actif"
+                                color="success"
+                                size="small"
+                              />
+                            ) : (
+                              <Chip
+                                label="Inactif"
+                                size="small"
+                                variant="outlined"
+                              />
+                            )}
+                        </TableCell>
+                        <TableCell>
+                            {quality ? (
+                              <Chip
+                                label={`${quality.label} (${quality.score.toFixed(1)}%)`}
+                                color={quality.color}
+                                size="small"
+                              />
+                            ) : (
+                              <Typography variant="caption" color="text.secondary">
+                                N/A
+                              </Typography>
+                            )}
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2">
@@ -332,35 +355,6 @@ const NilmTraining = () => {
                           </TableCell>
                           <TableCell>
                             {formatMetrics(model.metrics)}
-                          </TableCell>
-                          <TableCell>
-                            {quality ? (
-                              <Chip
-                                label={`${quality.label} (${quality.score.toFixed(1)}%)`}
-                                color={quality.color}
-                                size="small"
-                              />
-                            ) : (
-                              <Typography variant="caption" color="text.secondary">
-                                N/A
-                              </Typography>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {model.is_active ? (
-                              <Chip
-                                icon={<SuccessIcon />}
-                                label="Actif"
-                                color="success"
-                                size="small"
-                              />
-                            ) : (
-                              <Chip
-                                label="Inactif"
-                                size="small"
-                                variant="outlined"
-                              />
-                            )}
                           </TableCell>
                           <TableCell align="center">
                             <Tooltip 
