@@ -60,14 +60,13 @@ Signatures de courbes soumises manuellement par l'utilisateur.
 | appliance_id | INTEGER | Référence appareil |
 | start_time | DATETIME | Début de la signature |
 | end_time | DATETIME | Fin de la signature |
-| mode | VARCHAR(100) | Mode (éco, rapide, etc.) |
 | avg_power | FLOAT | Puissance moyenne |
 | power_std | FLOAT | Écart-type |
 | energy_consumed | FLOAT | Énergie totale (Wh) |
-| raw_data | JSON | Données brutes |
 | features | JSON | Features extraites |
-| is_validated | BOOLEAN | Validé |
 | created_at | DATETIME | Date d'ajout |
+
+**Note**: `raw_data` supprimé - les données sont récupérées dynamiquement depuis `linky_realtime` via `start_time`/`end_time`
 
 ### cnn_detections
 Détections automatiques d'appareils.
@@ -138,7 +137,7 @@ Ajoute une signature manuelle soumise par l'utilisateur.
 ```bash
 # Exemple
 docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call add_cnn_signature \
-  --kwargs='{"appliance_name": "Lave-linge", "start_time_str": "2025-10-22T10:00:00Z", "end_time_str": "2025-10-22T11:30:00Z", "mode": "eco"}'
+  --kwargs='{"appliance_name": "Lave-linge", "start_time_str": "2025-10-22T10:00:00Z", "end_time_str": "2025-10-22T11:30:00Z", "description": "Cycle éco 40°C"}'
 ```
 
 ### get_cnn_stats
@@ -159,7 +158,6 @@ L'utilisateur observe un pic de consommation et soumet une signature:
   "appliance_name": "Lave-linge",
   "start_time": "2025-10-22T10:00:00Z",
   "end_time": "2025-10-22T11:30:00Z",
-  "mode": "programme_eco",
   "description": "Cycle éco 40°C"
 }
 ```

@@ -267,6 +267,9 @@ def detect_cnn_appliances(
         
         # Sauvegarder les détections en base
         num_saved = 0
+        num_updated = 0
+        num_skipped = 0
+        
         with db_manager.get_session() as session:
             for event in events:
                 # Trouver l'ID de l'appareil par son nom
@@ -277,38 +280,123 @@ def detect_cnn_appliances(
                 row = result.first()
                 appliance_id = row.id if row else None
                 
-                # Insérer la détection
-                query = text("""
-                    INSERT INTO cnn_detections
-                    (appliance_id, start_time, end_time, avg_power, energy_consumed,
-                     confidence_score, prediction_class, features, created_at)
-                    VALUES
-                    (:appliance_id, :start_time, :end_time, :avg_power, :energy_consumed,
-                     :confidence_score, :prediction_class, :features, NOW())
+                if not appliance_id:
+                    logger.warning(f"Appareil inconnu: {event['appliance_name']}")
+                    num_skipped += 1
+                    continue
+                
+                # Vérifier s'il existe une détection superposée du même appareil
+                check_overlap_query = text("""
+                    SELECT id, confidence_score, start_time, end_time
+                    FROM cnn_detections
+                    WHERE appliance_id = :appliance_id
+                    AND (
+                        -- La nouvelle détection chevauche l'existante
+                        (:start_time <= end_time AND :end_time >= start_time)
+                    )
+                    ORDER BY confidence_score DESC
+                    LIMIT 1
                 """)
                 
-                session.execute(
-                    query,
+                overlap_result = session.execute(
+                    check_overlap_query,
                     {
                         'appliance_id': appliance_id,
                         'start_time': event['start_time'],
-                        'end_time': event['end_time'],
-                        'avg_power': event['avg_power'],
-                        'energy_consumed': event['energy_consumed'],
-                        'confidence_score': event['confidence_score'],
-                        'prediction_class': event.get('prediction_class'),
-                        'features': json.dumps({
-                            'probabilities': event['probabilities']
-                        })
+                        'end_time': event['end_time']
                     }
                 )
-                num_saved += 1
+                existing = overlap_result.first()
+                
+                if existing:
+                    # Une détection superposée existe
+                    existing_id = existing.id
+                    existing_confidence = float(existing.confidence_score)
+                    new_confidence = float(event['confidence_score'])
+                    
+                    if new_confidence > existing_confidence:
+                        # Mettre à jour la détection existante avec de meilleures données
+                        update_query = text("""
+                            UPDATE cnn_detections
+                            SET start_time = :start_time,
+                                end_time = :end_time,
+                                avg_power = :avg_power,
+                                energy_consumed = :energy_consumed,
+                                confidence_score = :confidence_score,
+                                prediction_class = :prediction_class,
+                                features = :features,
+                                created_at = NOW()
+                            WHERE id = :detection_id
+                        """)
+                        
+                        session.execute(
+                            update_query,
+                            {
+                                'detection_id': existing_id,
+                                'start_time': event['start_time'],
+                                'end_time': event['end_time'],
+                                'avg_power': event['avg_power'],
+                                'energy_consumed': event['energy_consumed'],
+                                'confidence_score': event['confidence_score'],
+                                'prediction_class': event.get('prediction_class'),
+                                'features': json.dumps({
+                                    'probabilities': event['probabilities']
+                                })
+                            }
+                        )
+                        num_updated += 1
+                        logger.info(
+                            f"Détection #{existing_id} mise à jour "
+                            f"(confiance {existing_confidence:.2%} → {new_confidence:.2%})"
+                        )
+                    else:
+                        # Ignorer la nouvelle détection (moins bonne confiance)
+                        num_skipped += 1
+                        logger.debug(
+                            f"Détection ignorée pour {event['appliance_name']} "
+                            f"(confiance {new_confidence:.2%} ≤ {existing_confidence:.2%})"
+                        )
+                else:
+                    # Aucune détection superposée, insérer une nouvelle
+                    insert_query = text("""
+                        INSERT INTO cnn_detections
+                        (appliance_id, start_time, end_time, avg_power, energy_consumed,
+                         confidence_score, prediction_class, features, created_at)
+                        VALUES
+                        (:appliance_id, :start_time, :end_time, :avg_power, :energy_consumed,
+                         :confidence_score, :prediction_class, :features, NOW())
+                    """)
+                    
+                    session.execute(
+                        insert_query,
+                        {
+                            'appliance_id': appliance_id,
+                            'start_time': event['start_time'],
+                            'end_time': event['end_time'],
+                            'avg_power': event['avg_power'],
+                            'energy_consumed': event['energy_consumed'],
+                            'confidence_score': event['confidence_score'],
+                            'prediction_class': event.get('prediction_class'),
+                            'features': json.dumps({
+                                'probabilities': event['probabilities']
+                            })
+                        }
+                    )
+                    num_saved += 1
         
-        logger.info(f"{num_saved} détections sauvegardées")
+        total_processed = num_saved + num_updated + num_skipped
+        logger.info(
+            f"Détections traitées: {total_processed} "
+            f"(nouvelles: {num_saved}, mises à jour: {num_updated}, "
+            f"ignorées: {num_skipped})"
+        )
         
         return {
             'status': 'success',
             'num_detections': num_saved,
+            'num_updated': num_updated,
+            'num_skipped': num_skipped,
+            'total_processed': total_processed,
             'model_version': active_version,
             'period': {'start': start_time.isoformat(), 'end': end_time.isoformat()},
             'timestamp': datetime.utcnow().isoformat()
@@ -324,19 +412,17 @@ def add_cnn_signature(
     appliance_name: str,
     start_time_str: str,
     end_time_str: str,
-    mode: Optional[str] = None,
     description: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Ajoute une signature manuelle soumise par l'utilisateur
-    
+
     Args:
         appliance_name: Nom de l'appareil
         start_time_str: Timestamp de début (ISO format)
         end_time_str: Timestamp de fin (ISO format)
-        mode: Mode de fonctionnement (optionnel)
         description: Description (optionnel)
-        
+
     Returns:
         Statut et ID de la signature créée
     """
@@ -388,8 +474,7 @@ def add_cnn_signature(
             signature_id = db_manager.add_signature(
                 appliance_id=appliance_id,
                 start_time=start_time,
-                end_time=end_time,
-                mode=mode
+                end_time=end_time
             )
         except ValueError as ve:
             # Erreur de validation (chevauchement, etc.)

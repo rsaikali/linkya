@@ -262,40 +262,68 @@ async def delete_appliance(appliance_id: int):
 async def get_detected_appliances(
     hours: int = Query(default=None, description="Nombre d'heures d'historique (pour périodes longues)"),
     minutes: int = Query(default=None, description="Nombre de minutes d'historique (pour courtes périodes)"),
+    page: int = Query(default=1, ge=1, description="Numéro de page (commence à 1)"),
+    per_page: int = Query(default=10, ge=1, le=100, description="Nombre d'éléments par page (max 100)"),
 ):
     """
-    Récupère les détections d'appareils par le NILM.
+    Récupère les détections d'appareils par le NILM avec pagination.
 
     Args:
         hours: Nombre d'heures d'historique à récupérer
         minutes: Nombre de minutes d'historique à récupérer
+        page: Numéro de page (commence à 1)
+        per_page: Nombre d'éléments par page (max 100)
 
     Returns:
-        Liste des détections avec informations sur les appareils
+        Liste paginée des détections avec informations sur les appareils
     """
     try:
         # Déterminer la période à récupérer
+        start_time = None
+        end_time = None
+        
         if minutes is not None and minutes > 0:
             delta = timedelta(minutes=minutes)
+            end_time = datetime.now()
+            start_time = end_time - delta
         elif hours is not None and hours > 0:
-            # Valider les heures (1-168)
-            if hours < 1 or hours > 168:
-                raise HTTPException(status_code=422, detail="hours doit être entre 1 et 168")
+            # Valider les heures (max 1 an = 8760h)
+            if hours < 1 or hours > 8760:
+                raise HTTPException(
+                    status_code=422,
+                    detail="hours doit être entre 1 et 8760"
+                )
             delta = timedelta(hours=hours)
+            end_time = datetime.now()
+            start_time = end_time - delta
+        elif hours == 0 or minutes == 0:
+            # hours=0 ou minutes=0 signifie "toutes les détections"
+            start_time = None
+            end_time = None
         else:
             # Valeur par défaut: 24 heures
             delta = timedelta(hours=24)
-
-        end_time = datetime.now()
-        start_time = end_time - delta
+            end_time = datetime.now()
+            start_time = end_time - delta
 
         detections = db_manager.get_detected_appliances(start_time, end_time)
+        
+        # Pagination
+        total = len(detections)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_detections = detections[start_idx:end_idx]
+        
+        total_pages = (total + per_page - 1) // per_page
 
         return {
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
-            "total_detections": len(detections),
-            "detections": detections,
+            "start_time": start_time.isoformat() if start_time else None,
+            "end_time": end_time.isoformat() if end_time else None,
+            "total_detections": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "detections": paginated_detections,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")

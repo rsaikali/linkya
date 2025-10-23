@@ -143,6 +143,7 @@ Service NILM basé sur CNN (Convolutional Neural Networks) pour détection super
   - **Support multi-modes** par appareil (éco, rapide, intensif, etc.)
   - **Désagrégation** de la consommation par appareil
   - **Entraînement continu** avec nouvelles données
+  - **Gestion intelligente des détections** : mise à jour automatique si meilleure confiance
   - Feature engineering avancé (FFT, gradients, autocorrélation)
   - Augmentation de données (bruit, décalage, scaling)
   - CPU/GPU compatible (pas de CUDA obligatoire)
@@ -169,6 +170,9 @@ Service NILM basé sur CNN (Convolutional Neural Networks) pour détection super
   - `init_cnn_database`: Initialise les tables CNN (auto)
   - `train_cnn_model`: Entraîne le modèle CNN (auto 24h, manuel)
   - `detect_cnn_appliances`: Détecte appareils avec fenêtre glissante (auto 5min)
+    - Gestion intelligente des détections superposées par appareil
+    - Mise à jour automatique si meilleure confiance (> existante)
+    - Conservation de la meilleure détection (confiance maximale)
   - `add_cnn_signature`: Ajoute signature manuelle utilisateur (manuel)
   - `get_cnn_stats`: Statistiques CNN (auto 5min)
 
@@ -198,16 +202,24 @@ Service NILM basé sur CNN (Convolutional Neural Networks) pour détection super
   - `CNN_MIN_DURATION_SECONDS`: 30s
   - `CNN_SEQUENCE_LENGTH`: 600 (10min)
   - `CNN_BATCH_SIZE`: 32
-  - `CNN_EPOCHS`: 50
+  - `CNN_EPOCHS`: 50 (max, peut s'arrêter avant avec EarlyStopping)
   - `CNN_LEARNING_RATE`: 0.001
   - `CNN_VALIDATION_SPLIT`: 0.2
   - `CNN_AUGMENTATION_ENABLED`: true
   - `CNN_NOISE_FACTOR`: 0.02
   - `CNN_SHIFT_RANGE`: 30s
 
+- **Mécanismes d'entraînement**:
+  - **Minimum 2 appareils** différents requis (sinon erreur explicite)
+  - **EarlyStopping** : Arrêt auto si val_loss stagne 15 epochs (patience=15)
+    - Désactivé automatiquement si <50 samples d'entraînement
+    - Restaure les meilleurs poids automatiquement
+  - **ReduceLROnPlateau** : Réduit learning rate si val_loss stagne 7 epochs
+  - **TensorBoard** : Logs de métriques pour visualisation
+
 - **Workflow utilisateur**:
   1. Observer un pic de consommation
-  2. Soumettre signature (start_time, end_time, appliance, mode)
+  2. Soumettre signature (start_time, end_time, appliance, description optionnelle)
   3. Entraînement auto ou manuel
   4. Détection automatique avec fenêtre glissante
   5. Visualisation des appareils et consommation désagrégée

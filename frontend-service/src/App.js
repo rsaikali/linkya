@@ -8,6 +8,7 @@ import LatestConsumption from './components/LatestConsumption';
 import ConsumptionChart from './components/ConsumptionChart';
 import AppliancesList from './components/AppliancesList';
 import NilmTraining from './components/NilmTraining';
+import DetectionsList from './components/DetectionsList';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
             <ConsumptionChart />
             <NilmTraining />
             <AppliancesList />
+            <DetectionsList />
           </Box>
         </Container>
 

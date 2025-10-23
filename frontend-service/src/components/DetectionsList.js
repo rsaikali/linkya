@@ -13,45 +13,62 @@ import {
   Alert,
   Typography,
   Chip,
-  Box,
   TablePagination,
   CircularProgress,
+  Select,
+  MenuItem,
+  FormControl,
+  Box,
 } from '@mui/material';
-import { Timeline, Cached } from '@mui/icons-material';
+import { Timeline } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
+// Options de période disponibles
+const TIME_PERIODS = [
+  { value: 24, label: 'Dernières 24h' },
+  { value: 168, label: 'Dernière semaine' },
+  { value: 720, label: 'Mois dernier' },
+  { value: 8760, label: 'Année dernière' },
+  { value: null, label: 'Toutes' },
+];
+
 /**
- * Composant affichant les détections d'appareils récentes
+ * Composant affichant les détections d'appareils récentes avec pagination côté serveur
  */
-function DetectionsList({ hours = 24 }) {
+function DetectionsList() {
   const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalDetections, setTotalDetections] = useState(0);
+  const [selectedPeriod, setSelectedPeriod] = useState(720); // Mois dernier par défaut
 
   useEffect(() => {
     const fetchDetections = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await apiService.getDetections(hours);
         
-        // Gérer les différents formats de réponse de l'API
-        let detectionsList = [];
-        if (Array.isArray(data)) {
-          detectionsList = data;
-        } else if (data && data.detections && Array.isArray(data.detections)) {
-          detectionsList = data.detections;
-        } else if (data && data.data && Array.isArray(data.data)) {
-          detectionsList = data.data;
-        } else if (typeof data === 'object') {
-          detectionsList = Array.isArray(data) ? data : [];
+        // Utiliser la pagination côté backend (page commence à 1 pour l'API)
+        const data = await apiService.getDetections(
+          selectedPeriod,
+          page + 1,
+          rowsPerPage
+        );
+        
+        // Gérer la réponse de l'API avec pagination
+        if (data && data.detections && Array.isArray(data.detections)) {
+          setDetections(data.detections);
+          setTotalDetections(data.total_detections || data.detections.length);
+        } else if (Array.isArray(data)) {
+          // Fallback pour l'ancienne API sans pagination
+          setDetections(data);
+          setTotalDetections(data.length);
+        } else {
+          setDetections([]);
+          setTotalDetections(0);
         }
-        
-        // Trier par date décroissante (plus récentes en premier)
-        const sorted = detectionsList.sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
-        setDetections(sorted);
       } catch (err) {
         console.error('Erreur lors de la récupération des détections:', err);
         setError('Impossible de charger les détections');
@@ -65,7 +82,12 @@ function DetectionsList({ hours = 24 }) {
     // Rafraîchir toutes les 60 secondes
     const interval = setInterval(fetchDetections, 60000);
     return () => clearInterval(interval);
-  }, [hours]);
+  }, [selectedPeriod, page, rowsPerPage]);
+
+  const handlePeriodChange = (event) => {
+    setSelectedPeriod(event.target.value);
+    setPage(0); // Revenir à la première page lors du changement de période
+  };
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -76,16 +98,11 @@ function DetectionsList({ hours = 24 }) {
     setPage(0);
   };
 
-  const paginatedDetections = detections.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage
-  );
-
   if (error) {
     return (
       <Card>
         <CardHeader
-          title={`Détections (dernières ${hours}h)`}
+          title="Détections"
           avatar={<Timeline />}
         />
         <CardContent>
@@ -98,20 +115,39 @@ function DetectionsList({ hours = 24 }) {
   return (
     <Card>
       <CardHeader
-        title={`Détections (dernières ${hours}h)`}
-        subheader={`${detections.length} détection${detections.length !== 1 ? 's' : ''} enregistrée${detections.length !== 1 ? 's' : ''}`}
+        title="Détections d'appareils"
+        subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} enregistrée${totalDetections !== 1 ? 's' : ''}`}
         avatar={<Timeline />}
+        action={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <Select
+                value={selectedPeriod}
+                onChange={handlePeriodChange}
+                displayEmpty
+                sx={{ bgcolor: 'background.paper' }}
+              >
+                {TIME_PERIODS.map((period) => (
+                  <MenuItem key={period.label} value={period.value}>
+                    {period.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {loading && <CircularProgress size={24} />}
+          </Box>
+        }
       />
       <CardContent>
-        {loading && <LinearProgress />}
+        {loading && detections.length === 0 && <LinearProgress />}
 
-        {detections.length === 0 && !loading && (
+        {totalDetections === 0 && !loading && (
           <Typography color="textSecondary" align="center">
             Aucune détection pour le moment
           </Typography>
         )}
 
-        {detections.length > 0 && !loading && (
+        {totalDetections > 0 && (
           <>
             <TableContainer sx={{ maxHeight: 600 }}>
               <Table stickyHeader size="small">
@@ -126,17 +162,24 @@ function DetectionsList({ hours = 24 }) {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {paginatedDetections.map((detection) => (
+                  {detections.map((detection) => (
                     <DetectionRow key={detection.id} detection={detection} />
                   ))}
+                  {loading && (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                        <CircularProgress size={32} />
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
 
             <TablePagination
-              rowsPerPageOptions={[5, 10, 25]}
+              rowsPerPageOptions={[5, 10, 25, 50]}
               component="div"
-              count={detections.length}
+              count={totalDetections}
               rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={handleChangePage}
@@ -183,7 +226,7 @@ function DetectionRow({ detection }) {
   return (
     <TableRow hover>
       <TableCell sx={{ fontWeight: 500 }}>
-        {detection.appliance_name || 'Inconnu'}
+        {detection.name || 'Inconnu'}
       </TableCell>
       <TableCell align="right" sx={{ fontSize: 'small' }}>
         {formatTime(startTime)}

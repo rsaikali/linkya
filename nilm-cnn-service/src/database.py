@@ -57,7 +57,6 @@ class DatabaseManager:
             Column('appliance_id', Integer, ForeignKey('cnn_appliances.id', ondelete='CASCADE')),
             Column('start_time', DateTime, nullable=False),
             Column('end_time', DateTime, nullable=False),
-            Column('mode', String(100)),  # Mode de fonctionnement (éco, rapide, etc.)
             Column('avg_power', Float),
             Column('power_std', Float),
             Column('energy_consumed', Float),  # Énergie totale (Wh)
@@ -207,8 +206,7 @@ class DatabaseManager:
         self,
         appliance_id: int,
         start_time: datetime,
-        end_time: datetime,
-        mode: Optional[str] = None
+        end_time: datetime
     ) -> Optional[int]:
         """
         Ajoute une signature de courbe soumise par l'utilisateur
@@ -217,7 +215,6 @@ class DatabaseManager:
             appliance_id: ID de l'appareil
             start_time: Début de la signature
             end_time: Fin de la signature
-            mode: Mode de fonctionnement (optionnel)
             
         Returns:
             ID de la signature créée ou None si erreur
@@ -279,22 +276,24 @@ class DatabaseManager:
             features = self._extract_basic_features(power_values)
             
             with self.get_session() as session:
-                # Note: raw_data supprimé - les données sont récupérées depuis linky_realtime
+                # Note: raw_data supprimé - les données sont récupérées
+                # depuis linky_realtime
                 query = text("""
-                    INSERT INTO cnn_signatures 
-                    (appliance_id, start_time, end_time, mode, avg_power, power_std, energy_consumed, features, created_at)
-                    VALUES (:appliance_id, :start_time, :end_time, :mode, :avg_power, :power_std, :energy_consumed, 
+                    INSERT INTO cnn_signatures
+                    (appliance_id, start_time, end_time, avg_power,
+                     power_std, energy_consumed, features, created_at)
+                    VALUES (:appliance_id, :start_time, :end_time,
+                            :avg_power, :power_std, :energy_consumed,
                             cast(:features as jsonb), NOW())
                     RETURNING id
                 """)
-                
+
                 result = session.execute(
                     query,
                     {
                         'appliance_id': appliance_id,
                         'start_time': start_time,
                         'end_time': end_time,
-                        'mode': mode,
                         'avg_power': avg_power,
                         'power_std': power_std,
                         'energy_consumed': energy_consumed,
@@ -353,18 +352,18 @@ class DatabaseManager:
         try:
             with self.engine.connect() as conn:
                 query_text = """
-                    SELECT 
+                    SELECT
                         s.id, s.appliance_id, s.start_time, s.end_time,
-                        s.mode, s.avg_power, s.power_std, s.energy_consumed,
+                        s.avg_power, s.power_std, s.energy_consumed,
                         s.features,
                         a.name as appliance_name
                     FROM cnn_signatures s
                     JOIN cnn_appliances a ON s.appliance_id = a.id
                     ORDER BY s.created_at DESC
                 """
-                
+
                 result = conn.execute(text(query_text))
-                
+
                 signatures = []
                 for row in result:
                     sig = {
@@ -373,19 +372,21 @@ class DatabaseManager:
                         'appliance_name': row.appliance_name,
                         'start_time': row.start_time,
                         'end_time': row.end_time,
-                        'mode': row.mode,
                         'avg_power': row.avg_power,
                         'power_std': row.power_std,
                         'energy_consumed': row.energy_consumed,
                         'features': row.features
                     }
-                    
+
                     # Récupérer les données brutes depuis linky_realtime
-                    raw_data = self.get_consumption_data(row.start_time, row.end_time)
+                    raw_data = self.get_consumption_data(
+                        row.start_time,
+                        row.end_time
+                    )
                     sig['raw_data'] = raw_data
-                    
+
                     signatures.append(sig)
-                
+
                 logger.info(f"Récupéré {len(signatures)} signatures")
                 return signatures
                 

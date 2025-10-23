@@ -55,12 +55,20 @@ export const apiService = {
     }
   },
 
-  // Récupérer les détections
-  getDetections: async (hours = 24) => {
+  // Récupérer les détections avec pagination optionnelle
+  getDetections: async (hours = 24, page = null, perPage = null) => {
     try {
-      const response = await api.get('/api/detections', {
-        params: { hours },
-      });
+      const params = {};
+      // Si hours est null, on envoie 0 pour signifier "toutes"
+      if (hours !== null) {
+        params.hours = hours;
+      } else {
+        params.hours = 0;
+      }
+      if (page !== null) params.page = page;
+      if (perPage !== null) params.per_page = perPage;
+      
+      const response = await api.get('/api/detections', { params });
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des détections:', error);
