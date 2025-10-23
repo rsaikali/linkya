@@ -154,6 +154,28 @@ async def get_all_appliances():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+@app.get("/api/appliances/{appliance_id}/signatures")
+async def get_appliance_signatures(appliance_id: int):
+    """
+    Récupère toutes les signatures d'un appareil spécifique.
+
+    Args:
+        appliance_id: ID de l'appareil
+
+    Returns:
+        Liste des signatures avec leurs détails
+    """
+    try:
+        signatures = db_manager.get_appliance_signatures(appliance_id)
+        return {
+            "appliance_id": appliance_id,
+            "total": len(signatures),
+            "signatures": signatures,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
 class ApplianceUpdate(BaseModel):
     """Modèle pour mettre à jour un appareil."""
     name: Optional[str] = None
@@ -255,6 +277,34 @@ async def delete_appliance(appliance_id: int):
         raise
     except Exception as e:
         logger.error(f"Erreur lors de la suppression de l'appareil {appliance_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
+@app.delete("/api/detections/{detection_id}")
+async def delete_detection(detection_id: int):
+    """
+    Supprime une détection spécifique.
+
+    Args:
+        detection_id: ID de la détection à supprimer
+
+    Returns:
+        Message de confirmation avec informations de la détection supprimée
+    """
+    try:
+        result = db_manager.delete_detection(detection_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Détection non trouvée")
+        
+        return {
+            "status": "success",
+            "message": f"Détection supprimée: {result['appliance_name']}",
+            "detection": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la détection {detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -532,6 +582,95 @@ async def get_nilm_models(
         
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
+@app.delete("/api/nilm/models/{model_id}")
+async def delete_nilm_model(model_id: int):
+    """
+    Supprime un modèle NILM-CNN de la base de données et du filesystem.
+    
+    Le modèle actif (is_active=true) ne peut pas être supprimé.
+    
+    Args:
+        model_id: ID du modèle à supprimer
+    
+    Returns:
+        Confirmation de suppression avec détails
+        
+    Raises:
+        HTTPException 404: Modèle non trouvé
+        HTTPException 400: Tentative de suppression du modèle actif
+        HTTPException 500: Erreur serveur
+    """
+    import os
+    
+    try:
+        # Supprimer de la base de données
+        result = db_manager.delete_cnn_model(model_id)
+        
+        # Supprimer les fichiers du filesystem si le chemin existe
+        model_path = result.get("model_path")
+        deleted_files = []
+        
+        if model_path and os.path.exists(model_path):
+            try:
+                # Supprimer le fichier .keras
+                os.remove(model_path)
+                deleted_files.append(model_path)
+                logger.info(f"Fichier modèle supprimé: {model_path}")
+                
+                # Supprimer le fichier metadata JSON associé
+                metadata_path = model_path.replace(
+                    "model_", "metadata_"
+                ).replace(".keras", ".json")
+                if os.path.exists(metadata_path):
+                    os.remove(metadata_path)
+                    deleted_files.append(metadata_path)
+                    logger.info(f"Fichier metadata supprimé: {metadata_path}")
+                
+                # Supprimer le dossier logs TensorBoard si existant
+                version = result.get("version")
+                if version:
+                    logs_dir = os.path.join(
+                        os.path.dirname(model_path), "logs", version
+                    )
+                    if os.path.exists(logs_dir):
+                        import shutil
+                        shutil.rmtree(logs_dir)
+                        deleted_files.append(f"{logs_dir}/ (directory)")
+                        logger.info(f"Dossier logs supprimé: {logs_dir}")
+                        
+            except OSError as e:
+                logger.warning(
+                    f"Erreur lors de la suppression des fichiers: {e}"
+                )
+        
+        return {
+            "message": "Modèle supprimé avec succès",
+            "model_id": result["id"],
+            "version": result["version"],
+            "deleted_files": deleted_files,
+        }
+        
+    except ValueError as e:
+        # Erreurs métier (modèle non trouvé ou actif)
+        error_message = str(e)
+        if "non trouvé" in error_message:
+            raise HTTPException(status_code=404, detail=error_message)
+        elif "actif" in error_message:
+            raise HTTPException(status_code=400, detail=error_message)
+        else:
+            raise HTTPException(status_code=400, detail=error_message)
+            
+    except Exception as e:
+        logger.error(
+            f"Erreur lors de la suppression du modèle {model_id}: {str(e)}",
+            exc_info=True
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Erreur serveur: {str(e)}"

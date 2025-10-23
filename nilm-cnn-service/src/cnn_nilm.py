@@ -185,7 +185,8 @@ class SignaturePreprocessor:
                 power_values = [d['papp'] for d in raw_data]
                 
                 # Rééchantillonner ou padding pour avoir une longueur fixe
-                target_length = settings.cnn_sequence_length
+                # Padding ou troncature
+                target_length = settings.effective_sequence_length
                 
                 if len(power_values) > target_length:
                     # Rééchantillonner
@@ -353,7 +354,7 @@ class CNNNILMModel:
         # Construire le modèle
         self.model = self.build_model(
             num_classes=len(self.class_names),
-            sequence_length=settings.cnn_sequence_length
+            sequence_length=settings.effective_sequence_length
         )
         
         # Créer le répertoire TensorBoard logs
@@ -403,7 +404,7 @@ class CNNNILMModel:
             'class_names': self.class_names,
             'scaler_mean': self.preprocessor.scaler.mean_.tolist(),
             'scaler_scale': self.preprocessor.scaler.scale_.tolist(),
-            'sequence_length': settings.cnn_sequence_length
+            'sequence_length': settings.effective_sequence_length
         }
         
         metadata_path = Path(settings.cnn_model_path) / f"metadata_{version}.json"
@@ -476,7 +477,7 @@ class CNNNILMModel:
             return None, 0.0, []
         
         # Préparer la séquence
-        target_length = settings.cnn_sequence_length
+        target_length = settings.effective_sequence_length
         
         if len(power_sequence) > target_length:
             indices = np.linspace(0, len(power_sequence) - 1, target_length, dtype=int)
@@ -538,7 +539,7 @@ class CNNNILMModel:
         timestamps = [d['time'] for d in consumption_data]
         
         # Fenêtre glissante pour la détection
-        window_size = settings.cnn_sequence_length
+        window_size = settings.effective_sequence_length
         step_size = window_size // 2  # 50% de recouvrement
         
         events = []

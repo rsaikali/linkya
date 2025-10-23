@@ -9,6 +9,21 @@ from sqlalchemy.orm import sessionmaker
 from .config import settings
 
 
+def format_datetime_utc(dt: datetime | None) -> str | None:
+    """
+    Formate un datetime en ISO string avec timezone UTC explicite.
+    
+    Args:
+        dt: Datetime à formater (naive, supposé UTC)
+        
+    Returns:
+        String ISO avec suffixe 'Z' ou None
+    """
+    if dt is None:
+        return None
+    return dt.isoformat() + 'Z'
+
+
 class DatabaseManager:
     """Gestionnaire de connexion à TimescaleDB."""
 
@@ -37,7 +52,7 @@ class DatabaseManager:
             result = conn.execute(query).fetchone()
             if result:
                 return {
-                    "time": result[0].isoformat() if result[0] else None,
+                    "time": format_datetime_utc(result[0]),
                     "papp": result[1],
                     "hchp": result[2],
                     "hchc": result[3],
@@ -107,7 +122,7 @@ class DatabaseManager:
                 )
             return [
                 {
-                    "time": row[0].isoformat() if row[0] else None,
+                    "time": format_datetime_utc(row[0]),
                     "avg_papp": float(row[1]) if row[1] is not None else None,
                     "max_papp": float(row[2]) if row[2] is not None else None,
                     "min_papp": float(row[3]) if row[3] is not None else None,
@@ -160,8 +175,8 @@ class DatabaseManager:
                     "appliance_id": row[1],
                     "name": row[2],
                     "description": row[3],
-                    "start_time": row[4].isoformat() if row[4] else None,
-                    "end_time": row[5].isoformat() if row[5] else None,
+                    "start_time": format_datetime_utc(row[4]),
+                    "end_time": format_datetime_utc(row[5]),
                     "avg_power": float(row[6]) if row[6] is not None else None,
                     "energy_consumed": (
                         float(row[7]) if row[7] is not None else None
@@ -175,7 +190,7 @@ class DatabaseManager:
                     "signature_id": (
                         int(row[10]) if row[10] is not None else None
                     ),
-                    "created_at": row[11].isoformat() if row[11] else None,
+                    "created_at": format_datetime_utc(row[11]),
                 }
                 for row in result
             ]
@@ -212,14 +227,14 @@ class DatabaseManager:
                     "id": row[0],
                     "name": row[1],
                     "description": row[2],
-                    "created_at": row[3].isoformat() if row[3] else None,
-                    "updated_at": row[4].isoformat() if row[4] else None,
+                    "created_at": format_datetime_utc(row[3]),
+                    "updated_at": format_datetime_utc(row[4]),
                     "avg_power": float(row[5]) if row[5] is not None else None,
                     "power_std": float(row[6]) if row[6] is not None else None,
                     "avg_duration": float(row[7]) if row[7] is not None else None,
                     "num_signatures": int(row[8]) if row[8] is not None else 0,
-                    "last_signature_start": row[9].isoformat() if row[9] else None,
-                    "last_signature_end": row[10].isoformat() if row[10] else None,
+                    "last_signature_start": format_datetime_utc(row[9]),
+                    "last_signature_end": format_datetime_utc(row[10]),
                     "signature_count": int(row[8]) if row[8] is not None else 0,  # Même que num_signatures
                     "detection_count": int(row[11]) if row[11] is not None else 0,
                 }
@@ -227,6 +242,62 @@ class DatabaseManager:
                 appliances_list.append(appliance)
             
             return appliances_list
+
+    def get_appliance_signatures(
+        self, appliance_id: int
+    ) -> list[dict[str, Any]]:
+        """
+        Récupère toutes les signatures d'un appareil spécifique.
+
+        Args:
+            appliance_id: ID de l'appareil
+
+        Returns:
+            Liste des signatures avec leurs détails
+        """
+        query = text("""
+            SELECT
+                cs.id,
+                cs.appliance_id,
+                cs.start_time,
+                cs.end_time,
+                cs.avg_power,
+                cs.power_std,
+                cs.energy_consumed,
+                cs.created_at,
+                EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))
+                    as duration_seconds
+            FROM cnn_signatures cs
+            WHERE cs.appliance_id = :appliance_id
+            ORDER BY cs.start_time DESC
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(query, {"appliance_id": appliance_id})
+            signatures_list = []
+            for row in result:
+                signature = {
+                    "id": row[0],
+                    "appliance_id": row[1],
+                    "start_time": format_datetime_utc(row[2]),
+                    "end_time": format_datetime_utc(row[3]),
+                    "avg_power": (
+                        float(row[4]) if row[4] is not None else None
+                    ),
+                    "power_std": (
+                        float(row[5]) if row[5] is not None else None
+                    ),
+                    "energy_consumed": (
+                        float(row[6]) if row[6] is not None else None
+                    ),
+                    "created_at": format_datetime_utc(row[7]),
+                    "duration_seconds": (
+                        float(row[8]) if row[8] is not None else None
+                    ),
+                }
+                signatures_list.append(signature)
+            
+            return signatures_list
 
     def update_appliance(
         self,
@@ -271,12 +342,8 @@ class DatabaseManager:
                         "id": result[0],
                         "name": result[1],
                         "description": result[2],
-                        "created_at": (
-                            result[3].isoformat() if result[3] else None
-                        ),
-                        "updated_at": (
-                            result[4].isoformat() if result[4] else None
-                        ),
+                        "created_at": format_datetime_utc(result[3]),
+                        "updated_at": format_datetime_utc(result[4]),
                     }
                 return None
         
@@ -297,12 +364,8 @@ class DatabaseManager:
                     "id": result[0],
                     "name": result[1],
                     "description": result[2],
-                    "created_at": (
-                        result[3].isoformat() if result[3] else None
-                    ),
-                    "updated_at": (
-                        result[4].isoformat() if result[4] else None
-                    ),
+                    "created_at": format_datetime_utc(result[3]),
+                    "updated_at": format_datetime_utc(result[4]),
                 }
             return None
 
@@ -446,9 +509,7 @@ class DatabaseManager:
                     "version": row[1],
                     "model_type": row[2],
                     "architecture": row[3],
-                    "training_date": (
-                        row[4].isoformat() if row[4] else None
-                    ),
+                    "training_date": format_datetime_utc(row[4]),
                     "num_signatures": row[5],
                     "num_classes": row[6],
                     "metrics": row[7],
@@ -462,6 +523,110 @@ class DatabaseManager:
                 "total_pages": total_pages,
                 "models": models,
             }
+
+    def delete_cnn_model(self, model_id: int) -> dict[str, Any]:
+        """
+        Supprime un modèle CNN de la base de données et du filesystem.
+
+        Args:
+            model_id: ID du modèle à supprimer
+
+        Returns:
+            Dictionnaire avec le statut de suppression
+
+        Raises:
+            ValueError: Si le modèle est actif ou n'existe pas
+        """
+        # Vérifier que le modèle existe et n'est pas actif
+        check_query = text("""
+            SELECT id, version, is_active, model_path
+            FROM cnn_models
+            WHERE id = :model_id
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                check_query, {"model_id": model_id}
+            ).fetchone()
+            
+            if not result:
+                raise ValueError(f"Modèle {model_id} non trouvé")
+            
+            model_id_db, version, is_active, model_path = result
+            
+            if is_active:
+                raise ValueError(
+                    f"Impossible de supprimer le modèle actif "
+                    f"(version {version})"
+                )
+            
+            # Supprimer de la base de données
+            delete_query = text("""
+                DELETE FROM cnn_models
+                WHERE id = :model_id
+            """)
+            
+            conn.execute(delete_query, {"model_id": model_id})
+            conn.commit()
+            
+            return {
+                "id": model_id_db,
+                "version": version,
+                "model_path": model_path,
+                "deleted": True,
+            }
+
+    def delete_detection(self, detection_id: int) -> dict[str, Any] | None:
+        """
+        Supprime une détection spécifique de la base de données.
+
+        Args:
+            detection_id: ID de la détection à supprimer
+
+        Returns:
+            Dictionnaire avec les informations de la détection supprimée
+            ou None si la détection n'existe pas
+        """
+        # Vérifier que la détection existe et récupérer ses informations
+        check_query = text("""
+            SELECT
+                cd.id,
+                cd.appliance_id,
+                ca.name,
+                cd.start_time,
+                cd.end_time
+            FROM cnn_detections cd
+            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            WHERE cd.id = :detection_id
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                check_query,
+                {"detection_id": detection_id}
+            ).fetchone()
+            
+            if not result:
+                return None
+            
+            detection_info = {
+                "id": result[0],
+                "appliance_id": result[1],
+                "appliance_name": result[2],
+                "start_time": format_datetime_utc(result[3]),
+                "end_time": format_datetime_utc(result[4]),
+            }
+            
+            # Supprimer la détection
+            delete_query = text("""
+                DELETE FROM cnn_detections
+                WHERE id = :detection_id
+            """)
+            
+            conn.execute(delete_query, {"detection_id": detection_id})
+            conn.commit()
+            
+            return detection_info
 
 
 # Instance globale du gestionnaire de base de données

@@ -25,13 +25,15 @@ class Settings(BaseSettings):
     cnn_training_interval_hours: int = 24  # Entraînement toutes les 24h
     cnn_detection_interval_minutes: int = 5  # Détection toutes les 5min
     cnn_detection_period_hours: int = 24  # Période analysée (défaut: 24h)
-    cnn_window_size_minutes: int = 60  # Fenêtre d'analyse de 60min
+    # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
+    cnn_window_size_minutes: int = 60
     cnn_min_power_threshold: int = 30  # Seuil minimal de puissance (W)
     cnn_min_duration_seconds: int = 30  # Durée minimale d'un événement (s)
     
     # Configuration du modèle CNN
     cnn_model_path: str = "/app/models/cnn"
-    cnn_sequence_length: int = 600  # Longueur des séquences (10min à 1Hz)
+    # Override manuel de la longueur de séquence (si None, calculé auto)
+    cnn_sequence_length: Optional[int] = None
     cnn_batch_size: int = 32
     cnn_epochs: int = 50
     cnn_learning_rate: float = 0.001
@@ -54,6 +56,23 @@ class Settings(BaseSettings):
             f"postgresql://{self.local_db_user}:{self.local_db_password}"
             f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
         )
+    
+    @property
+    def effective_sequence_length(self) -> int:
+        """
+        Calcule la longueur de séquence effective.
+        
+        Si cnn_sequence_length est défini, l'utilise.
+        Sinon, calcule depuis cnn_window_size_minutes (1Hz = 60 points/min).
+        
+        Returns:
+            Longueur de séquence en nombre de points
+        """
+        if self.cnn_sequence_length is not None:
+            return self.cnn_sequence_length
+        
+        # Conversion: minutes -> secondes (1Hz = 1 point/seconde)
+        return self.cnn_window_size_minutes * 60
 
 
 # Instance globale de configuration

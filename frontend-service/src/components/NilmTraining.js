@@ -20,12 +20,19 @@ import {
   CircularProgress,
   Grid,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Tooltip,
 } from '@mui/material';
 import {
   PlayArrow as TrainIcon,
   Search as DetectIcon,
   CheckCircle as SuccessIcon,
   Refresh as RefreshIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
 
@@ -38,6 +45,14 @@ const NilmTraining = () => {
   const [loading, setLoading] = useState(true);
   const [trainLoading, setTrainLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  
+  // Dialog de confirmation de suppression
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    modelId: null,
+    modelVersion: '',
+  });
   
   // Snackbar pour les notifications
   const [snackbar, setSnackbar] = useState({
@@ -107,7 +122,7 @@ const NilmTraining = () => {
     }
   };
 
-  // Lancer la détection
+    // Lancer la détection
   const handleDetect = async () => {
     setDetectLoading(true);
     try {
@@ -118,14 +133,55 @@ const NilmTraining = () => {
       );
     } catch (error) {
       console.error('Erreur lors du lancement de la détection:', error);
-      showSnackbar(
-        'Erreur lors du lancement de la détection',
-        'error'
-      );
+      const errorMsg = error.response?.data?.detail || 'Erreur lors du lancement de la détection';
+      showSnackbar(errorMsg, 'error');
     } finally {
       setDetectLoading(false);
     }
   };
+
+  // Ouvrir le dialog de confirmation de suppression
+  const handleOpenDeleteDialog = (modelId, modelVersion) => {
+    setDeleteDialog({
+      open: true,
+      modelId,
+      modelVersion,
+    });
+  };
+
+  // Fermer le dialog de suppression
+  const handleCloseDeleteDialog = () => {
+    setDeleteDialog({
+      open: false,
+      modelId: null,
+      modelVersion: '',
+    });
+  };
+
+  // Confirmer et supprimer le modèle
+  const handleConfirmDelete = async () => {
+    const { modelId, modelVersion } = deleteDialog;
+    setDeleteLoading(true);
+    
+    try {
+      await api.delete(`/api/nilm/models/${modelId}`);
+      showSnackbar(
+        `Modèle ${modelVersion} supprimé avec succès`,
+        'success'
+      );
+      handleCloseDeleteDialog();
+      // Recharger la liste
+      loadModels();
+    } catch (error) {
+      console.error('Erreur lors de la suppression du modèle:', error);
+      const errorMsg = error.response?.data?.detail || 'Erreur lors de la suppression du modèle';
+      showSnackbar(errorMsg, 'error');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Formater une date
 
   // Formater les métriques pour l'affichage
   const formatMetrics = (metrics) => {
@@ -285,6 +341,7 @@ const NilmTraining = () => {
                       <TableCell>Métriques</TableCell>
                       <TableCell>Qualité</TableCell>
                       <TableCell>État</TableCell>
+                      <TableCell align="center">Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -357,6 +414,26 @@ const NilmTraining = () => {
                               />
                             )}
                           </TableCell>
+                          <TableCell align="center">
+                            <Tooltip 
+                              title={
+                                model.is_active 
+                                  ? "Impossible de supprimer le modèle actif" 
+                                  : "Supprimer ce modèle"
+                              }
+                            >
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleOpenDeleteDialog(model.id, model.version)}
+                                  disabled={model.is_active || deleteLoading}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -381,6 +458,49 @@ const NilmTraining = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog de confirmation de suppression */}
+      <Dialog
+        open={deleteDialog.open}
+        onClose={handleCloseDeleteDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Confirmer la suppression</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Êtes-vous sûr de vouloir supprimer le modèle <strong>{deleteDialog.modelVersion}</strong> ?
+            <br />
+            <br />
+            Cette action supprimera :
+            <ul style={{ marginTop: '8px', marginBottom: '8px' }}>
+              <li>L'entrée dans la base de données</li>
+              <li>Le fichier du modèle (.keras)</li>
+              <li>Les métadonnées associées (.json)</li>
+              <li>Les logs TensorBoard</li>
+            </ul>
+            <br />
+            <strong>Cette action est irréversible.</strong>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={handleCloseDeleteDialog} 
+            disabled={deleteLoading}
+          >
+            Annuler
+          </Button>
+          <Button
+            onClick={handleConfirmDelete}
+            color="error"
+            variant="contained"
+            disabled={deleteLoading}
+            startIcon={deleteLoading ? <CircularProgress size={20} /> : <DeleteIcon />}
+          >
+            {deleteLoading ? 'Suppression...' : 'Supprimer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Snackbar pour les notifications */}
       <Snackbar

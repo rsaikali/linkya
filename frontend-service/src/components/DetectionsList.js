@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -19,8 +19,17 @@ import {
   MenuItem,
   FormControl,
   Box,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button,
+  Snackbar,
 } from '@mui/material';
-import { Timeline } from '@mui/icons-material';
+import { Timeline, Delete } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
 // Options de période disponibles
@@ -43,46 +52,49 @@ function DetectionsList() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalDetections, setTotalDetections] = useState(0);
   const [selectedPeriod, setSelectedPeriod] = useState(720); // Mois dernier par défaut
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [detectionToDelete, setDetectionToDelete] = useState(null);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+
+  const fetchDetections = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Utiliser la pagination côté backend (page commence à 1 pour l'API)
+      const data = await apiService.getDetections(
+        selectedPeriod,
+        page + 1,
+        rowsPerPage
+      );
+      
+      // Gérer la réponse de l'API avec pagination
+      if (data && data.detections && Array.isArray(data.detections)) {
+        setDetections(data.detections);
+        setTotalDetections(data.total_detections || data.detections.length);
+      } else if (Array.isArray(data)) {
+        // Fallback pour l'ancienne API sans pagination
+        setDetections(data);
+        setTotalDetections(data.length);
+      } else {
+        setDetections([]);
+        setTotalDetections(0);
+      }
+    } catch (err) {
+      console.error('Erreur lors de la récupération des détections:', err);
+      setError('Impossible de charger les détections');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedPeriod, page, rowsPerPage]);
 
   useEffect(() => {
-    const fetchDetections = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Utiliser la pagination côté backend (page commence à 1 pour l'API)
-        const data = await apiService.getDetections(
-          selectedPeriod,
-          page + 1,
-          rowsPerPage
-        );
-        
-        // Gérer la réponse de l'API avec pagination
-        if (data && data.detections && Array.isArray(data.detections)) {
-          setDetections(data.detections);
-          setTotalDetections(data.total_detections || data.detections.length);
-        } else if (Array.isArray(data)) {
-          // Fallback pour l'ancienne API sans pagination
-          setDetections(data);
-          setTotalDetections(data.length);
-        } else {
-          setDetections([]);
-          setTotalDetections(0);
-        }
-      } catch (err) {
-        console.error('Erreur lors de la récupération des détections:', err);
-        setError('Impossible de charger les détections');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchDetections();
 
     // Rafraîchir toutes les 60 secondes
     const interval = setInterval(fetchDetections, 60000);
     return () => clearInterval(interval);
-  }, [selectedPeriod, page, rowsPerPage]);
+  }, [fetchDetections]);
 
   const handlePeriodChange = (event) => {
     setSelectedPeriod(event.target.value);
@@ -96,6 +108,46 @@ function DetectionsList() {
   const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
+  };
+
+  const handleDeleteClick = (detection) => {
+    setDetectionToDelete(detection);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!detectionToDelete) return;
+
+    try {
+      await apiService.deleteDetection(detectionToDelete.id);
+      setSnackbar({
+        open: true,
+        message: `Détection supprimée: ${detectionToDelete.name}`,
+        severity: 'success',
+      });
+      
+      // Rafraîchir la liste
+      fetchDetections();
+    } catch (err) {
+      console.error('Erreur lors de la suppression:', err);
+      setSnackbar({
+        open: true,
+        message: 'Erreur lors de la suppression de la détection',
+        severity: 'error',
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setDetectionToDelete(null);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setDetectionToDelete(null);
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   if (error) {
@@ -113,92 +165,143 @@ function DetectionsList() {
   }
 
   return (
-    <Card>
-      <CardHeader
-        title="Détections d'appareils"
-        subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} enregistrée${totalDetections !== 1 ? 's' : ''}`}
-        avatar={<Timeline />}
-        action={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <FormControl size="small" sx={{ minWidth: 180 }}>
-              <Select
-                value={selectedPeriod}
-                onChange={handlePeriodChange}
-                displayEmpty
-                sx={{ bgcolor: 'background.paper' }}
-              >
-                {TIME_PERIODS.map((period) => (
-                  <MenuItem key={period.label} value={period.value}>
-                    {period.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {loading && <CircularProgress size={24} />}
-          </Box>
-        }
-      />
-      <CardContent>
-        {loading && detections.length === 0 && <LinearProgress />}
-
-        {totalDetections === 0 && !loading && (
-          <Typography color="textSecondary" align="center">
-            Aucune détection pour le moment
-          </Typography>
-        )}
-
-        {totalDetections > 0 && (
-          <>
-            <TableContainer sx={{ maxHeight: 600 }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                    <TableCell>Appareil</TableCell>
-                    <TableCell align="right">Début</TableCell>
-                    <TableCell align="right">Fin</TableCell>
-                    <TableCell align="right">Durée</TableCell>
-                    <TableCell align="right">Puissance (W)</TableCell>
-                    <TableCell align="right">Énergie (Wh)</TableCell>
-                    <TableCell align="center">Confiance</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {detections.map((detection) => (
-                    <DetectionRow key={detection.id} detection={detection} />
+    <>
+      <Card>
+        <CardHeader
+          title="Détections d'appareils"
+          subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} enregistrée${totalDetections !== 1 ? 's' : ''}`}
+          avatar={<Timeline />}
+          action={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <Select
+                  value={selectedPeriod}
+                  onChange={handlePeriodChange}
+                  displayEmpty
+                  sx={{ bgcolor: 'background.paper' }}
+                >
+                  {TIME_PERIODS.map((period) => (
+                    <MenuItem key={period.label} value={period.value}>
+                      {period.label}
+                    </MenuItem>
                   ))}
-                  {loading && (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
-                        <CircularProgress size={32} />
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                </Select>
+              </FormControl>
+              {loading && <CircularProgress size={24} />}
+            </Box>
+          }
+        />
+        <CardContent>
+          {loading && detections.length === 0 && <LinearProgress />}
 
-            <TablePagination
-              rowsPerPageOptions={[5, 10, 25, 50]}
-              component="div"
-              count={totalDetections}
-              rowsPerPage={rowsPerPage}
-              page={page}
-              onPageChange={handleChangePage}
-              onRowsPerPageChange={handleChangeRowsPerPage}
-              labelRowsPerPage="Lignes par page:"
-              labelDisplayedRows={({ from, to, count }) => `${from}–${to} sur ${count}`}
-            />
-          </>
-        )}
-      </CardContent>
-    </Card>
+          {totalDetections === 0 && !loading && (
+            <Typography color="textSecondary" align="center">
+              Aucune détection pour le moment
+            </Typography>
+          )}
+
+          {totalDetections > 0 && (
+            <>
+              <TableContainer sx={{ maxHeight: 600 }}>
+                <Table stickyHeader size="small">
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
+                      <TableCell>Appareil</TableCell>
+                      <TableCell align="right">Début</TableCell>
+                      <TableCell align="right">Fin</TableCell>
+                      <TableCell align="right">Durée</TableCell>
+                      <TableCell align="right">Puissance (W)</TableCell>
+                      <TableCell align="right">Énergie (Wh)</TableCell>
+                      <TableCell align="center">Confiance</TableCell>
+                      <TableCell align="center">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {detections.map((detection) => (
+                      <DetectionRow
+                        key={detection.id}
+                        detection={detection}
+                        onDelete={handleDeleteClick}
+                      />
+                    ))}
+                    {loading && (
+                      <TableRow>
+                        <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                          <CircularProgress size={32} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <TablePagination
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                component="div"
+                count={totalDetections}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                labelRowsPerPage="Lignes par page:"
+                labelDisplayedRows={({ from, to, count }) => `${from}–${to} sur ${count}`}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Dialog de confirmation de suppression */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+        aria-labelledby="delete-dialog-title"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirmer la suppression
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Êtes-vous sûr de vouloir supprimer cette détection de{' '}
+            <strong>{detectionToDelete?.name}</strong> ?
+            <br />
+            Cette action est irréversible.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} color="inherit">
+            Annuler
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Supprimer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar pour les notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </>
   );
 }
 
 /**
  * Ligne de tableau pour une détection
  */
-function DetectionRow({ detection }) {
+function DetectionRow({ detection, onDelete }) {
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
   const durationMinutes = Math.round((endTime - startTime) / 60000);
@@ -259,6 +362,18 @@ function DetectionRow({ detection }) {
           size="small"
           variant="outlined"
         />
+      </TableCell>
+      <TableCell align="center">
+        <Tooltip title="Supprimer cette détection">
+          <IconButton
+            size="small"
+            color="error"
+            onClick={() => onDelete(detection)}
+            aria-label="supprimer"
+          >
+            <Delete fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </TableCell>
     </TableRow>
   );

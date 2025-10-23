@@ -201,6 +201,15 @@ api-detections: ## Récupère les détections via l'API
 	@echo "🔌 Détections d'appareils:"
 	@curl -s http://localhost:8000/api/detections | jq '.detections | length' || echo "Erreur"
 
+api-delete-detection: ## Supprime une détection via l'API (usage: make api-delete-detection ID=123)
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ Erreur: ID de la détection requis"; \
+		echo "Usage: make api-delete-detection ID=123"; \
+		exit 1; \
+	fi
+	@echo "🗑️  Suppression de la détection ID=$(ID)..."
+	@curl -X DELETE "http://localhost:8000/api/detections/$(ID)" | python3 -m json.tool
+
 # Commandes NILM-CNN
 cnn-appliances: ## Liste les appareils CNN avec leurs signatures
 	@echo "🔌 Appareils CNN:"
@@ -262,6 +271,15 @@ api-nilm-detect: ## Lance la détection NILM via l'API
 api-nilm-models: ## Récupère les modèles NILM via l'API
 	@echo "📚 Modèles NILM (page 1):"
 	@curl -s "http://localhost:8000/api/nilm/models?page=1&per_page=5" | python3 -m json.tool
+
+api-nilm-delete-model: ## Supprime un modèle NILM via l'API (usage: make api-nilm-delete-model ID=14)
+	@if [ -z "$(ID)" ]; then \
+		echo "❌ Erreur: ID du modèle requis"; \
+		echo "Usage: make api-nilm-delete-model ID=14"; \
+		exit 1; \
+	fi
+	@echo "🗑️  Suppression du modèle ID=$(ID)..."
+	@curl -X DELETE "http://localhost:8000/api/nilm/models/$(ID)" | python3 -m json.tool
 
 redis-cli: ## Se connecte à Redis via redis-cli
 	docker exec -it nilmia-redis redis-cli

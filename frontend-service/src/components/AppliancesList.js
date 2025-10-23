@@ -3,7 +3,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Grid,
   LinearProgress,
   Box,
   Typography,
@@ -21,12 +20,22 @@ import {
   ListItemIcon,
   ListItemText,
   Snackbar,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Collapse,
+  Chip,
 } from '@mui/material';
 import {
   ElectricMeter,
   MoreVert,
   Edit,
   Delete,
+  KeyboardArrowDown,
+  KeyboardArrowUp,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
@@ -115,17 +124,33 @@ function AppliancesList() {
           </Typography>
         )}
 
-        <Grid container spacing={2} sx={{ mt: 1 }}>
-          {appliances.map((appliance) => (
-            <Grid item xs={12} sm={6} md={4} key={appliance.id}>
-              <ApplianceCard
-                appliance={appliance}
-                onUpdate={handleApplianceUpdated}
-                onShowSnackbar={showSnackbar}
-              />
-            </Grid>
-          ))}
-        </Grid>
+        {appliances.length > 0 && (
+          <TableContainer sx={{ maxHeight: 600 }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
+                  <TableCell />
+                  <TableCell>Appareil</TableCell>
+                  <TableCell align="right">Puissance moy. (W)</TableCell>
+                  <TableCell align="right">Variation (σ)</TableCell>
+                  <TableCell align="right">Signatures</TableCell>
+                  <TableCell align="right">Détections</TableCell>
+                  <TableCell align="center">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {appliances.map((appliance) => (
+                  <ApplianceRow
+                    key={appliance.id}
+                    appliance={appliance}
+                    onUpdate={handleApplianceUpdated}
+                    onShowSnackbar={showSnackbar}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </CardContent>
 
       <Snackbar
@@ -143,15 +168,38 @@ function AppliancesList() {
 }
 
 /**
- * Carte individuelle pour un appareil
+ * Ligne de table pour un appareil avec expansion pour les signatures
  */
-function ApplianceCard({ appliance, onUpdate, onShowSnackbar }) {
+function ApplianceRow({ appliance, onUpdate, onShowSnackbar }) {
+  const [open, setOpen] = useState(false);
+  const [signatures, setSignatures] = useState([]);
+  const [signaturesLoading, setSignaturesLoading] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newName, setNewName] = useState(appliance.name);
   const [newDescription, setNewDescription] = useState(appliance.description || '');
   const [loading, setLoading] = useState(false);
+
+  // Charger les signatures lors de l'expansion
+  useEffect(() => {
+    if (open && signatures.length === 0) {
+      fetchSignatures();
+    }
+  }, [open]);
+
+  const fetchSignatures = async () => {
+    setSignaturesLoading(true);
+    try {
+      const data = await apiService.getApplianceSignatures(appliance.id);
+      setSignatures(data.signatures || []);
+    } catch (error) {
+      console.error('Erreur lors du chargement des signatures:', error);
+      onShowSnackbar('Impossible de charger les signatures', 'error');
+    } finally {
+      setSignaturesLoading(false);
+    }
+  };
 
   const handleMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
@@ -217,41 +265,131 @@ function ApplianceCard({ appliance, onUpdate, onShowSnackbar }) {
     }
   };
 
+  const formatTime = (date) => {
+    return new Date(date).toLocaleString('fr-FR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
-    <Box
-      sx={{
-        border: '1px solid #e0e0e0',
-        borderRadius: 1,
-        p: 2,
-        backgroundColor: '#f9f9f9',
-        '&:hover': {
-          boxShadow: 2,
-          backgroundColor: '#fff',
-        },
-      }}
-    >
-      {/* En-tête de l'appareil */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1.5 }}>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            {appliance.name}
-          </Typography>
-          {appliance.description && (
-            <Typography variant="caption" color="textSecondary">
-              {appliance.description}
+    <>
+      <TableRow hover>
+        <TableCell>
+          <IconButton
+            size="small"
+            onClick={() => setOpen(!open)}
+          >
+            {open ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+          </IconButton>
+        </TableCell>
+        <TableCell>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {appliance.name}
             </Typography>
-          )}
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {appliance.description && (
+              <Typography variant="caption" color="textSecondary">
+                {appliance.description}
+              </Typography>
+            )}
+          </Box>
+        </TableCell>
+        <TableCell align="right">
+          <Typography variant="body2">
+            {appliance.avg_power ? appliance.avg_power.toFixed(1) : 'N/A'}
+          </Typography>
+        </TableCell>
+        <TableCell align="right">
+          <Typography variant="body2">
+            {appliance.power_std ? `±${appliance.power_std.toFixed(1)}` : 'N/A'}
+          </Typography>
+        </TableCell>
+        <TableCell align="right">
+          <Typography variant="body2">
+            {appliance.num_signatures || 0}
+          </Typography>
+        </TableCell>
+        <TableCell align="right">
+          <Typography variant="body2">
+            {appliance.detection_count || 0}
+          </Typography>
+        </TableCell>
+        <TableCell align="center">
           <IconButton
             size="small"
             onClick={handleMenuOpen}
-            sx={{ ml: 0.5 }}
           >
             <MoreVert fontSize="small" />
           </IconButton>
-        </Box>
-      </Box>
+        </TableCell>
+      </TableRow>
+
+      {/* Ligne d'expansion avec les signatures */}
+      <TableRow>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
+          <Collapse in={open} timeout="auto" unmountOnExit>
+            <Box sx={{ margin: 2 }}>
+              <Typography variant="h6" gutterBottom component="div" sx={{ fontSize: '1rem' }}>
+                Signatures ({signatures.length})
+              </Typography>
+
+              {signaturesLoading && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                  <CircularProgress size={24} />
+                </Box>
+              )}
+
+              {!signaturesLoading && signatures.length === 0 && (
+                <Typography variant="body2" color="textSecondary">
+                  Aucune signature pour cet appareil
+                </Typography>
+              )}
+
+              {!signaturesLoading && signatures.length > 0 && (
+                <Table size="small" aria-label="signatures">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Début</TableCell>
+                      <TableCell>Fin</TableCell>
+                      <TableCell>Durée</TableCell>
+                      <TableCell align="right">Puissance (W)</TableCell>
+                      <TableCell align="right">Énergie (Wh)</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {signatures.map((sig) => (
+                      <TableRow key={sig.id}>
+                        <TableCell sx={{ fontSize: 'small' }}>
+                          {formatTime(sig.start_time)}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: 'small' }}>
+                          {formatTime(sig.end_time)}
+                        </TableCell>
+                        <TableCell>
+                          {sig.duration_seconds
+                            ? sig.duration_seconds < 3600
+                              ? `${Math.round(sig.duration_seconds / 60)}m`
+                              : `${Math.floor(sig.duration_seconds / 3600)}h ${Math.round((sig.duration_seconds % 3600) / 60)}m`
+                            : 'N/A'}
+                        </TableCell>
+                        <TableCell align="right">
+                          {sig.avg_power?.toFixed(1) || 'N/A'}
+                        </TableCell>
+                        <TableCell align="right">
+                          {sig.energy_consumed?.toFixed(1) || 'N/A'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </Box>
+          </Collapse>
+        </TableCell>
+      </TableRow>
 
       {/* Menu contextuel */}
       <Menu
@@ -339,42 +477,7 @@ function ApplianceCard({ appliance, onUpdate, onShowSnackbar }) {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Caractéristiques de puissance */}
-      <Box sx={{ mb: 1.5 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-          <Typography variant="caption" color="textSecondary">
-            Puissance moyenne
-          </Typography>
-          <Typography variant="caption" sx={{ fontWeight: 600 }}>
-            {appliance.avg_power ? `${appliance.avg_power.toFixed(1)} W` : 'N/A'}
-          </Typography>
-        </Box>
-
-        {appliance.power_std && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="caption" color="textSecondary">
-              Variation (σ)
-            </Typography>
-            <Typography variant="caption">
-              ±{appliance.power_std.toFixed(1)} W
-            </Typography>
-          </Box>
-        )}
-        
-        {appliance.signature_count !== undefined && (
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-            <Typography variant="caption" color="textSecondary">
-              Signatures
-            </Typography>
-            <Typography variant="caption">
-              {appliance.signature_count}
-            </Typography>
-          </Box>
-        )}
-      </Box>
-
-    </Box>
+    </>
   );
 }
 

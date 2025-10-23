@@ -111,6 +111,28 @@ export const apiService = {
       throw error;
     }
   },
+
+  // Récupérer les signatures d'un appareil
+  getApplianceSignatures: async (applianceId) => {
+    try {
+      const response = await api.get(`/api/appliances/${applianceId}/signatures`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des signatures:', error);
+      throw error;
+    }
+  },
+
+  // Supprimer une détection
+  deleteDetection: async (detectionId) => {
+    try {
+      const response = await api.delete(`/api/detections/${detectionId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la suppression de la détection:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;

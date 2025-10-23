@@ -127,8 +127,8 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
                 'num_signatures': len(signatures)
             }
         
-        # Créer une version basée sur le timestamp
-        version = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        # Créer une version basée sur le timestamp (timezone locale)
+        version = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # Entraîner le modèle
         metrics = cnn_model.train(signatures, version)
@@ -150,7 +150,7 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
             # Obtenir l'architecture du modèle
             architecture = {
                 'type': 'CNN1D',
-                'sequence_length': settings.cnn_sequence_length,
+                'sequence_length': settings.effective_sequence_length,
                 'num_classes': len(cnn_model.class_names),
                 'class_names': cnn_model.class_names
             }

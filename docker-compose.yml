@@ -262,6 +262,7 @@ services:
         condition: service_started
     volumes:
       - ./backend-service/src:/app/src
+      - ./models:/app/models
     networks:
       - nilmia-network
     restart: unless-stopped

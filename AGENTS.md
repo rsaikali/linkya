@@ -186,7 +186,7 @@ Service NILM basé sur CNN (Convolutional Neural Networks) pour détection super
   - `cnn_detections`: Détections automatiques
     - id, appliance_id, signature_id, start_time, end_time, avg_power, energy_consumed, confidence_score, prediction_class, features
   - `cnn_models`: Modèles CNN versionnés
-    - id, version, model_type, architecture, training_date, num_signatures, num_classes, metrics, model_path, is_active
+    - id, version (timestamp local YYYYMMDD_HHMMSS), model_type, architecture, training_date (UTC avec 'Z'), num_signatures, num_classes, metrics, model_path, is_active
 
 - **Configuration**: Fichier .env global à la racine
 - **Commandes Makefile**: cnn-train, cnn-detect, cnn-stats, cnn-add-signature, cnn-models, cnn-appliances
@@ -197,10 +197,12 @@ Service NILM basé sur CNN (Convolutional Neural Networks) pour détection super
 - **Paramètres CNN ajustables**:
   - `CNN_TRAINING_INTERVAL_HOURS`: 24
   - `CNN_DETECTION_INTERVAL_MINUTES`: 5
-  - `CNN_WINDOW_SIZE_MINUTES`: 60
+  - `CNN_WINDOW_SIZE_MINUTES`: 60 (convertie auto en sequence_length)
+    - Court (10-30min) : détecte événements brefs, moins de contexte
+    - Moyen (30-60min) : bon compromis général (recommandé)
+    - Long (60-120min) : capture cycles complets, meilleure précision
   - `CNN_MIN_POWER_THRESHOLD`: 30W
   - `CNN_MIN_DURATION_SECONDS`: 30s
-  - `CNN_SEQUENCE_LENGTH`: 600 (10min)
   - `CNN_BATCH_SIZE`: 32
   - `CNN_EPOCHS`: 50 (max, peut s'arrêter avant avec EarlyStopping)
   - `CNN_LEARNING_RATE`: 0.001
@@ -260,10 +262,12 @@ Service API REST FastAPI pour exposer les données Linky et NILM-CNN avec stream
   - `PATCH /api/appliances/{id}`: Mise à jour d'un appareil (nom, description)
   - `DELETE /api/appliances/{id}`: Suppression d'un appareil et ses données
   - `GET /api/detections`: Détections NILM-CNN sur une période (paramètre: hours)
+  - `DELETE /api/detections/{id}`: Suppression d'une détection spécifique
   - `POST /api/signatures`: Création de signature CNN (envoie tâche add_cnn_signature)
   - `POST /api/nilm/train`: Lance l'entraînement manuel du modèle CNN
   - `POST /api/nilm/detect`: Lance la détection manuelle d'appareils
   - `GET /api/nilm/models`: Historique paginé des modèles entraînés (paramètres: page, per_page)
+  - `DELETE /api/nilm/models/{id}`: Suppression d'un modèle CNN (BDD + filesystem, sauf modèle actif)
 
 - **Endpoints Streaming SSE**:
   - `GET /api/stream/consumption/latest?update_interval=5`: Stream temps réel de la consommation
@@ -277,7 +281,7 @@ Service API REST FastAPI pour exposer les données Linky et NILM-CNN avec stream
   - `cnn_detections`: Détections CNN en temps réel
 
 - **Configuration**: Fichier .env global à la racine
-- **Commandes Makefile**: backend, api-latest, api-history, api-detections
+- **Commandes Makefile**: backend, api-latest, api-history, api-detections, api-delete-detection
 - **URL**: http://localhost:8000
 - **Documentation**: http://localhost:8000/docs (Swagger UI)
 
@@ -513,6 +517,7 @@ Le fichier `Makefile` à la racine fournit des commandes pour gérer l'applicati
 | `make api-nilm-train` | Lance l'entraînement via l'API REST |
 | `make api-nilm-detect` | Lance la détection via l'API REST |
 | `make api-nilm-models` | Récupère l'historique des modèles via l'API |
+| `make api-nilm-delete-model ID=<id>` | Supprime un modèle via l'API (sauf le modèle actif) |
 
 ### Exemples d'utilisation
 
