@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  CardHeader,
   Typography,
   Alert,
   Snackbar,
@@ -18,8 +19,6 @@ import {
   IconButton,
   Pagination,
   CircularProgress,
-  Grid,
-  Divider,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -249,95 +248,80 @@ const NilmTraining = () => {
   };
 
   return (
-    <Box>
-      {/* En-tête avec bouton d'action */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={8}>
-              <Typography variant="h5" gutterBottom>
-                Gestion NILM - Entraînement
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Entraînez le modèle avec les signatures disponibles
-              </Typography>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Box display="flex" gap={1.5} justifyContent="flex-end">
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={trainLoading ? <CircularProgress size={20} /> : <TrainIcon />}
-                  onClick={handleTrain}
-                  disabled={trainLoading}
-                >
-                  {trainLoading ? 'Entraînement...' : 'Lancer entraînement'}
-                </Button>
-                <IconButton onClick={() => loadModels()} disabled={loading}>
-                  <RefreshIcon />
-                </IconButton>
-              </Box>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      {/* Historique des entraînements */}
+    <>
       <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Historique des entraînements ({total} modèle{total > 1 ? 's' : ''})
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-
-          {loading && models.length === 0 ? (
-            <Box display="flex" justifyContent="center" p={4}>
-              <CircularProgress />
+        <CardHeader
+          title="Historique des entraînements"
+          subheader={`${total} modèle${total !== 1 ? 's' : ''} entraîné${total !== 1 ? 's' : ''}`}
+          avatar={<TrainIcon />}
+          action={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                startIcon={trainLoading ? <CircularProgress size={16} /> : <TrainIcon />}
+                onClick={handleTrain}
+                disabled={trainLoading}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {trainLoading ? 'Entraînement...' : 'Lancer entraînement'}
+              </Button>
+              <IconButton onClick={() => loadModels()} disabled={loading} size="small">
+                <RefreshIcon />
+              </IconButton>
             </Box>
-          ) : models.length === 0 ? (
-            <Alert severity="info">
-              Aucun modèle entraîné. Lancez un premier entraînement pour commencer !
-            </Alert>
-          ) : (
-            <>
-              <TableContainer component={Paper} variant="outlined">
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Version</TableCell>
-                      <TableCell>Date</TableCell>
-                      <TableCell>Durée</TableCell>
-                      <TableCell>Signatures</TableCell>
-                      <TableCell>Classes</TableCell>
-                      <TableCell>Métriques</TableCell>
-                      <TableCell>Qualité</TableCell>
-                      <TableCell>État</TableCell>
-                      <TableCell align="center">Actions</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {models.map((model) => {
-                      const quality = getQualityScore(model.metrics);
-                      return (
-                        <TableRow key={model.id} hover>
-                          <TableCell>
-                            <Typography variant="body2" fontFamily="monospace">
-                              {model.version}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">
-                              {formatDate(model.training_date)}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={formatDuration(model.training_duration_seconds)}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell>
+          }
+        />
+        <CardContent>
+        {loading && models.length === 0 ? (
+          <Box display="flex" justifyContent="center" p={4}>
+            <CircularProgress />
+          </Box>
+        ) : models.length === 0 ? (
+          <Alert severity="info">
+            Aucun modèle entraîné. Lancez un premier entraînement pour commencer !
+          </Alert>
+        ) : (
+          <>
+            <TableContainer component={Paper} variant="outlined">
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Version</TableCell>
+                    <TableCell>Date</TableCell>
+                    <TableCell>Durée</TableCell>
+                    <TableCell>Signatures</TableCell>
+                    <TableCell>Classes</TableCell>
+                    <TableCell>Métriques</TableCell>
+                    <TableCell>Qualité</TableCell>
+                    <TableCell>État</TableCell>
+                    <TableCell align="center">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {models.map((model) => {
+                    const quality = getQualityScore(model.metrics);
+                    return (
+                      <TableRow key={model.id} hover>
+                        <TableCell>
+                          <Typography variant="body2" fontFamily="monospace">
+                            {model.version}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {formatDate(model.training_date)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={formatDuration(model.training_duration_seconds)}
+                            size="small"
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell>
                             <Chip
                               label={model.num_signatures}
                               size="small"
@@ -488,7 +472,7 @@ const NilmTraining = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </>
   );
 };
 
