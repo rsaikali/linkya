@@ -14,7 +14,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Chip,
   IconButton,
   Pagination,
@@ -284,10 +283,10 @@ const NilmTraining = () => {
           </Alert>
         ) : (
           <>
-            <TableContainer component={Paper} variant="outlined">
-              <Table>
+            <TableContainer sx={{ maxHeight: 600 }}>
+              <Table stickyHeader size="small">
                 <TableHead>
-                  <TableRow>
+                  <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                     <TableCell>Version</TableCell>
                     <TableCell>Date</TableCell>
                     <TableCell>Durée</TableCell>
