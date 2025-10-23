@@ -155,6 +155,7 @@ function DetectionsList() {
                   <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                     <TableCell>Appareil</TableCell>
                     <TableCell align="right">Début</TableCell>
+                    <TableCell align="right">Fin</TableCell>
                     <TableCell align="right">Durée</TableCell>
                     <TableCell align="right">Puissance (W)</TableCell>
                     <TableCell align="right">Énergie (Wh)</TableCell>
@@ -167,7 +168,7 @@ function DetectionsList() {
                   ))}
                   {loading && (
                     <TableRow>
-                      <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                      <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                         <CircularProgress size={32} />
                       </TableCell>
                     </TableRow>
@@ -230,6 +231,9 @@ function DetectionRow({ detection }) {
       </TableCell>
       <TableCell align="right" sx={{ fontSize: 'small' }}>
         {formatTime(startTime)}
+      </TableCell>
+      <TableCell align="right" sx={{ fontSize: 'small' }}>
+        {formatTime(endTime)}
       </TableCell>
       <TableCell align="right">
         <Typography variant="body2">

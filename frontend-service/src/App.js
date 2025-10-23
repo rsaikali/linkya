@@ -28,9 +28,9 @@ function App() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <LatestConsumption />
             <ConsumptionChart />
-            <NilmTraining />
-            <AppliancesList />
             <DetectionsList />
+            <AppliancesList />
+            <NilmTraining />
           </Box>
         </Container>
 

@@ -50,7 +50,7 @@ const NilmTraining = () => {
   const loadModels = async (currentPage = page) => {
     setLoading(true);
     try {
-      const response = await api.get(`/api/nilm/models?page=${currentPage}&per_page=10`);
+      const response = await api.get(`/api/nilm/models?page=${currentPage}&per_page=3`);
       setModels(response.data.models);
       setTotalPages(response.data.total_pages);
       setTotal(response.data.total);
