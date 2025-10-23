@@ -29,7 +29,6 @@ import {
 } from '@mui/material';
 import {
   PlayArrow as TrainIcon,
-  Search as DetectIcon,
   CheckCircle as SuccessIcon,
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
@@ -44,7 +43,6 @@ const NilmTraining = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [trainLoading, setTrainLoading] = useState(false);
-  const [detectLoading, setDetectLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   
   // Dialog de confirmation de suppression
@@ -119,24 +117,6 @@ const NilmTraining = () => {
       );
     } finally {
       setTrainLoading(false);
-    }
-  };
-
-    // Lancer la détection
-  const handleDetect = async () => {
-    setDetectLoading(true);
-    try {
-      const response = await api.post('/api/nilm/detect');
-      showSnackbar(
-        `Détection lancée (Task ID: ${response.data.task_id})`,
-        'success'
-      );
-    } catch (error) {
-      console.error('Erreur lors du lancement de la détection:', error);
-      const errorMsg = error.response?.data?.detail || 'Erreur lors du lancement de la détection';
-      showSnackbar(errorMsg, 'error');
-    } finally {
-      setDetectLoading(false);
     }
   };
 
@@ -270,20 +250,20 @@ const NilmTraining = () => {
 
   return (
     <Box>
-      {/* En-tête avec boutons d'actions */}
+      {/* En-tête avec bouton d'action */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12} md={8}>
               <Typography variant="h5" gutterBottom>
-                Gestion NILM
+                Gestion NILM - Entraînement
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Entraînez le modèle et lancez des détections d'appareils
+                Entraînez le modèle avec les signatures disponibles
               </Typography>
             </Grid>
-            <Grid item xs={12} md={6}>
-              <Box display="flex" gap={2} justifyContent="flex-end">
+            <Grid item xs={12} md={4}>
+              <Box display="flex" gap={1.5} justifyContent="flex-end">
                 <Button
                   variant="contained"
                   color="primary"
@@ -291,16 +271,7 @@ const NilmTraining = () => {
                   onClick={handleTrain}
                   disabled={trainLoading}
                 >
-                  {trainLoading ? 'Entraînement...' : 'Lancer Entraînement'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  startIcon={detectLoading ? <CircularProgress size={20} /> : <DetectIcon />}
-                  onClick={handleDetect}
-                  disabled={detectLoading}
-                >
-                  {detectLoading ? 'Détection...' : 'Lancer Détection'}
+                  {trainLoading ? 'Entraînement...' : 'Lancer entraînement'}
                 </Button>
                 <IconButton onClick={() => loadModels()} disabled={loading}>
                   <RefreshIcon />

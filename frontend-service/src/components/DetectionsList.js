@@ -29,8 +29,8 @@ import {
   Button,
   Snackbar,
 } from '@mui/material';
-import { Timeline, Delete } from '@mui/icons-material';
-import { apiService } from '../services/api';
+import { Timeline, Delete, Search as DetectIcon } from '@mui/icons-material';
+import api, { apiService } from '../services/api';
 
 // Options de période disponibles
 const TIME_PERIODS = [
@@ -55,6 +55,7 @@ function DetectionsList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [detectionToDelete, setDetectionToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [detectLoading, setDetectLoading] = useState(false);
 
   const fetchDetections = useCallback(async () => {
     try {
@@ -150,6 +151,31 @@ function DetectionsList() {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  const handleDetect = async () => {
+    setDetectLoading(true);
+    try {
+      const response = await api.post('/api/nilm/detect');
+      setSnackbar({
+        open: true,
+        message: `Détection lancée (Task ID: ${response.data.task_id})`,
+        severity: 'success',
+      });
+      
+      // Rafraîchir la liste après 5 secondes
+      setTimeout(() => fetchDetections(), 5000);
+    } catch (error) {
+      console.error('Erreur lors du lancement de la détection:', error);
+      const errorMsg = error.response?.data?.detail || 'Erreur lors du lancement de la détection';
+      setSnackbar({
+        open: true,
+        message: errorMsg,
+        severity: 'error',
+      });
+    } finally {
+      setDetectLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <Card>
@@ -172,8 +198,19 @@ function DetectionsList() {
           subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} enregistrée${totalDetections !== 1 ? 's' : ''}`}
           avatar={<Timeline />}
           action={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <FormControl size="small" sx={{ minWidth: 180 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                startIcon={detectLoading ? <CircularProgress size={16} /> : <DetectIcon />}
+                onClick={handleDetect}
+                disabled={detectLoading}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {detectLoading ? 'Détection...' : 'Lancer détection'}
+              </Button>
+              <FormControl size="small" sx={{ minWidth: 160 }}>
                 <Select
                   value={selectedPeriod}
                   onChange={handlePeriodChange}
