@@ -176,19 +176,13 @@ const NilmTraining = () => {
     return (
       <Box>
         <Typography variant="caption" display="block">
-          Train Acc: <strong>{(train_accuracy * 100).toFixed(1)}%</strong>
+          Accuracy: <strong>{(train_accuracy * 100).toFixed(1)}%</strong> / <strong>{(val_accuracy * 100).toFixed(1)}%</strong>
         </Typography>
         <Typography variant="caption" display="block">
-          Val Acc: <strong>{(val_accuracy * 100).toFixed(1)}%</strong>
-        </Typography>
-        <Typography variant="caption" display="block">
-          Train Loss: <strong>{train_loss.toFixed(4)}</strong>
-        </Typography>
-        <Typography variant="caption" display="block">
-          Val Loss: <strong>{val_loss.toFixed(4)}</strong>
+          Loss: <strong>{train_loss.toFixed(4)}</strong> / <strong>{val_loss.toFixed(4)}</strong>
         </Typography>
         <Typography variant="caption" display="block" color="text.secondary">
-          Epochs: {epochs_trained}
+          (Train/Val · {epochs_trained} epochs)
         </Typography>
       </Box>
     );
