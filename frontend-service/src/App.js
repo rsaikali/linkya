@@ -7,6 +7,7 @@ import theme from './theme';
 import LatestConsumption from './components/LatestConsumption';
 import ConsumptionChart from './components/ConsumptionChart';
 import AppliancesList from './components/AppliancesList';
+import NilmTraining from './components/NilmTraining';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <LatestConsumption />
             <ConsumptionChart />
+            <NilmTraining />
             <AppliancesList />
           </Box>
         </Container>

@@ -110,6 +110,9 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
         Statut et métriques de l'entraînement
     """
     try:
+        import time
+        start_time = time.time()
+        
         logger.info("Démarrage de l'entraînement du modèle CNN...")
         
         # Récupérer toutes les signatures
@@ -137,6 +140,9 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
                 'num_signatures': len(signatures)
             }
         
+        # Calculer la durée d'entraînement
+        training_duration = int(time.time() - start_time)
+        
         # Sauvegarder les informations du modèle en base
         from sqlalchemy import text
         import json
@@ -151,11 +157,14 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
             
             query = text("""
                 INSERT INTO cnn_models 
-                (version, model_type, architecture, num_signatures, num_classes, 
-                 metrics, model_path, is_active)
+                (version, model_type, architecture, training_date, 
+                 num_signatures, num_classes, metrics, model_path, 
+                 is_active, training_duration_seconds)
                 VALUES 
-                (:version, :model_type, cast(:architecture as jsonb), :num_signatures, :num_classes,
-                 cast(:metrics as jsonb), :model_path, :is_active)
+                (:version, :model_type, cast(:architecture as jsonb), 
+                 :training_date, :num_signatures, :num_classes,
+                 cast(:metrics as jsonb), :model_path, :is_active,
+                 :training_duration_seconds)
                 RETURNING id
             """)
             
@@ -165,11 +174,13 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
                     'version': version,
                     'model_type': 'CNN1D',
                     'architecture': json.dumps(architecture),
+                    'training_date': datetime.utcnow(),
                     'num_signatures': len(signatures),
                     'num_classes': len(cnn_model.class_names),
                     'metrics': json.dumps(metrics, default=str),
                     'model_path': f"{settings.cnn_model_path}/model_{version}.keras",
-                    'is_active': True
+                    'is_active': True,
+                    'training_duration_seconds': training_duration
                 }
             )
             
@@ -181,7 +192,7 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
                 {'id': model_id}
             )
         
-        logger.info(f"Modèle {version} entraîné avec succès: accuracy={metrics.get('val_accuracy', 0):.3f}")
+        logger.info(f"Modèle {version} entraîné avec succès en {training_duration}s: accuracy={metrics.get('val_accuracy', 0):.3f}")
         
         return {
             'status': 'success',
@@ -189,6 +200,7 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
             'num_signatures': len(signatures),
             'num_classes': len(cnn_model.class_names),
             'metrics': metrics,
+            'training_duration_seconds': training_duration,
             'timestamp': datetime.utcnow().isoformat()
         }
         

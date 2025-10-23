@@ -251,6 +251,18 @@ cnn-models: ## Liste les modèles CNN entraînés
 		ORDER BY training_date DESC \
 		LIMIT 5;" 2>/dev/null || echo "❌ Aucun modèle CNN trouvé"
 
+api-nilm-train: ## Lance l'entraînement NILM via l'API
+	@echo "🧠 Lancement de l'entraînement via l'API..."
+	@curl -X POST http://localhost:8000/api/nilm/train | python3 -m json.tool
+
+api-nilm-detect: ## Lance la détection NILM via l'API
+	@echo "🔍 Lancement de la détection via l'API..."
+	@curl -X POST http://localhost:8000/api/nilm/detect | python3 -m json.tool
+
+api-nilm-models: ## Récupère les modèles NILM via l'API
+	@echo "📚 Modèles NILM (page 1):"
+	@curl -s "http://localhost:8000/api/nilm/models?page=1&per_page=5" | python3 -m json.tool
+
 redis-cli: ## Se connecte à Redis via redis-cli
 	docker exec -it nilmia-redis redis-cli
 

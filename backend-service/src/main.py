@@ -398,6 +398,118 @@ async def create_signature(signature: SignatureCreate):
         )
 
 
+@app.post("/api/nilm/train")
+async def trigger_nilm_training():
+    """
+    Lance l'entraînement manuel du modèle NILM-CNN.
+    
+    Envoie une tâche Celery pour entraîner le modèle CNN avec toutes les signatures disponibles.
+    
+    Returns:
+        Status de la tâche Celery
+    """
+    try:
+        from .config import get_celery_app
+        
+        celery_app = get_celery_app()
+        logger.info("Lancement de l'entraînement NILM-CNN")
+        
+        # Envoyer la tâche à la queue NILM-CNN
+        task = celery_app.send_task(
+            'train_cnn_model',
+            queue='nilm_cnn',
+            routing_key='nilm_cnn.train_cnn_model'
+        )
+        
+        logger.info(f"Tâche d'entraînement créée: {task.id}")
+        
+        return {
+            "status": "pending",
+            "message": "Entraînement du modèle NILM-CNN lancé",
+            "task_id": str(task.id),
+        }
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
+@app.post("/api/nilm/detect")
+async def trigger_nilm_detection():
+    """
+    Lance la détection manuelle d'appareils avec NILM-CNN.
+    
+    Envoie une tâche Celery pour détecter les appareils dans les données récentes.
+    
+    Returns:
+        Status de la tâche Celery
+    """
+    try:
+        from .config import get_celery_app
+        
+        celery_app = get_celery_app()
+        logger.info("Lancement de la détection NILM-CNN")
+        
+        # Envoyer la tâche à la queue NILM-CNN
+        task = celery_app.send_task(
+            'detect_cnn_appliances',
+            queue='nilm_cnn',
+            routing_key='nilm_cnn.detect_cnn_appliances'
+        )
+        
+        logger.info(f"Tâche de détection créée: {task.id}")
+        
+        return {
+            "status": "pending",
+            "message": "Détection NILM-CNN lancée",
+            "task_id": str(task.id),
+        }
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
+@app.get("/api/nilm/models")
+async def get_nilm_models(
+    page: int = Query(default=1, ge=1, description="Numéro de page"),
+    per_page: int = Query(default=10, ge=1, le=100, description="Nombre d'éléments par page"),
+):
+    """
+    Récupère l'historique des modèles NILM-CNN entraînés avec pagination.
+    
+    Args:
+        page: Numéro de page (commence à 1)
+        per_page: Nombre de modèles par page (1-100)
+    
+    Returns:
+        Liste paginée des modèles avec leurs métriques
+    """
+    try:
+        models = db_manager.get_cnn_models_paginated(page=page, per_page=per_page)
+        
+        return {
+            "page": page,
+            "per_page": per_page,
+            "total": models["total"],
+            "total_pages": models["total_pages"],
+            "models": models["models"],
+        }
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
 # ============================================================================
 # Server-Sent Events (SSE) - Streaming en temps réel
 # ============================================================================

@@ -384,6 +384,85 @@ class DatabaseManager:
                 return float(result[0])
             return None
 
+    def get_cnn_models_paginated(
+        self, page: int = 1, per_page: int = 10
+    ) -> dict[str, Any]:
+        """
+        Récupère les modèles CNN avec pagination.
+
+        Args:
+            page: Numéro de page (commence à 1)
+            per_page: Nombre de modèles par page
+
+        Returns:
+            Dictionnaire avec total, total_pages et liste de modèles
+        """
+        # Calculer l'offset
+        offset = (page - 1) * per_page
+
+        # Requête pour le total
+        count_query = text("""
+            SELECT COUNT(*) FROM cnn_models
+        """)
+
+        # Requête pour les modèles paginés
+        query = text("""
+            SELECT
+                id,
+                version,
+                model_type,
+                architecture,
+                training_date,
+                num_signatures,
+                num_classes,
+                metrics,
+                model_path,
+                is_active,
+                training_duration_seconds
+            FROM cnn_models
+            ORDER BY training_date DESC
+            LIMIT :limit OFFSET :offset
+        """)
+
+        with self.engine.connect() as conn:
+            # Récupérer le total
+            total = conn.execute(count_query).scalar() or 0
+            
+            # Calculer le nombre total de pages
+            total_pages = (
+                (total + per_page - 1) // per_page if total > 0 else 0
+            )
+
+            # Récupérer les modèles
+            result = conn.execute(
+                query,
+                {"limit": per_page, "offset": offset}
+            ).fetchall()
+
+            models = []
+            for row in result:
+                models.append({
+                    "id": row[0],
+                    "version": row[1],
+                    "model_type": row[2],
+                    "architecture": row[3],
+                    "training_date": (
+                        row[4].isoformat() if row[4] else None
+                    ),
+                    "num_signatures": row[5],
+                    "num_classes": row[6],
+                    "metrics": row[7],
+                    "model_path": row[8],
+                    "is_active": row[9],
+                    "training_duration_seconds": row[10],
+                })
+
+            return {
+                "total": total,
+                "total_pages": total_pages,
+                "models": models,
+            }
+
 
 # Instance globale du gestionnaire de base de données
 db_manager = DatabaseManager()

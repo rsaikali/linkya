@@ -100,6 +100,7 @@ class DatabaseManager:
             Column('metrics', JSON),  # Métriques de performance (accuracy, loss, etc.)
             Column('model_path', String(500)),
             Column('is_active', Boolean, default=False),
+            Column('training_duration_seconds', Integer),  # Durée d'entraînement (secondes)
             Index('idx_cnn_models_version', 'version'),
             Index('idx_cnn_models_active', 'is_active')
         )

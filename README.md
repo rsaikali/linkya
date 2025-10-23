@@ -65,6 +65,8 @@ La table `linky_realtime` contient les données de consommation Linky :
 - 🗂️ Autocomplete pour sélectionner ou créer des appareils
 - ⏱️ Ajustement fin des plages horaires (au niveau des secondes)
 - 💾 Création instantanée de signatures entraînement NILM
+- 🤖 **Gestion de l'entraînement NILM** avec lancement manuel et historique paginé
+- 📊 **Visualisation des métriques** d'entraînement (accuracy, loss, qualité)
 - 🔄 Streaming SSE pour mise à jour en temps réel sans polling
 - 🎨 Design responsive avec Material-UI
 

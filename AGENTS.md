@@ -245,8 +245,13 @@ Service API REST FastAPI pour exposer les données Linky et NILM-CNN avec stream
   - `GET /api/consumption/latest`: Dernière mesure de consommation
   - `GET /api/consumption/history`: Historique agrégé (paramètres: hours, interval)
   - `GET /api/appliances`: Liste de tous les appareils CNN connus
+  - `PATCH /api/appliances/{id}`: Mise à jour d'un appareil (nom, description)
+  - `DELETE /api/appliances/{id}`: Suppression d'un appareil et ses données
   - `GET /api/detections`: Détections NILM-CNN sur une période (paramètre: hours)
   - `POST /api/signatures`: Création de signature CNN (envoie tâche add_cnn_signature)
+  - `POST /api/nilm/train`: Lance l'entraînement manuel du modèle CNN
+  - `POST /api/nilm/detect`: Lance la détection manuelle d'appareils
+  - `GET /api/nilm/models`: Historique paginé des modèles entraînés (paramètres: page, per_page)
 
 - **Endpoints Streaming SSE**:
   - `GET /api/stream/consumption/latest?update_interval=5`: Stream temps réel de la consommation
@@ -297,6 +302,8 @@ Service interface utilisateur React avec Material-UI et streaming SSE.
   - `App.js`: Composant principal avec AppBar et layout
   - `LatestConsumption.js`: Carte affichant la dernière consommation (SSE + fallback polling)
   - `ConsumptionChart.js`: Graphique interactif avec détections NILM (SSE)
+  - `AppliancesList.js`: Liste des appareils détectés avec gestion (édition, suppression)
+  - `NilmTraining.js`: Gestion de l'entraînement NILM et historique des modèles
   - `theme.js`: Thème Material-UI personnalisé
   - `services/api.js`: Service de communication avec le backend (REST)
   - `services/sse.js`: Service de streaming SSE (EventSource API)
@@ -491,6 +498,9 @@ Le fichier `Makefile` à la racine fournit des commandes pour gérer l'applicati
 | `make nilm-detect` | Lance une détection manuelle d'appareils |
 | `make nilm-stats` | Affiche les statistiques de détection NILM |
 | `make nilm-models` | Liste les modèles ML entraînés |
+| `make api-nilm-train` | Lance l'entraînement via l'API REST |
+| `make api-nilm-detect` | Lance la détection via l'API REST |
+| `make api-nilm-models` | Récupère l'historique des modèles via l'API |
 
 ### Exemples d'utilisation
 
