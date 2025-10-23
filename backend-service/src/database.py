@@ -14,13 +14,20 @@ def format_datetime_utc(dt: datetime | None) -> str | None:
     Formate un datetime en ISO string avec timezone UTC explicite.
     
     Args:
-        dt: Datetime à formater (naive, supposé UTC)
+        dt: Datetime à formater (aware ou naive, converti en UTC)
         
     Returns:
         String ISO avec suffixe 'Z' ou None
     """
     if dt is None:
         return None
+    
+    # Si le datetime a une timezone, le convertir en UTC
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    
+    # Retourner l'ISO string sans timezone + 'Z' pour indiquer UTC
     return dt.isoformat() + 'Z'
 
 

@@ -113,8 +113,19 @@ const LatestConsumption = () => {
   }
 
   const formatDate = (isoString) => {
-    const date = new Date(isoString);
-    return date.toLocaleString('fr-FR');
+    if (!isoString) return 'N/A';
+    
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) {
+        console.warn('Date invalide:', isoString);
+        return 'Date invalide';
+      }
+      return date.toLocaleString('fr-FR');
+    } catch (error) {
+      console.error('Erreur de formatage de date:', error, isoString);
+      return 'Erreur';
+    }
   };
 
   return (
