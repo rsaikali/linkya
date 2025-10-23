@@ -6,16 +6,16 @@ Plateforme complète pour la synchronisation et l'analyse intelligente des donn�
 
 Nous utilisons:
 - **Docker Compose** pour l'orchestration de l'application
-- **Python 3.13** (3.12 pour nilm-service avec CUDA) avec **uv** pour la gestion des dépendances
+- **Python 3.13** (3.12 pour nilm-cnn-service) avec **uv** pour la gestion des dépendances
 - **TimescaleDB** pour le stockage optimisé des séries temporelles
 - **Celery + Redis** pour la gestion des tâches asynchrones
-- **PyTorch avec CUDA** pour l'accélération GPU du machine learning
+- **TensorFlow/Keras** pour le machine learning CNN
 
 Keep it simple, pas d'over engineering, mais reste complet dans tes actions.
-Ne crée pas de scripts inutiles, efface les une fois que tu les as utilisés et qu'ils sont inutiles.
 Chaque service a son propre Dockerfile et est documenté dans ce fichier.
 Mets à jour périodiquement cette documentation au fur et à mesure de l'évolution du projet.
 Pas de fichiers de documentation et de rapports inutiles de toutes tes actions, uniquement ce fichier AGENTS.md et le README.md à la racine.
+Ne crée pas de scripts inutiles, efface les une fois que tu les as utilisés et qu'ils sont inutiles.
 
 ## Configuration
 
@@ -115,94 +115,107 @@ Service de synchronisation des données Linky depuis MySQL vers TimescaleDB.
 
 ---
 
-### nilm-service
-Service d'analyse NILM (Non-Intrusive Load Monitoring) pour détecter automatiquement les appareils électriques.
+### nilm-cnn-service (service NILM principal)
+Service NILM basé sur CNN (Convolutional Neural Networks) pour détection supervisée d'appareils électriques.
 
-- **Langage**: Python 3.12 avec support GPU CUDA
-- **Image**: Ubuntu 24.04 + Python 3.12 + CUDA 12.1
+- **Langage**: Python 3.12 avec TensorFlow/Keras
+- **Image**: tensorflow/tensorflow:latest-gpu (Ubuntu + CUDA 12.3 + cuDNN 9)
+- **GPU**: Support NVIDIA CUDA complet avec runtime nvidia
 - **Dépendances**:
   - celery[redis]>=5.4.0
   - psycopg[binary]>=3.2.1
   - sqlalchemy>=2.0.35
   - pydantic>=2.9.2
-  - pypots>=0.9.0 (analyse séries temporelles)
-  - torch>=2.5.0 (PyTorch avec CUDA)
+  - tensorflow>=2.18.0
   - numpy>=2.0.0
   - pandas>=2.2.0
   - scikit-learn>=1.5.0
   - scipy>=1.14.0
 
 - **Containers Docker**:
-  - `nilm-worker`: Worker Celery avec accès GPU (queue: nilm, pool: solo)
-  - `nilm-beat`: Planificateur Celery Beat pour les tâches périodiques
-  - `init-nilm-db`: Initialisation des tables NILM au démarrage
+  - `cnn-worker`: Worker Celery pour CNN (queue: nilm_cnn, pool: solo, runtime: nvidia)
+  - `cnn-beat`: Planificateur Celery Beat
+  - `init-cnn-db`: Initialisation des tables CNN au démarrage
 
 - **Fonctionnalités**:
-  - Détection automatique des signatures d'appareils électriques complexes
-  - Utilisation de PyPOTS pour l'analyse de séries temporelles
-    - Clustering CRLI pour identifier les patterns de consommation
-    - Imputation SAITS pour gérer les données manquantes
-  - Training périodique automatique (toutes les 24h par défaut)
-  - Détection en temps réel toutes les 5 minutes
-  - Support CUDA/GPU pour accélération des calculs ML
-  - API Celery pour ajout manuel de signatures par l'utilisateur
-  - Validation et correction des détections
-  - Stockage des modèles versionnés et métriques de performance
+  - **Apprentissage supervisé** avec signatures manuelles soumises par utilisateur
+  - Détection de **signatures complexes** (cycles, formes, variations temporelles)
+  - **Support multi-modes** par appareil (éco, rapide, intensif, etc.)
+  - **Désagrégation** de la consommation par appareil
+  - **Entraînement continu** avec nouvelles données
+  - Feature engineering avancé (FFT, gradients, autocorrélation)
+  - Augmentation de données (bruit, décalage, scaling)
+  - CPU/GPU compatible (pas de CUDA obligatoire)
 
-- **Architecture ML**:
-  - **Features extraction**: 
-    - Puissance moyenne, écart-type, min, max
-    - Variations et gradients temporels
-    - Détection de cycles et patterns répétitifs
-    - Indices de stabilité
-  - **Clustering CRLI**: Identification des états de consommation
-  - **Imputation SAITS**: Gestion robuste des données manquantes
-  - **Détection d'événements**: Analyse des transitions entre clusters
-  - **Scoring**: Calcul de confiance basé sur la stabilité et durée
+- **Architecture CNN**:
+  - **Modèle**: CNN 1D avec 3 couches convolutionnelles
+  - **Features extraites**:
+    - Statistiques: moyenne, écart-type, min, max, médiane, quartiles
+    - Gradients et changements de direction
+    - FFT (analyse fréquentielle, fréquence dominante)
+    - Autocorrélation (détection de cycles)
+  - **Couches**:
+    - Conv1D (64 filtres, kernel 5) + BatchNorm + MaxPool + Dropout
+    - Conv1D (128 filtres, kernel 5) + BatchNorm + MaxPool + Dropout
+    - Conv1D (256 filtres, kernel 3) + BatchNorm + MaxPool + Dropout
+    - Dense (256) + BatchNorm + Dropout
+    - Dense (128) + Dropout
+    - Dense (num_classes, softmax)
+  - **Optimisation**: Adam avec learning rate adaptatif
+  - **Early stopping** et **ReduceLROnPlateau**
+  - **Séquences**: 600 timesteps (10min à 1Hz)
 
 - **Tâches Celery**:
-  - `init_nilm_database`: Initialise les tables NILM (auto)
-  - `train_nilm_model`: Entraînement du modèle ML (auto, 24h)
-  - `detect_appliances_task`: Détection d'appareils (auto, 5min)
-  - `add_manual_signature`: Ajout signature manuelle (manuel)
-  - `validate_detection`: Validation/correction détection (manuel)
-  - `get_detection_stats`: Statistiques NILM (manuel)
+  - `init_cnn_database`: Initialise les tables CNN (auto)
+  - `train_cnn_model`: Entraîne le modèle CNN (auto 24h, manuel)
+  - `detect_cnn_appliances`: Détecte appareils avec fenêtre glissante (auto 5min)
+  - `add_cnn_signature`: Ajoute signature manuelle utilisateur (manuel)
+  - `get_cnn_stats`: Statistiques CNN (auto 5min)
 
 - **Tables TimescaleDB**:
-  - `appliances`: Appareils détectés avec signatures
-    - id, name, description, avg_power, power_std, is_validated, created_at, updated_at
-  - `appliance_signatures`: Données d'entraînement (manuelles ou auto)
-    - id, appliance_id, start_time, end_time, avg_power, power_std, features, is_validated
-  - `detection_events`: Événements de détection avec timestamps et scores
-    - id, appliance_id, start_time, end_time, avg_power, energy_consumed, confidence_score
-  - `model_versions`: Versionnement des modèles ML
-    - id, version, model_type, training_date, is_active, metrics, model_path
+  - `cnn_appliances`: Appareils avec métadonnées (statistiques calculées dynamiquement par le backend)
+    - id, name, description, created_at, updated_at
+    - Note: num_signatures, avg_power, power_std, avg_duration supprimés (calculés dynamiquement depuis cnn_signatures)
+  - `cnn_signatures`: Signatures soumises par utilisateur (sans duplication de données)
+    - id, appliance_id, start_time, end_time, mode, avg_power, power_std, energy_consumed, features, created_at
+    - Note: raw_data supprimé - les données sont récupérées depuis linky_realtime via start_time/end_time
+  - `cnn_detections`: Détections automatiques
+    - id, appliance_id, signature_id, start_time, end_time, avg_power, energy_consumed, confidence_score, prediction_class, features
+  - `cnn_models`: Modèles CNN versionnés
+    - id, version, model_type, architecture, training_date, num_signatures, num_classes, metrics, model_path, is_active
 
 - **Configuration**: Fichier .env global à la racine
-- **Commandes Makefile**: nilm-train, nilm-detect, nilm-stats, nilm-models
+- **Commandes Makefile**: cnn-train, cnn-detect, cnn-stats, cnn-add-signature, cnn-models, cnn-appliances
 - **Volumes**:
-  - `./nilm-service/src:/app/src` (code source)
-  - `./models:/app/models` (modèles ML persistés)
-  - `nilm_uv_cache` (cache uv pour builds rapides)
+  - `./nilm-cnn-service/src:/app/src` (code source)
+  - `./models:/app/models` (modèles CNN persistés)
 
-- **Cache de build optimisé**:
-  - BuildKit cache avec persistence locale (.buildcache/)
-  - Mounted cache UV pour réutilisation des packages Python
-  - Volume Docker persistant (nilm_uv_cache)
-  - Réduit les temps de rebuild de 90% (5-10min → 30-60s)
-  - Commande: `DOCKER_BUILDKIT=1 docker-compose build nilm-worker`
+- **Paramètres CNN ajustables**:
+  - `CNN_TRAINING_INTERVAL_HOURS`: 24
+  - `CNN_DETECTION_INTERVAL_MINUTES`: 5
+  - `CNN_WINDOW_SIZE_MINUTES`: 60
+  - `CNN_MIN_POWER_THRESHOLD`: 30W
+  - `CNN_MIN_DURATION_SECONDS`: 30s
+  - `CNN_SEQUENCE_LENGTH`: 600 (10min)
+  - `CNN_BATCH_SIZE`: 32
+  - `CNN_EPOCHS`: 50
+  - `CNN_LEARNING_RATE`: 0.001
+  - `CNN_VALIDATION_SPLIT`: 0.2
+  - `CNN_AUGMENTATION_ENABLED`: true
+  - `CNN_NOISE_FACTOR`: 0.02
+  - `CNN_SHIFT_RANGE`: 30s
 
-- **Paramètres CUDA ajustables** (selon GPU):
-  - `BATCH_SIZE`: 2 (1 pour GPU < 4GB)
-  - `MAX_SAMPLES_TRAINING`: 1000 (500 pour GPU < 4GB)
-  - `IMPUTATION_EPOCHS`: 5
-  - `CLUSTERING_EPOCHS`: 20
-  - `MODEL_HIDDEN_SIZE`: 64 (32 pour GPU < 4GB)
+- **Workflow utilisateur**:
+  1. Observer un pic de consommation
+  2. Soumettre signature (start_time, end_time, appliance, mode)
+  3. Entraînement auto ou manuel
+  4. Détection automatique avec fenêtre glissante
+  5. Visualisation des appareils et consommation désagrégée
 
 ---
 
 ### backend-service
-Service API REST FastAPI pour exposer les données Linky et NILM avec streaming SSE.
+Service API REST FastAPI pour exposer les données Linky et NILM-CNN avec streaming SSE.
 
 - **Langage**: Python 3.12
 - **Image**: python:3.12-slim-bookworm
@@ -218,25 +231,33 @@ Service API REST FastAPI pour exposer les données Linky et NILM avec streaming 
   - `backend`: Serveur FastAPI avec uvicorn (port 8000)
 
 - **Fonctionnalités**:
-  - API REST pour accès aux données TimescaleDB
+  - API REST pour accès aux données TimescaleDB (linky_realtime et tables CNN)
   - Streaming SSE (Server-Sent Events) pour mise à jour temps réel
   - CORS configuré pour le frontend React
   - Endpoints de santé et monitoring
   - Agrégation intelligente des données (time_bucket)
   - Documentation automatique OpenAPI/Swagger
+  - Intégration avec nilm-cnn-service via Celery
 
 - **Endpoints REST**:
   - `GET /`: Informations sur l'API et liste des endpoints
   - `GET /health`: Healthcheck du service
   - `GET /api/consumption/latest`: Dernière mesure de consommation
   - `GET /api/consumption/history`: Historique agrégé (paramètres: hours, interval)
-  - `GET /api/appliances`: Liste de tous les appareils connus
-  - `GET /api/detections`: Détections NILM sur une période (paramètre: hours)
+  - `GET /api/appliances`: Liste de tous les appareils CNN connus
+  - `GET /api/detections`: Détections NILM-CNN sur une période (paramètre: hours)
+  - `POST /api/signatures`: Création de signature CNN (envoie tâche add_cnn_signature)
 
 - **Endpoints Streaming SSE**:
   - `GET /api/stream/consumption/latest?update_interval=5`: Stream temps réel de la consommation
-  - `GET /api/stream/detections?hours=24&update_interval=10`: Stream des détections NILM
+  - `GET /api/stream/detections?hours=24&update_interval=10`: Stream des détections NILM-CNN
   - `GET /api/stream/appliances?update_interval=30`: Stream de la liste des appareils
+
+- **Tables utilisées**:
+  - `linky_realtime`: Données de consommation Linky
+  - `cnn_appliances`: Appareils détectés par CNN
+  - `cnn_signatures`: Signatures d'entraînement CNN
+  - `cnn_detections`: Détections CNN en temps réel
 
 - **Configuration**: Fichier .env global à la racine
 - **Commandes Makefile**: backend, api-latest, api-history, api-detections
@@ -317,7 +338,7 @@ Base de données TimescaleDB pour stocker les données Linky et NILM.
 ---
 
 ### redis
-Broker Redis pour Celery (partagé entre sync-service et nilm-service).
+Broker Redis pour Celery (partagé entre tous les services).
 
 - **Image**: redis:7-alpine
 - **Container**: nilmia-redis
@@ -373,9 +394,10 @@ services:
   flower               # Interface monitoring Celery (port 5555)
   pgadmin              # Interface admin TimescaleDB (port 8080)
   init-db              # Initialisation base TimescaleDB (oneshot)
-  nilm-worker          # Worker Celery NILM avec GPU
-  nilm-beat            # Planificateur Celery pour NILM
-  init-nilm-db         # Initialisation tables NILM (oneshot)
+  cnn-worker           # Worker Celery NILM-CNN avec GPU optionnel
+  cnn-beat             # Planificateur Celery pour NILM-CNN
+  init-cnn-db          # Initialisation tables NILM-CNN (oneshot)
+  tensorboard          # Interface visualisation TensorBoard (port 6006)
   backend              # API REST FastAPI (port 8000)
   frontend             # Interface React (port 3000)
 ```
@@ -383,12 +405,13 @@ services:
 ### Dépendances entre services
 
 - `sync-worker` et `sync-beat` dépendent de `timescaledb` et `redis` (healthcheck)
-- `nilm-worker` et `nilm-beat` dépendent de `timescaledb`, `redis` et `sync-worker`
+- `cnn-worker` et `cnn-beat` dépendent de `timescaledb`, `redis` et `sync-worker`
 - `init-db` s'exécute une fois au démarrage (restart: no)
-- `init-nilm-db` s'exécute après `init-db` (restart: no)
+- `init-cnn-db` s'exécute après `init-db` (restart: no)
 - `backend` dépend de `timescaledb` et `sync-worker`
 - `frontend` dépend de `backend` (healthcheck)
 - `flower` et `pgadmin` dépendent de leurs services respectifs
+- `tensorboard` utilise le volume `./models` partagé avec `cnn-worker` et `cnn-beat`
 
 ### Volumes persistants
 
@@ -397,18 +420,18 @@ volumes:
   timescaledb_data    # Données PostgreSQL/TimescaleDB
   redis_data          # Données Redis (AOF)
   pgadmin_data        # Configuration pgAdmin
-  nilm_uv_cache       # Cache uv pour builds NILM rapides
+  nilm_uv_cache       # Cache uv pour builds NILM-CNN rapides
 ```
 
 ### Réseau
 
 - Un seul réseau bridge: `nilmia-network`
 - Tous les services communiquent via ce réseau interne
-- Ports exposés: 3000, 5432, 5555, 6379, 8000, 8080
+- Ports exposés: 3000, 5432, 5555, 6006, 6379, 8000, 8080
 
 ### Configuration GPU
 
-Le service `nilm-worker` utilise le GPU via la configuration:
+Le service `cnn-worker` peut utiliser le GPU via la configuration (optionnel, fallback CPU):
 ```yaml
 deploy:
   resources:
@@ -513,14 +536,14 @@ nilmia/
 │       ├── database.py           # Gestion bases MySQL/TimescaleDB
 │       └── tasks.py              # Tâches Celery (sync, stats)
 │
-├── nilm-service/                 # Service NILM (ML)
-│   ├── Dockerfile                # Python 3.12 + CUDA 12.1 + uv
-│   ├── pyproject.toml            # Dépendances Python (PyTorch, PyPOTS)
+├── nilm-cnn-service/             # Service NILM-CNN (ML supervisé)
+│   ├── Dockerfile                # Python 3.12 + TensorFlow + uv
+│   ├── pyproject.toml            # Dépendances Python (TensorFlow, Keras)
 │   └── src/
 │       ├── __init__.py
-│       ├── config.py             # Configuration NILM
-│       ├── database.py           # Gestion tables NILM
-│       ├── nilm.py               # Modèles ML (CRLI, SAITS)
+│       ├── config.py             # Configuration NILM-CNN
+│       ├── database.py           # Gestion tables CNN
+│       ├── cnn_nilm.py           # Modèles CNN 1D
 │       └── tasks.py              # Tâches Celery (train, detect)
 │
 ├── backend-service/              # Service API REST FastAPI
@@ -679,15 +702,15 @@ make clean
 make start
 ```
 
-**Erreur CUDA Out of Memory (NILM)**
+**Erreur mémoire lors de l'entraînement CNN**
 ```bash
 # Réduire les paramètres dans .env
-BATCH_SIZE=1
-MAX_SAMPLES_TRAINING=500
-MODEL_HIDDEN_SIZE=32
+CNN_BATCH_SIZE=16
+CNN_SEQUENCE_LENGTH=300
+CNN_EPOCHS=30
 
-# Redémarrer le service NILM
-docker-compose restart nilm-worker nilm-beat
+# Redémarrer le service CNN
+docker-compose restart cnn-worker cnn-beat
 ```
 
 **Base de données corrompue**
@@ -709,16 +732,16 @@ docker exec nilmia-sync-worker python -c "from src.database import db_manager; d
 docker exec nilmia-sync-worker celery -A src.tasks.celery_app call full_sync
 ```
 
-**Modèle NILM ne détecte rien**
+**Modèle CNN ne détecte rien**
 ```bash
-# Vérifier qu'il y a assez de données (48h minimum)
-make stats
+# Vérifier qu'il y a assez de signatures
+make cnn-stats
 
 # Vérifier les modèles
-make nilm-models
+make cnn-models
 
 # Ré-entraîner manuellement
-make nilm-train
+make cnn-train
 ```
 
 ### Logs utiles
@@ -729,11 +752,11 @@ make logs
 
 # Logs d'un service spécifique
 docker logs nilmia-sync-worker -f
-docker logs nilmia-nilm-worker -f
+docker logs nilmia-cnn-worker -f
 
 # Logs Celery
 docker exec nilmia-sync-worker celery -A src.tasks.celery_app inspect active
-docker exec nilmia-nilm-worker celery -A src.tasks.celery_app inspect active
+docker exec nilmia-cnn-worker celery -A src.tasks.celery_app inspect active
 
 # Logs TimescaleDB
 docker logs nilmia-timescaledb

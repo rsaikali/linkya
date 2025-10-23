@@ -74,15 +74,15 @@ check: ## Vérifie l'état des services et affiche les statistiques
 	else \
 		echo "❌ Sync Beat"; \
 	fi
-	@if docker ps | grep nilmia-nilm-worker | grep -q Up; then \
-		echo "✅ NILM Worker"; \
+	@if docker ps | grep nilmia-cnn-worker | grep -q Up; then \
+		echo "✅ CNN Worker"; \
 	else \
-		echo "❌ NILM Worker"; \
+		echo "❌ CNN Worker"; \
 	fi
-	@if docker ps | grep nilmia-nilm-beat | grep -q Up; then \
-		echo "✅ NILM Beat"; \
+	@if docker ps | grep nilmia-cnn-beat | grep -q Up; then \
+		echo "✅ CNN Beat"; \
 	else \
-		echo "❌ NILM Beat"; \
+		echo "❌ CNN Beat"; \
 	fi
 	@if docker ps | grep nilmia-flower | grep -q Up; then \
 		echo "✅ Flower"; \
@@ -201,60 +201,55 @@ api-detections: ## Récupère les détections via l'API
 	@echo "🔌 Détections d'appareils:"
 	@curl -s http://localhost:8000/api/detections | jq '.detections | length' || echo "Erreur"
 
-nilm-train: ## Lance l'entraînement du modèle NILM
-	@echo "🧠 Lancement de l'entraînement du modèle NILM..."
-	docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call train_nilm_model --queue=nilm
-
-nilm-detect: ## Lance une détection manuelle d'appareils
-	@echo "🔍 Lancement de la détection d'appareils..."
-	docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call detect_appliances_task --queue=nilm
-
-nilm-stats: ## Affiche les statistiques de détection NILM
-	@echo "=========================================="
-	@echo "📊 Statistiques NILM"
-	@echo "=========================================="
-	@echo ""
-	@echo "🔌 Appareils détectés:"
+# Commandes NILM-CNN
+cnn-appliances: ## Liste les appareils CNN avec leurs signatures
+	@echo "🔌 Appareils CNN:"
 	@docker exec nilmia-timescaledb psql -U postgres -d local_data -c "\
 		SELECT \
-			a.name as \"Appareil\", \
-			a.is_validated as \"Validé\", \
-			COUNT(d.id) as \"Détections\", \
-			ROUND(SUM(d.energy_consumed)::numeric, 2) || ' Wh' as \"Énergie consommée\", \
-			ROUND(AVG(d.avg_power)::numeric, 2) || ' VA' as \"Puissance moyenne\", \
-			ROUND(AVG(d.confidence_score)::numeric, 2) as \"Confiance moy.\" \
-		FROM appliances a \
-		LEFT JOIN detection_events d ON a.id = d.appliance_id \
-		GROUP BY a.id, a.name, a.is_validated \
-		ORDER BY SUM(d.energy_consumed) DESC NULLS LAST;" 2>/dev/null || echo "❌ Erreur de récupération des stats"
+			ca.name as \"Appareil\", \
+			ca.description as \"Description\", \
+			ca.num_signatures as \"Signatures\", \
+			ROUND(ca.avg_power::numeric, 0) || ' VA' as \"Puissance moy.\", \
+			ca.is_validated as \"Validé\" \
+		FROM cnn_appliances ca \
+		ORDER BY ca.num_signatures DESC;" 2>/dev/null || echo "❌ Aucun appareil trouvé"
+
+cnn-train: ## Lance l'entraînement du modèle CNN
+	@echo "🧠 Lancement de l'entraînement du modèle CNN..."
+	docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call train_cnn_model --queue=nilm_cnn
+
+cnn-detect: ## Lance une détection manuelle CNN (sur la période configurée)
+	@echo "🔍 Lancement de la détection d'appareils (CNN)..."
+	docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call detect_cnn_appliances --queue=nilm_cnn
+
+cnn-stats: ## Affiche les statistiques CNN NILM
+	@echo "=========================================="
+	@echo "📊 Statistiques NILM-CNN"
+	@echo "=========================================="
 	@echo ""
-	@echo "📈 Dernières détections:"
-	@docker exec nilmia-timescaledb psql -U postgres -d local_data -c "\
-		SELECT \
-			a.name as \"Appareil\", \
-			TO_CHAR(d.start_time, 'DD/MM HH24:MI') as \"Début\", \
-			TO_CHAR(d.end_time, 'DD/MM HH24:MI') as \"Fin\", \
-			ROUND(d.avg_power::numeric, 0) || ' VA' as \"Puissance\", \
-			ROUND(d.energy_consumed::numeric, 2) || ' Wh' as \"Énergie\", \
-			ROUND(d.confidence_score::numeric, 2) as \"Confiance\" \
-		FROM detection_events d \
-		JOIN appliances a ON d.appliance_id = a.id \
-		ORDER BY d.start_time DESC \
-		LIMIT 10;" 2>/dev/null || echo "❌ Erreur de récupération des détections"
+	@docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call get_cnn_stats --queue=nilm_cnn | tail -n +3 | jq '.'
 	@echo ""
 
-nilm-models: ## Liste les modèles ML entraînés
-	@echo "🤖 Modèles ML:"
+cnn-add-signature: ## Ajoute une signature CNN (exemple)
+	@echo "📝 Ajout d'une signature CNN (exemple)..."
+	@echo "⚠️  Modifiez les paramètres selon vos besoins"
+	docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call add_cnn_signature \
+		--kwargs='{"appliance_name": "Lave-linge", "start_time_str": "2025-10-22T10:00:00Z", "end_time_str": "2025-10-22T11:30:00Z", "mode": "eco"}' \
+		--queue=nilm_cnn
+
+cnn-models: ## Liste les modèles CNN entraînés
+	@echo "🤖 Modèles CNN:"
 	@docker exec nilmia-timescaledb psql -U postgres -d local_data -c "\
 		SELECT \
 			version as \"Version\", \
 			model_type as \"Type\", \
 			TO_CHAR(training_date, 'DD/MM/YYYY HH24:MI') as \"Date entraînement\", \
+			num_classes as \"Classes\", \
 			is_active as \"Actif\", \
-			(metrics->>'silhouette_score')::numeric as \"Silhouette Score\" \
-		FROM model_versions \
+			(metrics->>'val_accuracy')::numeric as \"Accuracy\" \
+		FROM cnn_models \
 		ORDER BY training_date DESC \
-		LIMIT 5;" 2>/dev/null || echo "❌ Aucun modèle trouvé"
+		LIMIT 5;" 2>/dev/null || echo "❌ Aucun modèle CNN trouvé"
 
 redis-cli: ## Se connecte à Redis via redis-cli
 	docker exec -it nilmia-redis redis-cli
@@ -264,3 +259,4 @@ status: ## Affiche le statut des services
 
 scale-workers: ## Scale les workers (usage: make scale-workers N=3)
 	docker-compose up -d --scale sync-worker=$(N)
+

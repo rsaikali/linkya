@@ -120,7 +120,7 @@ class DatabaseManager:
         self, start_time: datetime | None = None, end_time: datetime | None = None
     ) -> list[dict[str, Any]]:
         """
-        Récupère les appareils détectés par le NILM.
+        Récupère les appareils détectés par le NILM-CNN.
 
         Args:
             start_time: Filtre optionnel sur date de début
@@ -131,20 +131,23 @@ class DatabaseManager:
         """
         query = text("""
             SELECT
-                de.id,
-                de.appliance_id,
-                a.name,
-                a.description,
-                de.start_time,
-                de.end_time,
-                de.avg_power,
-                de.energy_consumed,
-                de.confidence_score
-            FROM detection_events de
-            JOIN appliances a ON de.appliance_id = a.id
-            WHERE (:start_time IS NULL OR de.start_time >= :start_time)
-              AND (:end_time IS NULL OR de.end_time <= :end_time)
-            ORDER BY de.start_time DESC
+                cd.id,
+                cd.appliance_id,
+                ca.name,
+                ca.description,
+                cd.start_time,
+                cd.end_time,
+                cd.avg_power,
+                cd.energy_consumed,
+                cd.confidence_score,
+                cd.prediction_class,
+                cd.signature_id,
+                cd.created_at
+            FROM cnn_detections cd
+            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
+              AND (:end_time IS NULL OR cd.end_time <= :end_time)
+            ORDER BY cd.start_time DESC
         """)
 
         with self.engine.connect() as conn:
@@ -160,32 +163,45 @@ class DatabaseManager:
                     "start_time": row[4].isoformat() if row[4] else None,
                     "end_time": row[5].isoformat() if row[5] else None,
                     "avg_power": float(row[6]) if row[6] is not None else None,
-                    "energy_consumed": float(row[7]) if row[7] is not None else None,
-                    "confidence_score": float(row[8]) if row[8] is not None else None,
+                    "energy_consumed": (
+                        float(row[7]) if row[7] is not None else None
+                    ),
+                    "confidence_score": (
+                        float(row[8]) if row[8] is not None else None
+                    ),
+                    "prediction_class": (
+                        int(row[9]) if row[9] is not None else None
+                    ),
+                    "signature_id": (
+                        int(row[10]) if row[10] is not None else None
+                    ),
+                    "created_at": row[11].isoformat() if row[11] else None,
                 }
                 for row in result
             ]
 
     def get_all_appliances(self) -> list[dict[str, Any]]:
-        """Récupère la liste de tous les appareils connus avec leurs statistiques."""
+        """Récupère la liste de tous les appareils connus avec leurs statistiques CNN calculées à la volée."""
         query = text("""
             SELECT
-                a.id,
-                a.name,
-                a.description,
-                a.is_validated,
-                a.created_at,
-                a.updated_at,
-                a.avg_power,
-                a.power_variance,
-                MAX(s.start_time) as last_signature_start,
-                MAX(s.end_time) as last_signature_end,
-                COUNT(s.id) as signature_count
-            FROM appliances a
-            LEFT JOIN appliance_signatures s ON a.id = s.appliance_id
-            GROUP BY a.id, a.name, a.description, a.is_validated, a.created_at, a.updated_at,
-                     a.avg_power, a.power_variance
-            ORDER BY a.name ASC
+                ca.id,
+                ca.name,
+                ca.description,
+                ca.created_at,
+                ca.updated_at,
+                -- Statistiques calculées depuis les signatures
+                AVG(cs.avg_power) as avg_power,
+                STDDEV(cs.avg_power) as power_std,
+                AVG(EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))) as avg_duration,
+                COUNT(DISTINCT cs.id) as num_signatures,
+                MAX(cs.start_time) as last_signature_start,
+                MAX(cs.end_time) as last_signature_end,
+                COUNT(DISTINCT cd.id) as detection_count
+            FROM cnn_appliances ca
+            LEFT JOIN cnn_signatures cs ON ca.id = cs.appliance_id
+            LEFT JOIN cnn_detections cd ON ca.id = cd.appliance_id
+            GROUP BY ca.id, ca.name, ca.description, ca.created_at, ca.updated_at
+            ORDER BY ca.name ASC
         """)
 
         with self.engine.connect() as conn:
@@ -196,26 +212,163 @@ class DatabaseManager:
                     "id": row[0],
                     "name": row[1],
                     "description": row[2],
-                    "is_validated": row[3],
-                    "created_at": row[4].isoformat() if row[4] else None,
-                    "updated_at": row[5].isoformat() if row[5] else None,
-                    "avg_power": float(row[6]) if row[6] is not None else None,
-                    "power_std": float(row[7]) if row[7] is not None else None,
-                    "last_signature_start": row[8].isoformat() if row[8] else None,
-                    "last_signature_end": row[9].isoformat() if row[9] else None,
-                    "signature_count": int(row[10]) if row[10] is not None else 0,
+                    "created_at": row[3].isoformat() if row[3] else None,
+                    "updated_at": row[4].isoformat() if row[4] else None,
+                    "avg_power": float(row[5]) if row[5] is not None else None,
+                    "power_std": float(row[6]) if row[6] is not None else None,
+                    "avg_duration": float(row[7]) if row[7] is not None else None,
+                    "num_signatures": int(row[8]) if row[8] is not None else 0,
+                    "last_signature_start": row[9].isoformat() if row[9] else None,
+                    "last_signature_end": row[10].isoformat() if row[10] else None,
+                    "signature_count": int(row[8]) if row[8] is not None else 0,  # Même que num_signatures
+                    "detection_count": int(row[11]) if row[11] is not None else 0,
                 }
-                
-                # Si pas de puissance moyenne enregistrée, estimer à partir de la consommation
-                if appliance["avg_power"] is None:
-                    avg_consumption = self._get_average_consumption()
-                    if avg_consumption:
-                        appliance["avg_power"] = avg_consumption * 0.3
-                        appliance["power_std"] = avg_consumption * 0.1
                 
                 appliances_list.append(appliance)
             
             return appliances_list
+
+    def update_appliance(
+        self,
+        appliance_id: int,
+        name: str | None = None,
+        description: str | None = None
+    ) -> dict[str, Any] | None:
+        """
+        Met à jour le nom et/ou la description d'un appareil.
+
+        Args:
+            appliance_id: ID de l'appareil
+            name: Nouveau nom (optionnel)
+            description: Nouvelle description (optionnel)
+
+        Returns:
+            Appareil mis à jour ou None si non trouvé
+        """
+        # Construire dynamiquement la requête UPDATE
+        set_clauses = []
+        params = {"appliance_id": appliance_id}
+        
+        if name is not None:
+            set_clauses.append("name = :name")
+            params["name"] = name
+        
+        if description is not None:
+            set_clauses.append("description = :description")
+            params["description"] = description
+        
+        if not set_clauses:
+            # Rien à mettre à jour, récupérer l'appareil actuel
+            select_query = text("""
+                SELECT id, name, description, created_at, updated_at
+                FROM cnn_appliances
+                WHERE id = :appliance_id
+            """)
+            with self.engine.connect() as conn:
+                result = conn.execute(select_query, params).fetchone()
+                if result:
+                    return {
+                        "id": result[0],
+                        "name": result[1],
+                        "description": result[2],
+                        "created_at": (
+                            result[3].isoformat() if result[3] else None
+                        ),
+                        "updated_at": (
+                            result[4].isoformat() if result[4] else None
+                        ),
+                    }
+                return None
+        
+        set_clauses.append("updated_at = NOW()")
+        update_query = text(f"""
+            UPDATE cnn_appliances
+            SET {", ".join(set_clauses)}
+            WHERE id = :appliance_id
+            RETURNING id, name, description, created_at, updated_at
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(update_query, params).fetchone()
+            
+            if result:
+                conn.commit()
+                return {
+                    "id": result[0],
+                    "name": result[1],
+                    "description": result[2],
+                    "created_at": (
+                        result[3].isoformat() if result[3] else None
+                    ),
+                    "updated_at": (
+                        result[4].isoformat() if result[4] else None
+                    ),
+                }
+            return None
+
+    def delete_appliance(self, appliance_id: int) -> dict[str, int] | None:
+        """
+        Supprime un appareil et toutes ses données associées.
+
+        Args:
+            appliance_id: ID de l'appareil à supprimer
+
+        Returns:
+            Dictionnaire avec le nombre de signatures et détections supprimées
+        """
+        # Vérifier d'abord que l'appareil existe
+        check_query = text("""
+            SELECT id FROM cnn_appliances WHERE id = :appliance_id
+        """)
+
+        with self.engine.connect() as conn:
+            exists = conn.execute(
+                check_query,
+                {"appliance_id": appliance_id}
+            ).fetchone()
+            
+            if not exists:
+                return None
+
+            # Compter les éléments à supprimer
+            count_signatures_query = text("""
+                SELECT COUNT(*) FROM cnn_signatures WHERE appliance_id = :appliance_id
+            """)
+            count_detections_query = text("""
+                SELECT COUNT(*) FROM cnn_detections WHERE appliance_id = :appliance_id
+            """)
+
+            signatures_count = conn.execute(
+                count_signatures_query,
+                {"appliance_id": appliance_id}
+            ).scalar()
+            
+            detections_count = conn.execute(
+                count_detections_query,
+                {"appliance_id": appliance_id}
+            ).scalar()
+
+            # Supprimer dans l'ordre (FK constraints)
+            delete_detections_query = text("""
+                DELETE FROM cnn_detections WHERE appliance_id = :appliance_id
+            """)
+            delete_signatures_query = text("""
+                DELETE FROM cnn_signatures WHERE appliance_id = :appliance_id
+            """)
+            delete_appliance_query = text("""
+                DELETE FROM cnn_appliances WHERE id = :appliance_id
+            """)
+
+            conn.execute(delete_detections_query, {"appliance_id": appliance_id})
+            conn.execute(delete_signatures_query, {"appliance_id": appliance_id})
+            conn.execute(delete_appliance_query, {"appliance_id": appliance_id})
+            
+            conn.commit()
+
+            return {
+                "signatures_deleted": signatures_count or 0,
+                "detections_deleted": detections_count or 0,
+            }
 
     def _get_average_consumption(self) -> float | None:
         """Récupère la puissance moyenne des dernières 48h."""

@@ -154,6 +154,110 @@ async def get_all_appliances():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+class ApplianceUpdate(BaseModel):
+    """Modèle pour mettre à jour un appareil."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+@app.patch("/api/appliances/{appliance_id}")
+async def update_appliance(
+    appliance_id: int,
+    update_data: ApplianceUpdate
+):
+    """
+    Met à jour le nom et/ou la description d'un appareil.
+
+    Args:
+        appliance_id: ID de l'appareil à modifier
+        update_data: Données à mettre à jour (name et/ou description)
+
+    Returns:
+        Appareil mis à jour
+    """
+    try:
+        # Valider qu'au moins un champ est fourni
+        if update_data.name is None and update_data.description is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Au moins un champ (name ou description) "
+                    "doit être fourni"
+                )
+            )
+        
+        # Valider le nom s'il est fourni
+        if update_data.name is not None and not update_data.name.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="Le nom ne peut pas être vide"
+            )
+        
+        # Nettoyer les données
+        name = update_data.name.strip() if update_data.name else None
+        description = (
+            update_data.description.strip()
+            if update_data.description
+            else None
+        )
+        
+        result = db_manager.update_appliance(
+            appliance_id,
+            name=name,
+            description=description
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail="Appareil non trouvé"
+            )
+        
+        return {
+            "status": "success",
+            "message": "Appareil mis à jour",
+            "appliance": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Erreur lors de la mise à jour de l'appareil "
+            f"{appliance_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
+@app.delete("/api/appliances/{appliance_id}")
+async def delete_appliance(appliance_id: int):
+    """
+    Supprime un appareil et toutes ses signatures/détections associées.
+
+    Args:
+        appliance_id: ID de l'appareil à supprimer
+
+    Returns:
+        Message de confirmation
+    """
+    try:
+        result = db_manager.delete_appliance(appliance_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Appareil non trouvé")
+        
+        return {
+            "status": "success",
+            "message": f"Appareil supprimé (signatures: {result['signatures_deleted']}, détections: {result['detections_deleted']})"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de l'appareil {appliance_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
 @app.get("/api/detections")
 async def get_detected_appliances(
     hours: int = Query(default=None, description="Nombre d'heures d'historique (pour périodes longues)"),
@@ -218,15 +322,30 @@ async def create_signature(signature: SignatureCreate):
         try:
             start_dt = datetime.fromisoformat(signature.start_time)
             end_dt = datetime.fromisoformat(signature.end_time)
+            
+            logger.debug(f"start_dt: {start_dt} (tzinfo: {start_dt.tzinfo})")
+            logger.debug(f"end_dt: {end_dt} (tzinfo: {end_dt.tzinfo})")
+            
+            # S'assurer que les deux datetimes ont le même type de timezone
+            if start_dt.tzinfo is None and end_dt.tzinfo is not None:
+                start_dt = start_dt.replace(tzinfo=end_dt.tzinfo)
+                logger.debug(f"start_dt après normalisation: {start_dt}")
+            elif start_dt.tzinfo is not None and end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=start_dt.tzinfo)
+                logger.debug(f"end_dt après normalisation: {end_dt}")
+                
         except ValueError as e:
             logger.error(f"Format de timestamp invalide: {str(e)}")
             raise HTTPException(status_code=422, detail=f"Format de timestamp invalide: {str(e)}")
         
+        # Log détaillé avant comparaison
+        logger.info(f"Comparaison: {start_dt} >= {end_dt} = {start_dt >= end_dt}")
+        
         if start_dt >= end_dt:
-            logger.error("start_time >= end_time")
+            logger.error(f"start_time >= end_time: {start_dt} >= {end_dt}")
             raise HTTPException(
                 status_code=422,
-                detail="start_time doit être antérieur à end_time"
+                detail=f"start_time doit être antérieur à end_time ({start_dt} >= {end_dt})"
             )
         
         if not signature.appliance_name.strip():
@@ -242,17 +361,17 @@ async def create_signature(signature: SignatureCreate):
         celery_app = get_celery_app()
         logger.info("Celery app récupérée")
         
-        # Envoyer la tâche à la queue NILM
+        # Envoyer la tâche à la queue NILM-CNN
         task = celery_app.send_task(
-            'add_manual_signature',
+            'add_cnn_signature',
             args=(
                 signature.appliance_name,
                 signature.start_time,
                 signature.end_time,
-                signature.description
+                signature.description or ""
             ),
-            queue='nilm',
-            routing_key='nilm.add_manual_signature'
+            queue='nilm_cnn',
+            routing_key='nilm_cnn.add_cnn_signature'
         )
         
         logger.info(f"Tâche Celery créée: {task.id}")

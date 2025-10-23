@@ -145,15 +145,19 @@ services:
       - nilmia-network
     restart: "no"
 
-  # NILM Service - Worker Celery avec GPU
-  nilm-worker:
+  # Service NILM-CNN - Worker Celery
+  cnn-worker:
     build:
-      context: ./nilm-service
+      context: ./nilm-cnn-service
       dockerfile: Dockerfile
-    container_name: nilmia-nilm-worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info -Q nilm --pool=solo
+    container_name: nilmia-cnn-worker
+    command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm_cnn
+    runtime: nvidia
     environment:
       TZ: Europe/Paris
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
     env_file:
       - .env
     depends_on:
@@ -164,28 +168,24 @@ services:
       sync-worker:
         condition: service_started
     volumes:
-      - ./nilm-service/src:/app/src
+      - ./nilm-cnn-service/src:/app/src
       - ./models:/app/models
+      - nilm_uv_cache:/root/.cache/uv
     networks:
       - nilmia-network
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
-  # NILM Beat - Planificateur de tâches NILM
-  nilm-beat:
+  # Celery Beat pour NILM-CNN
+  cnn-beat:
     build:
-      context: ./nilm-service
+      context: ./nilm-cnn-service
       dockerfile: Dockerfile
-    container_name: nilmia-nilm-beat
+    container_name: nilmia-cnn-beat
     command: celery -A src.tasks.celery_app beat --loglevel=info
     environment:
       TZ: Europe/Paris
+      C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
+      CUDA_VISIBLE_DEVICES: ""  # Pas de GPU pour beat (planificateur uniquement)
     env_file:
       - .env
     depends_on:
@@ -194,19 +194,19 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./nilm-service/src:/app/src
+      - ./nilm-cnn-service/src:/app/src
       - ./models:/app/models
     networks:
       - nilmia-network
     restart: unless-stopped
 
-  # Initialisation de la base NILM au démarrage
-  init-nilm-db:
+  # Initialisation de la base NILM-CNN au démarrage
+  init-cnn-db:
     build:
-      context: ./nilm-service
+      context: ./nilm-cnn-service
       dockerfile: Dockerfile
-    container_name: nilmia-init-nilm-db
-    command: python -c "from src.database import db_manager; db_manager.init_nilm_db(); print('NILM database initialized')"
+    container_name: nilmia-init-cnn-db
+    command: python -c "from src.database import db_manager; db_manager.init_tables(); print('CNN NILM database initialized')"
     environment:
       TZ: Europe/Paris
     env_file:
@@ -219,6 +219,29 @@ services:
     networks:
       - nilmia-network
     restart: "no"
+
+  # TensorBoard pour visualisation des métriques CNN
+  tensorboard:
+    build:
+      context: ./nilm-cnn-service
+      dockerfile: Dockerfile
+    container_name: nilmia-tensorboard
+    command: tensorboard --logdir=/app/models/cnn/logs --host=0.0.0.0 --port=6006
+    environment:
+      TZ: Europe/Paris
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./models:/app/models
+    networks:
+      - nilmia-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6006"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # Backend API FastAPI
   backend:

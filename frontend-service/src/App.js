@@ -7,8 +7,6 @@ import theme from './theme';
 import LatestConsumption from './components/LatestConsumption';
 import ConsumptionChart from './components/ConsumptionChart';
 import AppliancesList from './components/AppliancesList';
-import DetectionsList from './components/DetectionsList';
-import DetectionsTimeline from './components/DetectionsTimeline';
 
 function App() {
   return (
@@ -29,8 +27,6 @@ function App() {
             <LatestConsumption />
             <ConsumptionChart />
             <AppliancesList />
-            <DetectionsTimeline hours={12} />
-            <DetectionsList hours={24} />
           </Box>
         </Container>
 

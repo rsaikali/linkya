@@ -5,14 +5,29 @@ import {
   CardHeader,
   Grid,
   LinearProgress,
-  Chip,
   Box,
   Typography,
   CircularProgress,
   Alert,
-  Tooltip,
+  IconButton,
+  Menu,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  ListItemIcon,
+  ListItemText,
+  Snackbar,
 } from '@mui/material';
-import { ElectricMeter, CheckCircle, HelpOutline } from '@mui/icons-material';
+import {
+  ElectricMeter,
+  MoreVert,
+  Edit,
+  Delete,
+} from '@mui/icons-material';
 import { apiService } from '../services/api';
 
 /**
@@ -22,42 +37,56 @@ function AppliancesList() {
   const [appliances, setAppliances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+
+  const fetchAppliances = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await apiService.getAllAppliances();
+      
+      // Gérer les différents formats de réponse de l'API
+      let appliancesList = [];
+      if (Array.isArray(data)) {
+        appliancesList = data;
+      } else if (data && data.appliances && Array.isArray(data.appliances)) {
+        appliancesList = data.appliances;
+      } else if (data && data.data && Array.isArray(data.data)) {
+        appliancesList = data.data;
+      } else if (typeof data === 'object') {
+        // Si c'est un objet, essayer de le convertir en array
+        appliancesList = Array.isArray(data) ? data : [];
+      }
+      
+      setAppliances(appliancesList);
+    } catch (err) {
+      console.error('Erreur lors de la récupération des appareils:', err);
+      setError('Impossible de charger les appareils');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchAppliances = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await apiService.getAllAppliances();
-        
-        // Gérer les différents formats de réponse de l'API
-        let appliancesList = [];
-        if (Array.isArray(data)) {
-          appliancesList = data;
-        } else if (data && data.appliances && Array.isArray(data.appliances)) {
-          appliancesList = data.appliances;
-        } else if (data && data.data && Array.isArray(data.data)) {
-          appliancesList = data.data;
-        } else if (typeof data === 'object') {
-          // Si c'est un objet, essayer de le convertir en array
-          appliancesList = Array.isArray(data) ? data : [];
-        }
-        
-        setAppliances(appliancesList);
-      } catch (err) {
-        console.error('Erreur lors de la récupération des appareils:', err);
-        setError('Impossible de charger les appareils');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchAppliances();
 
     // Rafraîchir toutes les 30 secondes
     const interval = setInterval(fetchAppliances, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleApplianceUpdated = () => {
+    // Rafraîchir la liste après modification
+    fetchAppliances();
+  };
+
+  const showSnackbar = (message, severity = 'success') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
 
   if (error) {
     return (
@@ -89,11 +118,26 @@ function AppliancesList() {
         <Grid container spacing={2} sx={{ mt: 1 }}>
           {appliances.map((appliance) => (
             <Grid item xs={12} sm={6} md={4} key={appliance.id}>
-              <ApplianceCard appliance={appliance} />
+              <ApplianceCard
+                appliance={appliance}
+                onUpdate={handleApplianceUpdated}
+                onShowSnackbar={showSnackbar}
+              />
             </Grid>
           ))}
         </Grid>
       </CardContent>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Card>
   );
 }
@@ -101,16 +145,76 @@ function AppliancesList() {
 /**
  * Carte individuelle pour un appareil
  */
-function ApplianceCard({ appliance }) {
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'Jamais';
-    const date = new Date(dateString);
-    return date.toLocaleString('fr-FR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+function ApplianceCard({ appliance, onUpdate, onShowSnackbar }) {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [newName, setNewName] = useState(appliance.name);
+  const [newDescription, setNewDescription] = useState(appliance.description || '');
+  const [loading, setLoading] = useState(false);
+
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleEditClick = () => {
+    setNewName(appliance.name);
+    setNewDescription(appliance.description || '');
+    setEditDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleDeleteClick = () => {
+    setDeleteDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleEditConfirm = async () => {
+    if (!newName.trim()) {
+      onShowSnackbar('Le nom ne peut pas être vide', 'error');
+      return;
+    }
+
+    const nameChanged = newName.trim() !== appliance.name;
+    const descriptionChanged = newDescription.trim() !== (appliance.description || '');
+
+    if (!nameChanged && !descriptionChanged) {
+      setEditDialogOpen(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await apiService.updateAppliance(appliance.id, {
+        name: nameChanged ? newName.trim() : undefined,
+        description: descriptionChanged ? newDescription.trim() : undefined,
+      });
+      onShowSnackbar(`Appareil "${newName.trim()}" mis à jour`, 'success');
+      setEditDialogOpen(false);
+      onUpdate();
+    } catch (error) {
+      onShowSnackbar('Erreur lors de la modification de l\'appareil', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setLoading(true);
+    try {
+      await apiService.deleteAppliance(appliance.id);
+      onShowSnackbar(`Appareil "${appliance.name}" supprimé`, 'success');
+      setDeleteDialogOpen(false);
+      onUpdate();
+    } catch (error) {
+      onShowSnackbar('Erreur lors de la suppression de l\'appareil', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -128,7 +232,7 @@ function ApplianceCard({ appliance }) {
     >
       {/* En-tête de l'appareil */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1.5 }}>
-        <Box>
+        <Box sx={{ flex: 1 }}>
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
             {appliance.name}
           </Typography>
@@ -138,17 +242,103 @@ function ApplianceCard({ appliance }) {
             </Typography>
           )}
         </Box>
-        {appliance.is_validated && (
-          <Tooltip title="Appareil validé">
-            <CheckCircle sx={{ color: 'success.main', fontSize: 20 }} />
-          </Tooltip>
-        )}
-        {!appliance.is_validated && (
-          <Tooltip title="Non validé">
-            <HelpOutline sx={{ color: 'warning.main', fontSize: 20 }} />
-          </Tooltip>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <IconButton
+            size="small"
+            onClick={handleMenuOpen}
+            sx={{ ml: 0.5 }}
+          >
+            <MoreVert fontSize="small" />
+          </IconButton>
+        </Box>
       </Box>
+
+      {/* Menu contextuel */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleMenuClose}
+      >
+        <MenuItem onClick={handleEditClick}>
+          <ListItemIcon>
+            <Edit fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Modifier</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={handleDeleteClick} sx={{ color: 'error.main' }}>
+          <ListItemIcon>
+            <Delete fontSize="small" color="error" />
+          </ListItemIcon>
+          <ListItemText>Supprimer</ListItemText>
+        </MenuItem>
+      </Menu>
+
+      {/* Dialog d'édition */}
+      <Dialog open={editDialogOpen} onClose={() => !loading && setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Modifier l'appareil</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Nom de l'appareil"
+            type="text"
+            fullWidth
+            variant="outlined"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            disabled={loading}
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            margin="dense"
+            label="Description (optionnelle)"
+            type="text"
+            fullWidth
+            variant="outlined"
+            multiline
+            rows={3}
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            disabled={loading}
+            placeholder="Ajoutez une description pour cet appareil..."
+            helperText="Ex: Machine à laver Bosch 7kg, Lave-vaisselle mode éco..."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialogOpen(false)} disabled={loading}>
+            Annuler
+          </Button>
+          <Button onClick={handleEditConfirm} disabled={loading} variant="contained">
+            {loading ? <CircularProgress size={24} /> : 'Enregistrer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de confirmation de suppression */}
+      <Dialog open={deleteDialogOpen} onClose={() => !loading && setDeleteDialogOpen(false)}>
+        <DialogTitle>Supprimer l'appareil ?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Êtes-vous sûr de vouloir supprimer <strong>{appliance.name}</strong> ?
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+            Cette action supprimera également toutes les signatures et détections associées.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={loading}>
+            Annuler
+          </Button>
+          <Button
+            onClick={handleDeleteConfirm}
+            disabled={loading}
+            variant="contained"
+            color="error"
+          >
+            {loading ? <CircularProgress size={24} /> : 'Supprimer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Caractéristiques de puissance */}
       <Box sx={{ mb: 1.5 }}>
@@ -184,42 +374,6 @@ function ApplianceCard({ appliance }) {
         )}
       </Box>
 
-      {/* Timestamps de détection */}
-      {appliance.last_signature_start && (
-        <Box sx={{ mb: 1.5, p: 1, backgroundColor: '#f0f7f7', borderRadius: 0.5 }}>
-          <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 0.3 }}>
-            Dernière signature
-          </Typography>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.2 }}>
-            <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>
-              Début:
-            </Typography>
-            <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
-              {formatDateTime(appliance.last_signature_start)}
-            </Typography>
-          </Box>
-          {appliance.last_signature_end && (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ fontSize: '0.7rem' }}>
-                Fin:
-              </Typography>
-              <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
-                {formatDateTime(appliance.last_signature_end)}
-              </Typography>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* Status */}
-      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-        <Chip
-          label={appliance.is_validated ? 'Validé' : 'En apprentissage'}
-          color={appliance.is_validated ? 'success' : 'warning'}
-          size="small"
-          variant="outlined"
-        />
-      </Box>
     </Box>
   );
 }

@@ -46,11 +46,25 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
   };
 
   const handleStartTimeChange = (e) => {
-    setStartTime(e.target.value);
+    // Convertir en ISO string si c'est un datetime-local
+    const value = e.target.value;
+    if (value && !value.includes('Z') && !value.includes('+')) {
+      // Format datetime-local sans timezone -> ajouter la timezone locale
+      setStartTime(new Date(value).toISOString());
+    } else {
+      setStartTime(value);
+    }
   };
 
   const handleEndTimeChange = (e) => {
-    setEndTime(e.target.value);
+    // Convertir en ISO string si c'est un datetime-local
+    const value = e.target.value;
+    if (value && !value.includes('Z') && !value.includes('+')) {
+      // Format datetime-local sans timezone -> ajouter la timezone locale
+      setEndTime(new Date(value).toISOString());
+    } else {
+      setEndTime(value);
+    }
   };
 
   const validateForm = () => {

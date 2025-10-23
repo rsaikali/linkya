@@ -78,6 +78,31 @@ export const apiService = {
       throw error;
     }
   },
+
+  // Modifier un appareil (nom et/ou description)
+  updateAppliance: async (applianceId, { name, description }) => {
+    try {
+      const response = await api.patch(`/api/appliances/${applianceId}`, {
+        name,
+        description,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la modification de l\'appareil:', error);
+      throw error;
+    }
+  },
+
+  // Supprimer un appareil
+  deleteAppliance: async (applianceId) => {
+    try {
+      const response = await api.delete(`/api/appliances/${applianceId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la suppression de l\'appareil:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;

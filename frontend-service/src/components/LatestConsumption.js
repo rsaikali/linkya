@@ -134,7 +134,7 @@ const LatestConsumption = () => {
             />
             <Chip
               icon={<SignalCellularAlt />}
-              label={updateMethod === 'sse' ? 'Live (SSE)' : 'Polling (5s)'}
+              label={updateMethod === 'sse' ? 'Live' : 'Polling'}
               size="small"
               variant="filled"
               color={updateMethod === 'sse' ? 'success' : 'warning'}

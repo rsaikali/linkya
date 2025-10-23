@@ -62,13 +62,13 @@ const ConsumptionChart = () => {
       return '1 minutes';
     } else if (range <= 24) {
       // Jusqu'à 24 heures: agrégation à 15 minutes
-      return '5 minutes';
+      return '1 minutes';
     } else if (range <= 48) {
       // Jusqu'à 48 heures: agrégation à 30 minutes
-      return '5 minutes';
+      return '1 minutes';
     } else {
       // Plus de 48 heures: agrégation à 1 heure
-      return '10 minutes';
+      return '5 minutes';
     }
   };
 
