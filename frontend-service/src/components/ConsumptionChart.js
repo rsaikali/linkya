@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Card,
   CardContent,
+  CardHeader,
   Typography,
   Box,
   CircularProgress,
@@ -24,6 +25,7 @@ import {
   Filler,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { ShowChart } from '@mui/icons-material';
 import { apiService } from '../services/api';
 import { streamDetections, closeStream } from '../services/sse';
 import SignatureModal from './SignatureModal';
@@ -262,42 +264,39 @@ const ConsumptionChart = () => {
   return (
     <>
       <Card>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Box>
-              <Typography variant="h6" component="h2">
-                Historique de consommation
-              </Typography>
-              {selectionStartRef.current !== null && (
-                <Typography variant="caption" color="primary" sx={{ mt: 1, display: 'block' }}>
-                  💡 Cliquez sur un deuxième point pour finaliser la sélection
-                </Typography>
-              )}
+        <CardHeader
+          title="Historique de consommation"
+          subheader={
+            selectionStartRef.current !== null
+              ? "💡 Cliquez sur un deuxième point pour finaliser la sélection"
+              : "Cliquez sur deux points du graphique pour créer une signature"
+          }
+          avatar={<ShowChart />}
+          action={
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>Période</InputLabel>
+                <Select
+                  value={timeRange}
+                  label="Période"
+                  onChange={(e) => setTimeRange(e.target.value)}
+                >
+                  <MenuItem value={1/60}>1 minute</MenuItem>
+                  <MenuItem value={15/60}>15 minutes</MenuItem>
+                  <MenuItem value={30/60}>30 minutes</MenuItem>
+                  <MenuItem value={1}>1 heure</MenuItem>
+                  <MenuItem value={6}>6 heures</MenuItem>
+                  <MenuItem value={12}>12 heures</MenuItem>
+                  <MenuItem value={24}>24 heures</MenuItem>
+                  <MenuItem value={48}>48 heures</MenuItem>
+                  <MenuItem value={168}>7 jours</MenuItem>
+                </Select>
+              </FormControl>
+              {loading && <CircularProgress size={24} />}
             </Box>
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel>Période</InputLabel>
-              <Select
-                value={timeRange}
-                label="Période"
-                onChange={(e) => setTimeRange(e.target.value)}
-              >
-                <MenuItem value={1/60}>1 minute</MenuItem>
-                <MenuItem value={15/60}>15 minutes</MenuItem>
-                <MenuItem value={30/60}>30 minutes</MenuItem>
-                <MenuItem value={1}>1 heure</MenuItem>
-                <MenuItem value={6}>6 heures</MenuItem>
-                <MenuItem value={12}>12 heures</MenuItem>
-                <MenuItem value={24}>24 heures</MenuItem>
-                <MenuItem value={48}>48 heures</MenuItem>
-                <MenuItem value={168}>7 jours</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-
-          <Alert severity="info" sx={{ mb: 2 }}>
-            💡 Cliquez sur deux points du graphique pour créer une nouvelle signature d'appareil
-          </Alert>
-
+          }
+        />
+        <CardContent>
           <Box sx={{ height: 400, mb: 3, cursor: 'crosshair' }}>
             <Line ref={chartRef} data={chartData} options={options} />
           </Box>
