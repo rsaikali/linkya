@@ -143,6 +143,7 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Appliance autocomplete with create-on-demand
 - Training management with paginated model history
 - SSE-based real-time updates (no polling)
+- CSV export/import for signatures (bulk operations)
 
 ## Configuration
 
@@ -176,6 +177,8 @@ CNN_MIN_DURATION_SECONDS=30
 
 ### TimescaleDB Tables
 
+**Timezone handling**: All timestamp columns use `timestamp with time zone` (timestamptz). The database timezone is set to `Europe/Paris`. API responses include timezone offset (e.g., `2025-10-23T23:53:57+02:00`).
+
 **linky_realtime** (hypertable, 6h chunks):
 - `time` (timestamptz, PK)
 - `papp` (smallint) - apparent power in VA
@@ -185,17 +188,19 @@ CNN_MIN_DURATION_SECONDS=30
 
 **cnn_appliances**:
 - `id`, `name`, `description`
+- `created_at`, `updated_at` (timestamptz)
 - `num_signatures`, `avg_power`, `is_validated`
 
 **cnn_signatures**:
-- Stores training examples with `start_time`, `end_time`, `appliance_id`
+- Stores training examples with `start_time`, `end_time` (timestamptz), `appliance_id`
 - Frontend creates these via range selection on consumption chart
 
 **cnn_detections**:
-- Detection results: `appliance_id`, `start_time`, `end_time`, `avg_power`, `energy_consumed`, `confidence_score`
+- Detection results: `appliance_id`, `start_time`, `end_time` (timestamptz), `avg_power`, `energy_consumed`, `confidence_score`
+- `created_at` (timestamptz)
 
 **cnn_models**:
-- Metadata for trained models: `version`, `model_type`, `training_date`, `metrics` (JSON), `is_active`
+- Metadata for trained models: `version`, `model_type`, `training_date` (timestamptz), `metrics` (JSON), `is_active`
 
 ## NILM Workflow
 
@@ -295,6 +300,7 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
+- **Timezone fix**: Migrated all NILM tables to `timestamp with time zone` (timestamptz) for proper Europe/Paris timezone handling. Backend now returns ISO timestamps with timezone offset (e.g., `+02:00`) instead of forcing UTC conversion. Frontend displays correct local times.
 - Removed legacy `cnn_nilm.py`, replaced by `seq2point_nilm.py` S2P architecture
 - Fixed multi-output S2P scaler fitting (fit before normalization to avoid "preprocessor not fit" error)
 - Fixed multi-output metrics compilation (use dict with `power_i: ['mae', 'mse']` to avoid KeyError)

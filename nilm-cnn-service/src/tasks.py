@@ -7,6 +7,7 @@ import warnings
 import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
+from zoneinfo import ZoneInfo
 
 # Filtrer les warnings Celery root avant les imports
 os.environ['C_FORCE_ROOT'] = 'true'
@@ -21,6 +22,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+LOCAL_TIMEZONE = ZoneInfo(os.environ.get('TZ', 'Europe/Paris'))
 
 from .config import settings
 from .database import db_manager
@@ -121,7 +124,7 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         
         logger.info("🚀 Entraînement Sequence-to-Point (désagrégation multi-sorties)")
         # Créer une version basée sur le timestamp (timezone locale)
-        version = datetime.now().strftime('%Y%m%d_%H%M%S')
+        version = datetime.now(LOCAL_TIMEZONE).strftime('%Y%m%d_%H%M%S')
         # Entraîner le modèle multi-sorties
         metrics = nilm_manager.train_all_appliances(version)
         if 'error' in metrics:
@@ -149,6 +152,7 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         training_duration = int(time.time() - start_time)
         
         # Sauvegarder en base
+        completed_at = datetime.now(LOCAL_TIMEZONE)
         with db_manager.get_session() as session:
             query = text("""
                 INSERT INTO cnn_models
@@ -169,7 +173,7 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
                     'version': version,
                     'model_type': model_type_str,
                     'architecture': json.dumps(architecture),
-                    'training_date': datetime.utcnow(),
+                    'training_date': completed_at,
                     'num_signatures': total_signatures,
                     'num_classes': num_appliances,
                     'metrics': json.dumps(metrics, default=str),
@@ -201,7 +205,7 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
             'num_appliances': num_appliances,
             'metrics': metrics,
             'training_duration_seconds': training_duration,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': completed_at.isoformat()
         }
         
     except Exception as e:

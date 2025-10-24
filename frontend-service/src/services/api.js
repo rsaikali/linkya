@@ -133,6 +133,37 @@ export const apiService = {
       throw error;
     }
   },
+
+  // Exporter toutes les signatures en CSV
+  exportSignatures: async () => {
+    try {
+      const response = await api.get('/api/signatures/export', {
+        responseType: 'blob',
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de l\'export des signatures:', error);
+      throw error;
+    }
+  },
+
+  // Importer des signatures depuis un fichier CSV
+  importSignatures: async (file) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post('/api/signatures/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de l\'import des signatures:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;

@@ -64,19 +64,6 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning(f"L'hypertable existe déjà ou erreur: {e}")
             
-            # Politique de rétention (suppression automatique des données > 48h)
-            try:
-                conn.execute(text(f"""
-                    SELECT add_retention_policy('linky_realtime',
-                        INTERVAL '{settings.sync_retention_hours} hours',
-                        if_not_exists => TRUE
-                    );
-                """))
-                conn.commit()
-                logger.info("Politique de rétention configurée")
-            except Exception as e:
-                logger.warning(f"Politique de rétention déjà configurée: {e}")
-            
             # Index pour optimiser les requêtes
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_linky_realtime_time

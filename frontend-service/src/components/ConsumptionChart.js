@@ -46,7 +46,7 @@ const ConsumptionChart = () => {
   const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeRange, setTimeRange] = useState(15/60);
+  const [timeRange, setTimeRange] = useState(30/60);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
   const detectionEventSourceRef = useRef(null);

@@ -1,7 +1,6 @@
 """
 Gestion de la base de données TimescaleDB pour nilm-cnn-service
 """
-import json
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
@@ -43,8 +42,8 @@ class DatabaseManager:
             Column('id', Integer, primary_key=True, autoincrement=True),
             Column('name', String(255), nullable=False),
             Column('description', String(1000)),
-            Column('created_at', DateTime, default=datetime.utcnow),
-            Column('updated_at', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow),
+            Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
+            Column('updated_at', DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index('idx_cnn_appliances_name', 'name')
         )
         
@@ -55,13 +54,12 @@ class DatabaseManager:
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
             Column('appliance_id', Integer, ForeignKey('cnn_appliances.id', ondelete='CASCADE')),
-            Column('start_time', DateTime, nullable=False),
-            Column('end_time', DateTime, nullable=False),
+            Column('start_time', DateTime(timezone=True), nullable=False),
+            Column('end_time', DateTime(timezone=True), nullable=False),
             Column('avg_power', Float),
             Column('power_std', Float),
             Column('energy_consumed', Float),  # Énergie totale (Wh)
-            Column('features', JSON),  # Features extraites (FFT, gradients, etc.)
-            Column('created_at', DateTime, default=datetime.utcnow),
+            Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
             Index('idx_cnn_signatures_appliance', 'appliance_id'),
             Index('idx_cnn_signatures_time', 'start_time', 'end_time')
         )
@@ -73,14 +71,14 @@ class DatabaseManager:
             Column('id', Integer, primary_key=True, autoincrement=True),
             Column('appliance_id', Integer, ForeignKey('cnn_appliances.id', ondelete='SET NULL'), nullable=True),
             Column('signature_id', Integer, ForeignKey('cnn_signatures.id', ondelete='SET NULL'), nullable=True),
-            Column('start_time', DateTime, nullable=False),
-            Column('end_time', DateTime, nullable=False),
+            Column('start_time', DateTime(timezone=True), nullable=False),
+            Column('end_time', DateTime(timezone=True), nullable=False),
             Column('avg_power', Float),
             Column('energy_consumed', Float),  # Énergie désagrégée (Wh)
             Column('confidence_score', Float),  # Score de confiance [0-1]
             Column('prediction_class', Integer),  # Classe prédite par CNN
             Column('features', JSON),  # Features de la détection
-            Column('created_at', DateTime, default=datetime.utcnow),
+            Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
             Index('idx_cnn_detections_appliance', 'appliance_id'),
             Index('idx_cnn_detections_time', 'start_time', 'end_time')
         )
@@ -93,7 +91,7 @@ class DatabaseManager:
             Column('version', String(50), unique=True, nullable=False),
             Column('model_type', String(100), default='CNN1D'),
             Column('architecture', JSON),  # Architecture du modèle
-            Column('training_date', DateTime, default=datetime.utcnow),
+            Column('training_date', DateTime(timezone=True), default=datetime.utcnow),
             Column('num_signatures', Integer),  # Nombre de signatures d'entraînement
             Column('num_classes', Integer),  # Nombre de classes
             Column('metrics', JSON),  # Métriques de performance (accuracy, loss, etc.)
@@ -271,20 +269,16 @@ class DatabaseManager:
             # Calculer l'énergie consommée (Wh)
             duration_hours = (end_time - start_time).total_seconds() / 3600
             energy_consumed = avg_power * duration_hours
-            
-            # Extraire les features (pour optimiser l'entraînement)
-            features = self._extract_basic_features(power_values)
-            
+
             with self.get_session() as session:
                 # Note: raw_data supprimé - les données sont récupérées
                 # depuis linky_realtime
                 query = text("""
                     INSERT INTO cnn_signatures
                     (appliance_id, start_time, end_time, avg_power,
-                     power_std, energy_consumed, features, created_at)
+                     power_std, energy_consumed, created_at)
                     VALUES (:appliance_id, :start_time, :end_time,
-                            :avg_power, :power_std, :energy_consumed,
-                            cast(:features as jsonb), NOW())
+                            :avg_power, :power_std, :energy_consumed, NOW())
                     RETURNING id
                 """)
 
@@ -297,7 +291,6 @@ class DatabaseManager:
                         'avg_power': avg_power,
                         'power_std': power_std,
                         'energy_consumed': energy_consumed,
-                        'features': json.dumps(features) if features else '{}'
                     }
                 )
                 
@@ -309,37 +302,6 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de l'ajout de la signature: {e}")
             return None
-    
-    def _extract_basic_features(self, power_values: List[float]) -> Dict[str, Any]:
-        """
-        Extrait les features basiques d'une signature
-        
-        Args:
-            power_values: Liste de valeurs de puissance
-            
-        Returns:
-            Dictionnaire de features
-        """
-        import numpy as np
-        
-        power_array = np.array(power_values)
-        features = {
-            'mean': float(np.mean(power_array)),
-            'std': float(np.std(power_array)),
-            'min': float(np.min(power_array)),
-            'max': float(np.max(power_array)),
-            'median': float(np.median(power_array)),
-            'q25': float(np.percentile(power_array, 25)),
-            'q75': float(np.percentile(power_array, 75)),
-        }
-        
-        # Gradients si suffisamment de données
-        if len(power_array) > 1:
-            gradients = np.gradient(power_array)
-            features['gradient_mean'] = float(np.mean(gradients))
-            features['gradient_std'] = float(np.std(gradients))
-        
-        return features
     
     def get_all_signatures(self) -> List[Dict[str, Any]]:
         """
@@ -355,7 +317,6 @@ class DatabaseManager:
                     SELECT
                         s.id, s.appliance_id, s.start_time, s.end_time,
                         s.avg_power, s.power_std, s.energy_consumed,
-                        s.features,
                         a.name as appliance_name
                     FROM cnn_signatures s
                     JOIN cnn_appliances a ON s.appliance_id = a.id
@@ -374,8 +335,7 @@ class DatabaseManager:
                         'end_time': row.end_time,
                         'avg_power': row.avg_power,
                         'power_std': row.power_std,
-                        'energy_consumed': row.energy_consumed,
-                        'features': row.features
+                        'energy_consumed': row.energy_consumed
                     }
 
                     # Récupérer les données brutes depuis linky_realtime

@@ -444,29 +444,62 @@ class Seq2PointMultiModel:
 
     @staticmethod
     def _load_signature_data_static(signature: Dict[str, Any]) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Charge les données de consommation pour une signature et les ré-échantillonne à 1Hz.
+        """
         try:
-            with db_manager.get_session() as session:
-                query = """
-                    SELECT time, papp
-                    FROM linky_realtime
-                    WHERE time >= :start_time AND time <= :end_time
-                    ORDER BY time
-                """
-                result = session.execute(
-                    text(query),
-                    {
-                        'start_time': signature['start_time'],
-                        'end_time': signature['end_time']
-                    }
+            data = db_manager.get_consumption_data(
+                start_time=signature['start_time'],
+                end_time=signature['end_time'],
+                resample_seconds=1
+            )
+
+            if not data:
+                logger.warning(
+                    f"Signature {signature.get('id')} sans données dans linky_realtime "
+                    f"({signature['start_time']} - {signature['end_time']})"
                 )
-                data = result.fetchall()
-                if not data:
-                    return None, None
-                aggregate_power = np.array([row[1] for row in data], dtype=np.float32)
-                appliance_power = aggregate_power.copy()
-                return aggregate_power, appliance_power
+                return None, None
+
+            timestamps = np.array(
+                [row['time'].timestamp() for row in data],
+                dtype=np.float64
+            )
+            values = np.array(
+                [row['papp'] for row in data],
+                dtype=np.float32
+            )
+
+            if len(timestamps) < 2:
+                logger.warning(
+                    f"Signature {signature.get('id')} trop courte ({len(timestamps)} points)"
+                )
+                return None, None
+
+            start_ts = signature['start_time'].timestamp()
+            end_ts = signature['end_time'].timestamp()
+
+            full_timestamps = np.arange(
+                start_ts,
+                end_ts + 1,
+                1.0,
+                dtype=np.float64
+            )
+
+            unique_ts, unique_indices = np.unique(timestamps, return_index=True)
+            unique_values = values[unique_indices]
+
+            interpolated_values = np.interp(
+                full_timestamps,
+                unique_ts,
+                unique_values
+            ).astype(np.float32)
+
+            aggregate_power = interpolated_values
+            appliance_power = aggregate_power.copy()
+            return aggregate_power, appliance_power
         except Exception as e:
-            logger.error(f"Erreur chargement signature {signature['id']}: {e}")
+            logger.error(f"Erreur chargement signature {signature.get('id')}: {e}")
             return None, None
 
 
@@ -1544,7 +1577,7 @@ class Seq2PointModel:
                 # Détecter les cycles
                 states, cycles = self.state_detector.predict_states(appliance_power)
                 
-                # Préparer les features enrichies
+                # Préparer les données de cycles (non persistées : colonne supprimée)
                 enriched_features = {
                     'model_type': self.model_type,
                     'model_version': 's2p',
@@ -1554,22 +1587,10 @@ class Seq2PointModel:
                     'enriched_at': datetime.utcnow().isoformat()
                 }
                 
-                # Mettre à jour la signature en base
-                update_query = text("""
-                    UPDATE cnn_signatures
-                    SET features = cast(:features as jsonb)
-                    WHERE id = :signature_id
-                """)
-                
-                session.execute(
-                    update_query,
-                    {
-                        'signature_id': signature_id,
-                        'features': json.dumps(enriched_features)
-                    }
+                logger.info(
+                    f"✅ Cycles analysés pour signature {signature_id} "
+                    f"({len(cycles)} cycles détectés)"
                 )
-                
-                logger.info(f"✅ Signature {signature_id} enrichie: {len(cycles)} cycles détectés")
                 return enriched_features
                 
         except Exception as e:
@@ -1630,7 +1651,8 @@ class Seq2PointNILMManager:
                 with db_manager.get_session() as session:
                     for appliance_id in appliance_ids:
                         query = """
-                            SELECT id, appliance_id, start_time, end_time, avg_power, power_std, energy_consumed, features, power_sequence
+                            SELECT id, appliance_id, start_time, end_time,
+                                   avg_power, power_std, energy_consumed
                             FROM cnn_signatures
                             WHERE appliance_id = :appliance_id
                             ORDER BY created_at
@@ -1643,38 +1665,18 @@ class Seq2PointNILMManager:
                 for appliance_id, signatures in all_signatures.items():
                     appliance_name = appliance_names[appliance_ids.index(appliance_id)]
                     for sig in signatures:
-                        # Charger la séquence de puissance depuis la signature (ou fallback vers linky_realtime)
-                        power_sequence = None
+                        aggregate_power, appliance_power = Seq2PointMultiModel._load_signature_data_static(sig)
+                        if appliance_power is None or len(appliance_power) == 0:
+                            continue
 
-                        if sig.get('power_sequence'):
-                            # Utiliser la séquence stockée dans la signature
-                            power_sequence = np.array(sig['power_sequence'], dtype=np.float32)
-                        else:
-                            # Fallback: charger depuis linky_realtime (signatures anciennes)
-                            with db_manager.engine.connect() as conn:
-                                sig_query = text("""
-                                    SELECT papp
-                                    FROM linky_realtime
-                                    WHERE time >= :start_time AND time <= :end_time
-                                    ORDER BY time
-                                """)
-                                sig_data = conn.execute(sig_query, {
-                                    'start_time': sig['start_time'],
-                                    'end_time': sig['end_time']
-                                }).fetchall()
+                        duration = int((sig['end_time'] - sig['start_time']).total_seconds())
 
-                                if sig_data:
-                                    power_sequence = np.array([row[0] for row in sig_data], dtype=np.float32)
-
-                        if power_sequence is not None and len(power_sequence) > 0:
-                            duration = int((sig['end_time'] - sig['start_time']).total_seconds())
-
-                            self.change_point_detector.add_signature_profile(
-                                appliance_id=appliance_id,
-                                appliance_name=appliance_name,
-                                power_sequence=power_sequence,
-                                duration=duration
-                            )
+                        self.change_point_detector.add_signature_profile(
+                            appliance_id=appliance_id,
+                            appliance_name=appliance_name,
+                            power_sequence=appliance_power,
+                            duration=duration
+                        )
 
                 total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
                 logger.info(f"{len(self.change_point_detector.signature_profiles)} appareils, {total_profiles} profils chargés")
@@ -1735,7 +1737,7 @@ class Seq2PointNILMManager:
                 with db_manager.get_session() as session:
                     query = """
                         SELECT id, appliance_id, start_time, end_time,
-                               avg_power, power_std, energy_consumed, features
+                               avg_power, power_std, energy_consumed
                         FROM cnn_signatures
                         WHERE appliance_id = :appliance_id
                         ORDER BY created_at
@@ -1889,29 +1891,33 @@ class Seq2PointNILMManager:
             appliances = session.execute(text(appliances_query)).fetchall()
 
             for appliance_id, appliance_name in appliances:
-                # Récupérer les signatures avec power_sequence
                 sig_query = """
-                    SELECT id, start_time, end_time, power_sequence
+                    SELECT id, start_time, end_time
                     FROM cnn_signatures
-                    WHERE appliance_id = :appliance_id AND power_sequence IS NOT NULL
+                    WHERE appliance_id = :appliance_id
                     ORDER BY created_at
                 """
                 signatures = session.execute(text(sig_query), {'appliance_id': appliance_id}).fetchall()
 
-                for sig in signatures:
-                    sig_id, start_time, end_time, power_sequence = sig
+                for sig_id, start_time, end_time in signatures:
+                    signature = {
+                        'id': sig_id,
+                        'appliance_id': appliance_id,
+                        'start_time': start_time,
+                        'end_time': end_time
+                    }
+                    aggregate_power, appliance_power = Seq2PointMultiModel._load_signature_data_static(signature)
+                    if appliance_power is None or len(appliance_power) == 0:
+                        continue
 
-                    if power_sequence:
-                        # Utiliser la séquence stockée
-                        power_array = np.array(power_sequence, dtype=np.float32)
-                        duration = int((end_time - start_time).total_seconds())
+                    duration = int((end_time - start_time).total_seconds())
 
-                        self.change_point_detector.add_signature_profile(
-                            appliance_id=appliance_id,
-                            appliance_name=appliance_name,
-                            power_sequence=power_array,
-                            duration=duration
-                        )
+                    self.change_point_detector.add_signature_profile(
+                        appliance_id=appliance_id,
+                        appliance_name=appliance_name,
+                        power_sequence=appliance_power,
+                        duration=duration
+                    )
 
         total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
         logger.info(f"Profils chargés: {len(self.change_point_detector.signature_profiles)} appareils, {total_profiles} profils")

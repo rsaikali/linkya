@@ -36,6 +36,8 @@ import {
   Delete,
   KeyboardArrowDown,
   KeyboardArrowUp,
+  FileDownload,
+  FileUpload,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
@@ -47,6 +49,10 @@ function AppliancesList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   const fetchAppliances = async () => {
     try {
@@ -97,6 +103,87 @@ function AppliancesList() {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const blob = await apiService.exportSignatures();
+
+      // Créer un lien de téléchargement
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Générer le nom du fichier avec timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      link.download = `nilmia_signatures_${timestamp}.csv`;
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      showSnackbar('Signatures exportées avec succès', 'success');
+    } catch (error) {
+      showSnackbar('Erreur lors de l\'export des signatures', 'error');
+    }
+  };
+
+  const handleImportClick = () => {
+    setImportDialogOpen(true);
+    setSelectedFile(null);
+    setImportResult(null);
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+        showSnackbar('Veuillez sélectionner un fichier CSV', 'error');
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleImportConfirm = async () => {
+    if (!selectedFile) {
+      showSnackbar('Veuillez sélectionner un fichier', 'error');
+      return;
+    }
+
+    setImportLoading(true);
+    try {
+      const result = await apiService.importSignatures(selectedFile);
+      setImportResult(result);
+
+      if (result.error_count === 0) {
+        showSnackbar(`${result.success_count} signature(s) importée(s) avec succès`, 'success');
+        fetchAppliances(); // Rafraîchir la liste
+      } else {
+        showSnackbar(
+          `Import terminé: ${result.success_count} succès, ${result.error_count} erreur(s)`,
+          'warning'
+        );
+      }
+    } catch (error) {
+      showSnackbar('Erreur lors de l\'import des signatures', 'error');
+      setImportResult({
+        status: 'error',
+        total_lines: 0,
+        success_count: 0,
+        error_count: 1,
+        errors: [{ line: 0, error: error.message }]
+      });
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleCloseImportDialog = () => {
+    setImportDialogOpen(false);
+    setSelectedFile(null);
+    setImportResult(null);
+  };
+
   if (error) {
     return (
       <Card>
@@ -114,6 +201,24 @@ function AppliancesList() {
         title="Signature d'appareils"
         subheader={`${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} détectable${appliances.length !== 1 ? 's' : ''}`}
         avatar={<ElectricMeter />}
+        action={
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <IconButton
+              onClick={handleExportCSV}
+              title="Exporter les signatures en CSV"
+              color="primary"
+            >
+              <FileDownload />
+            </IconButton>
+            <IconButton
+              onClick={handleImportClick}
+              title="Importer des signatures depuis un CSV"
+              color="primary"
+            >
+              <FileUpload />
+            </IconButton>
+          </Box>
+        }
       />
       <CardContent>
         {loading && <LinearProgress />}
@@ -163,6 +268,111 @@ function AppliancesList() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Dialog d'import CSV */}
+      <Dialog
+        open={importDialogOpen}
+        onClose={handleCloseImportDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Importer des signatures depuis un CSV</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+            <Alert severity="warning">
+              <strong>ATTENTION :</strong> L'import d'un fichier CSV remplacera <strong>toutes les signatures existantes</strong>.
+              <br />
+              Cette action est irréversible.
+            </Alert>
+
+            <Alert severity="info">
+              Le fichier CSV doit contenir les colonnes suivantes :
+              <br />
+              <strong>appliance_name, appliance_description, start_time, end_time</strong>
+              <br />
+              Les dates doivent être au format ISO 8601 (ex: 2025-10-20T14:24:02+02:00)
+            </Alert>
+
+            <Button
+              variant="outlined"
+              component="label"
+              startIcon={<FileUpload />}
+            >
+              Sélectionner un fichier CSV
+              <input
+                type="file"
+                hidden
+                accept=".csv"
+                onChange={handleFileChange}
+              />
+            </Button>
+
+            {selectedFile && (
+              <Alert severity="success">
+                Fichier sélectionné : <strong>{selectedFile.name}</strong>
+                <br />
+                Taille : {(selectedFile.size / 1024).toFixed(2)} Ko
+              </Alert>
+            )}
+
+            {importResult && (
+              <Box>
+                <Alert
+                  severity={importResult.error_count === 0 ? 'success' : 'warning'}
+                  sx={{ mb: 2 }}
+                >
+                  <strong>Résultat de l'import :</strong>
+                  <br />
+                  Signatures supprimées : {importResult.signatures_deleted || 0}
+                  <br />
+                  Total de lignes importées : {importResult.total_lines}
+                  <br />
+                  Succès : {importResult.success_count}
+                  <br />
+                  Erreurs : {importResult.error_count}
+                </Alert>
+
+                {importResult.errors && importResult.errors.length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle2" color="error" sx={{ mb: 1 }}>
+                      Détails des erreurs :
+                    </Typography>
+                    <Box
+                      sx={{
+                        maxHeight: 200,
+                        overflow: 'auto',
+                        bgcolor: '#f5f5f5',
+                        p: 1,
+                        borderRadius: 1,
+                      }}
+                    >
+                      {importResult.errors.map((err, idx) => (
+                        <Typography key={idx} variant="body2" color="error" sx={{ mb: 0.5 }}>
+                          Ligne {err.line}: {err.error}
+                        </Typography>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseImportDialog} disabled={importLoading}>
+            {importResult ? 'Fermer' : 'Annuler'}
+          </Button>
+          {!importResult && (
+            <Button
+              onClick={handleImportConfirm}
+              disabled={!selectedFile || importLoading}
+              variant="contained"
+            >
+              {importLoading ? <CircularProgress size={24} /> : 'Importer'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 }

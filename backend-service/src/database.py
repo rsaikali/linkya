@@ -9,26 +9,19 @@ from sqlalchemy.orm import sessionmaker
 from .config import settings
 
 
-def format_datetime_utc(dt: datetime | None) -> str | None:
+def format_datetime(dt: datetime | None) -> str | None:
     """
-    Formate un datetime en ISO string avec timezone UTC explicite.
-    
+    Formate un datetime en ISO string.
+
     Args:
-        dt: Datetime à formater (aware ou naive, converti en UTC)
-        
+        dt: Datetime à formater (avec timezone)
+
     Returns:
-        String ISO avec suffixe 'Z' ou None
+        String ISO avec timezone ou None
     """
     if dt is None:
         return None
-    
-    # Si le datetime a une timezone, le convertir en UTC
-    if dt.tzinfo is not None:
-        from datetime import timezone
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    
-    # Retourner l'ISO string sans timezone + 'Z' pour indiquer UTC
-    return dt.isoformat() + 'Z'
+    return dt.isoformat()
 
 
 class DatabaseManager:
@@ -59,7 +52,7 @@ class DatabaseManager:
             result = conn.execute(query).fetchone()
             if result:
                 return {
-                    "time": format_datetime_utc(result[0]),
+                    "time": format_datetime(result[0]),
                     "papp": result[1],
                     "hchp": result[2],
                     "hchc": result[3],
@@ -129,7 +122,7 @@ class DatabaseManager:
                 )
             return [
                 {
-                    "time": format_datetime_utc(row[0]),
+                    "time": format_datetime(row[0]),
                     "avg_papp": float(row[1]) if row[1] is not None else None,
                     "max_papp": float(row[2]) if row[2] is not None else None,
                     "min_papp": float(row[3]) if row[3] is not None else None,
@@ -182,8 +175,8 @@ class DatabaseManager:
                     "appliance_id": row[1],
                     "name": row[2],
                     "description": row[3],
-                    "start_time": format_datetime_utc(row[4]),
-                    "end_time": format_datetime_utc(row[5]),
+                    "start_time": format_datetime(row[4]),
+                    "end_time": format_datetime(row[5]),
                     "avg_power": float(row[6]) if row[6] is not None else None,
                     "energy_consumed": (
                         float(row[7]) if row[7] is not None else None
@@ -197,7 +190,7 @@ class DatabaseManager:
                     "signature_id": (
                         int(row[10]) if row[10] is not None else None
                     ),
-                    "created_at": format_datetime_utc(row[11]),
+                    "created_at": format_datetime(row[11]),
                 }
                 for row in result
             ]
@@ -234,14 +227,14 @@ class DatabaseManager:
                     "id": row[0],
                     "name": row[1],
                     "description": row[2],
-                    "created_at": format_datetime_utc(row[3]),
-                    "updated_at": format_datetime_utc(row[4]),
+                    "created_at": format_datetime(row[3]),
+                    "updated_at": format_datetime(row[4]),
                     "avg_power": float(row[5]) if row[5] is not None else None,
                     "power_std": float(row[6]) if row[6] is not None else None,
                     "avg_duration": float(row[7]) if row[7] is not None else None,
                     "num_signatures": int(row[8]) if row[8] is not None else 0,
-                    "last_signature_start": format_datetime_utc(row[9]),
-                    "last_signature_end": format_datetime_utc(row[10]),
+                    "last_signature_start": format_datetime(row[9]),
+                    "last_signature_end": format_datetime(row[10]),
                     "signature_count": int(row[8]) if row[8] is not None else 0,  # Même que num_signatures
                     "detection_count": int(row[11]) if row[11] is not None else 0,
                 }
@@ -286,8 +279,8 @@ class DatabaseManager:
                 signature = {
                     "id": row[0],
                     "appliance_id": row[1],
-                    "start_time": format_datetime_utc(row[2]),
-                    "end_time": format_datetime_utc(row[3]),
+                    "start_time": format_datetime(row[2]),
+                    "end_time": format_datetime(row[3]),
                     "avg_power": (
                         float(row[4]) if row[4] is not None else None
                     ),
@@ -297,7 +290,7 @@ class DatabaseManager:
                     "energy_consumed": (
                         float(row[6]) if row[6] is not None else None
                     ),
-                    "created_at": format_datetime_utc(row[7]),
+                    "created_at": format_datetime(row[7]),
                     "duration_seconds": (
                         float(row[8]) if row[8] is not None else None
                     ),
@@ -349,8 +342,8 @@ class DatabaseManager:
                         "id": result[0],
                         "name": result[1],
                         "description": result[2],
-                        "created_at": format_datetime_utc(result[3]),
-                        "updated_at": format_datetime_utc(result[4]),
+                        "created_at": format_datetime(result[3]),
+                        "updated_at": format_datetime(result[4]),
                     }
                 return None
         
@@ -371,8 +364,8 @@ class DatabaseManager:
                     "id": result[0],
                     "name": result[1],
                     "description": result[2],
-                    "created_at": format_datetime_utc(result[3]),
-                    "updated_at": format_datetime_utc(result[4]),
+                    "created_at": format_datetime(result[3]),
+                    "updated_at": format_datetime(result[4]),
                 }
             return None
 
@@ -516,7 +509,7 @@ class DatabaseManager:
                     "version": row[1],
                     "model_type": row[2],
                     "architecture": row[3],
-                    "training_date": format_datetime_utc(row[4]),
+                    "training_date": format_datetime(row[4]),
                     "num_signatures": row[5],
                     "num_classes": row[6],
                     "metrics": row[7],
@@ -612,28 +605,95 @@ class DatabaseManager:
                 check_query,
                 {"detection_id": detection_id}
             ).fetchone()
-            
+
             if not result:
                 return None
-            
+
             detection_info = {
                 "id": result[0],
                 "appliance_id": result[1],
                 "appliance_name": result[2],
-                "start_time": format_datetime_utc(result[3]),
-                "end_time": format_datetime_utc(result[4]),
+                "start_time": format_datetime(result[3]),
+                "end_time": format_datetime(result[4]),
             }
-            
+
             # Supprimer la détection
             delete_query = text("""
                 DELETE FROM cnn_detections
                 WHERE id = :detection_id
             """)
-            
+
             conn.execute(delete_query, {"detection_id": detection_id})
             conn.commit()
-            
+
             return detection_info
+
+    def delete_all_signatures(self) -> dict[str, int]:
+        """
+        Supprime toutes les signatures de tous les appareils.
+
+        Returns:
+            Dictionnaire avec le nombre de signatures supprimées
+        """
+        count_query = text("""
+            SELECT COUNT(*) FROM cnn_signatures
+        """)
+
+        delete_query = text("""
+            DELETE FROM cnn_signatures
+        """)
+
+        with self.engine.connect() as conn:
+            # Compter les signatures à supprimer
+            signatures_count = conn.execute(count_query).scalar() or 0
+
+            # Supprimer toutes les signatures
+            conn.execute(delete_query)
+            conn.commit()
+
+            return {
+                "signatures_deleted": signatures_count
+            }
+
+    def get_all_signatures_with_appliance(self) -> list[dict[str, Any]]:
+        """
+        Récupère toutes les signatures avec les informations de l'appareil associé.
+
+        Returns:
+            Liste des signatures avec appliance_name, appliance_description, start_time, end_time
+        """
+        query = text("""
+            SELECT
+                cs.id,
+                ca.id as appliance_id,
+                ca.name as appliance_name,
+                ca.description as appliance_description,
+                cs.start_time,
+                cs.end_time,
+                cs.avg_power,
+                cs.energy_consumed,
+                EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) as duration_seconds
+            FROM cnn_signatures cs
+            JOIN cnn_appliances ca ON cs.appliance_id = ca.id
+            ORDER BY cs.start_time DESC
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(query)
+            return [
+                {
+                    "id": row[0],
+                    "appliance_id": row[1],
+                    "appliance_name": row[2],
+                    "appliance_description": row[3] if row[3] else "",
+                    "start_time": format_datetime(row[4]),
+                    "end_time": format_datetime(row[5]),
+                    "avg_power": float(row[6]) if row[6] is not None else None,
+                    "energy_consumed": float(row[7]) if row[7] is not None else None,
+                    "duration_seconds": float(row[8]) if row[8] is not None else None,
+                }
+                for row in result
+            ]
 
 
 # Instance globale du gestionnaire de base de données
