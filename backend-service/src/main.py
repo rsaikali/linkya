@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -664,25 +664,26 @@ async def delete_nilm_model(model_id: int):
                 logger.info(f"Fichier modèle supprimé: {model_path}")
                 
                 # Supprimer le fichier metadata JSON associé
-                metadata_path = model_path.replace(
-                    "model_", "metadata_"
-                ).replace(".keras", ".json")
+                # Même nom que le modèle avec .metadata.json
+                metadata_path = model_path.replace(".keras", ".metadata.json")
                 if os.path.exists(metadata_path):
                     os.remove(metadata_path)
                     deleted_files.append(metadata_path)
-                    logger.info(f"Fichier metadata supprimé: {metadata_path}")
+                    logger.info("Fichier metadata supprimé: %s", metadata_path)
                 
                 # Supprimer le dossier logs TensorBoard si existant
                 version = result.get("version")
                 if version:
+                    # Structure: /app/models/tensorboard/multi_gru/version
                     logs_dir = os.path.join(
-                        os.path.dirname(model_path), "logs", version
+                        os.path.dirname(model_path),
+                        "tensorboard", "multi_gru", version
                     )
                     if os.path.exists(logs_dir):
                         import shutil
                         shutil.rmtree(logs_dir)
                         deleted_files.append(f"{logs_dir}/ (directory)")
-                        logger.info(f"Dossier logs supprimé: {logs_dir}")
+                        logger.info("Dossier logs supprimé: %s", logs_dir)
                         
             except OSError as e:
                 logger.warning(
@@ -855,10 +856,10 @@ async def stream_appliances(
 ):
     """
     Stream Server-Sent Events de la liste des appareils.
-    
+
     Args:
         update_interval: Intervalle de mise à jour en secondes (1-300)
-    
+
     Returns:
         Stream d'événements SSE avec liste des appareils
     """
@@ -871,3 +872,191 @@ async def stream_appliances(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ============================================================================
+# Export/Import CSV des signatures
+# ============================================================================
+
+
+@app.get("/api/signatures/export")
+async def export_signatures():
+    """
+    Exporte toutes les signatures au format CSV.
+
+    Returns:
+        Fichier CSV avec colonnes: appliance_name, appliance_description, start_time, end_time
+    """
+    import csv
+    from io import StringIO
+    from fastapi.responses import Response
+
+    try:
+        signatures = db_manager.get_all_signatures_with_appliance()
+
+        # Créer le CSV en mémoire
+        output = StringIO()
+        writer = csv.writer(output)
+
+        # Header
+        writer.writerow([
+            "appliance_name",
+            "appliance_description",
+            "start_time",
+            "end_time"
+        ])
+
+        # Données
+        for sig in signatures:
+            writer.writerow([
+                sig["appliance_name"],
+                sig["appliance_description"],
+                sig["start_time"],
+                sig["end_time"]
+            ])
+
+        csv_content = output.getvalue()
+
+        # Générer le nom du fichier avec timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"nilmia_signatures_{timestamp}.csv"
+
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Erreur lors de l'export CSV: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur lors de l'export: {str(e)}"
+        )
+
+
+class SignatureImportResult(BaseModel):
+    """Modèle pour le résultat d'import de signatures."""
+    total_lines: int
+    success_count: int
+    error_count: int
+    errors: list[dict[str, str]]
+
+
+@app.post("/api/signatures/import")
+async def import_signatures(file: UploadFile):
+    """
+    Importe des signatures depuis un fichier CSV.
+
+    Le CSV doit contenir les colonnes: appliance_name, appliance_description, start_time, end_time
+
+    Args:
+        file: Fichier CSV uploadé (multipart/form-data)
+
+    Returns:
+        Rapport d'import avec nombre de succès et erreurs détaillées
+    """
+    import csv
+    from io import StringIO
+
+    try:
+        # Lire le contenu du CSV
+        content = await file.read()
+        content_str = content.decode('utf-8')
+        csv_reader = csv.DictReader(StringIO(content_str))
+
+        # Valider les colonnes requises
+        required_columns = {
+            "appliance_name",
+            "appliance_description",
+            "start_time",
+            "end_time"
+        }
+        if not required_columns.issubset(csv_reader.fieldnames or []):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Colonnes requises: {', '.join(required_columns)}"
+            )
+
+        # Supprimer toutes les signatures existantes avant l'import
+        logger.info("Suppression de toutes les signatures existantes avant import...")
+        delete_result = db_manager.delete_all_signatures()
+        logger.info(f"{delete_result['signatures_deleted']} signature(s) supprimée(s)")
+
+        # Importer ligne par ligne
+        from .config import get_celery_app
+        celery_app = get_celery_app()
+
+        total_lines = 0
+        success_count = 0
+        error_count = 0
+        errors = []
+
+        for line_num, row in enumerate(csv_reader, start=2):
+            total_lines += 1
+
+            try:
+                # Valider les champs
+                appliance_name = row["appliance_name"].strip()
+                appliance_description = row["appliance_description"].strip()
+                start_time = row["start_time"].strip()
+                end_time = row["end_time"].strip()
+
+                if not appliance_name:
+                    raise ValueError("Le nom de l'appareil ne peut pas être vide")
+
+                # Valider les timestamps
+                start_dt = datetime.fromisoformat(start_time)
+                end_dt = datetime.fromisoformat(end_time)
+
+                if start_dt >= end_dt:
+                    raise ValueError(
+                        "start_time doit être antérieur à end_time"
+                    )
+
+                # Créer la signature via Celery
+                celery_app.send_task(
+                    'add_cnn_signature',
+                    args=(
+                        appliance_name,
+                        start_time,
+                        end_time,
+                        appliance_description or ""
+                    ),
+                    queue='nilm_cnn',
+                    routing_key='nilm_cnn.add_cnn_signature'
+                )
+
+                success_count += 1
+
+            except ValueError as e:
+                error_count += 1
+                errors.append({
+                    "line": line_num,
+                    "error": str(e)
+                })
+            except Exception as e:
+                error_count += 1
+                errors.append({
+                    "line": line_num,
+                    "error": f"Erreur inattendue: {str(e)}"
+                })
+
+        return {
+            "status": "completed",
+            "signatures_deleted": delete_result["signatures_deleted"],
+            "total_lines": total_lines,
+            "success_count": success_count,
+            "error_count": error_count,
+            "errors": errors
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de l'import CSV: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur lors de l'import: {str(e)}"
+        )
