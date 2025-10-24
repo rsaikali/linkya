@@ -21,17 +21,17 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://redis:6379/0"
     celery_result_backend: str = "redis://redis:6379/0"
     
-    # Configuration CNN NILM
+    # Configuration NILM
     cnn_training_interval_hours: int = 24  # Entraînement toutes les 24h
     cnn_detection_interval_minutes: int = 5  # Détection toutes les 5min
-    cnn_detection_period_hours: int = 24  # Période analysée (défaut: 24h)
+    cnn_detection_period_hours: int = 240  # Période analysée (défaut: 10x24h)
     # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
-    cnn_window_size_minutes: int = 60
+    cnn_window_size_minutes: int = 10  # 10 min = 600 points à 1Hz
     cnn_min_power_threshold: int = 30  # Seuil minimal de puissance (W)
     cnn_min_duration_seconds: int = 30  # Durée minimale d'un événement (s)
     
-    # Configuration du modèle CNN
-    cnn_model_path: str = "/app/models/cnn"
+    # Configuration du modèle (S2P, LSTM, GRU)
+    cnn_model_path: str = "/app/models"
     # Override manuel de la longueur de séquence (si None, calculé auto)
     cnn_sequence_length: Optional[int] = None
     cnn_batch_size: int = 32
@@ -39,12 +39,17 @@ class Settings(BaseSettings):
     cnn_learning_rate: float = 0.001
     cnn_validation_split: float = 0.2
     
-    # Augmentation de données
+    # Device configuration (CPU/GPU)
+    use_gpu: Optional[str] = None  # "true", "false", "auto" (default)
+    nilm_model_type: str = "gru"  # "lstm", "gru", "attention"
+    nilm_detect_states: bool = True  # Activer détection d'états/cycles
+    
+    # Augmentation de données (legacy CNN)
     cnn_augmentation_enabled: bool = True
     cnn_noise_factor: float = 0.02
     cnn_shift_range: int = 30  # Décalage temporel max (secondes)
     
-    # Feature engineering
+    # Feature engineering (legacy CNN)
     cnn_fft_enabled: bool = True  # Extraction de features FFT
     cnn_gradient_enabled: bool = True  # Calcul des gradients
     cnn_statistics_enabled: bool = True  # Stats fenêtres glissantes

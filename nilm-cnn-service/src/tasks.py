@@ -15,16 +15,19 @@ warnings.filterwarnings('ignore', message='.*superuser privileges.*')
 from celery import Celery
 from celery.schedules import crontab
 
-from .config import settings
-from .database import db_manager
-from .cnn_nilm import cnn_model
-
-# Configuration du logger
+# Configuration du logger (doit être avant les imports locaux)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+from .config import settings
+from .database import db_manager
+
+from .seq2point_nilm import Seq2PointNILMManager
+logger.info("🚀 Mode Sequence-to-Point (S2P) activé")
+nilm_manager = Seq2PointNILMManager()
 
 # Vérifier la disponibilité du GPU (sauf si CUDA_VISIBLE_DEVICES est vide)
 if os.environ.get('CUDA_VISIBLE_DEVICES', '0') != '':
@@ -99,69 +102,61 @@ def init_cnn_database() -> Dict[str, Any]:
 
 
 @celery_app.task(name='train_cnn_model')
-def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
+def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
     """
-    Entraîne le modèle CNN sur les signatures disponibles
+    Entraîne le modèle NILM (S2P ou CNN legacy) sur les signatures
     
     Args:
-        min_signatures: Nombre minimum de signatures requises
+        min_signatures: Nombre minimum de signatures par appareil
         
     Returns:
         Statut et métriques de l'entraînement
     """
     try:
         import time
-        start_time = time.time()
-        
-        logger.info("Démarrage de l'entraînement du modèle CNN...")
-        
-        # Récupérer toutes les signatures
-        signatures = db_manager.get_all_signatures()
-        
-        if len(signatures) < min_signatures:
-            message = f"Pas assez de signatures ({len(signatures)}/{min_signatures})"
-            logger.warning(message)
-            return {
-                'status': 'skipped',
-                'message': message,
-                'num_signatures': len(signatures)
-            }
-        
-        # Créer une version basée sur le timestamp (timezone locale)
-        version = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Entraîner le modèle
-        metrics = cnn_model.train(signatures, version)
-        
-        if not metrics:
-            return {
-                'status': 'error',
-                'message': 'Entraînement échoué',
-                'num_signatures': len(signatures)
-            }
-        
-        # Calculer la durée d'entraînement
-        training_duration = int(time.time() - start_time)
-        
-        # Sauvegarder les informations du modèle en base
         from sqlalchemy import text
         import json
-        with db_manager.get_session() as session:
-            # Obtenir l'architecture du modèle
-            architecture = {
-                'type': 'CNN1D',
-                'sequence_length': settings.effective_sequence_length,
-                'num_classes': len(cnn_model.class_names),
-                'class_names': cnn_model.class_names
+        
+        start_time = time.time()
+        
+        logger.info("🚀 Entraînement Sequence-to-Point (désagrégation multi-sorties)")
+        # Créer une version basée sur le timestamp (timezone locale)
+        version = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Entraîner le modèle multi-sorties
+        metrics = nilm_manager.train_all_appliances(version)
+        if 'error' in metrics:
+            return {
+                'status': 'error',
+                'message': metrics.get('error'),
+                'details': metrics
             }
-            
+        # Préparer les infos pour la base
+        num_appliances = metrics.get('num_appliances', 0)
+        total_signatures = sum(
+            app['num_signatures'] 
+            for app in metrics.get('appliances', [])
+        )
+        architecture = {
+            'type': f'S2P-MULTI-{nilm_manager.model_type.upper()}',
+            'sequence_length': settings.effective_sequence_length,
+            'num_appliances': num_appliances,
+            'model_type': nilm_manager.model_type,
+            'appliances': metrics.get('appliances', [])
+        }
+        model_type_str = f'S2P-MULTI-{nilm_manager.model_type.upper()}'
+        
+        # Calculer la durée
+        training_duration = int(time.time() - start_time)
+        
+        # Sauvegarder en base
+        with db_manager.get_session() as session:
             query = text("""
-                INSERT INTO cnn_models 
-                (version, model_type, architecture, training_date, 
-                 num_signatures, num_classes, metrics, model_path, 
+                INSERT INTO cnn_models
+                (version, model_type, architecture, training_date,
+                 num_signatures, num_classes, metrics, model_path,
                  is_active, training_duration_seconds)
-                VALUES 
-                (:version, :model_type, cast(:architecture as jsonb), 
+                VALUES
+                (:version, :model_type, cast(:architecture as jsonb),
                  :training_date, :num_signatures, :num_classes,
                  cast(:metrics as jsonb), :model_path, :is_active,
                  :training_duration_seconds)
@@ -172,13 +167,13 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
                 query,
                 {
                     'version': version,
-                    'model_type': 'CNN1D',
+                    'model_type': model_type_str,
                     'architecture': json.dumps(architecture),
                     'training_date': datetime.utcnow(),
-                    'num_signatures': len(signatures),
-                    'num_classes': len(cnn_model.class_names),
+                    'num_signatures': total_signatures,
+                    'num_classes': num_appliances,
                     'metrics': json.dumps(metrics, default=str),
-                    'model_path': f"{settings.cnn_model_path}/model_{version}.keras",
+                    'model_path': metrics.get('model_path', f"{settings.cnn_model_path}/{version}"),
                     'is_active': True,
                     'training_duration_seconds': training_duration
                 }
@@ -188,34 +183,39 @@ def train_cnn_model(min_signatures: int = 10) -> Dict[str, Any]:
             
             # Désactiver les anciens modèles
             session.execute(
-                text("UPDATE cnn_models SET is_active = FALSE WHERE id != :id"),
+                text("UPDATE cnn_models SET is_active = FALSE "
+                     "WHERE id != :id"),
                 {'id': model_id}
             )
         
-        logger.info(f"Modèle {version} entraîné avec succès en {training_duration}s: accuracy={metrics.get('val_accuracy', 0):.3f}")
+        logger.info(
+            f"✅ Modèle {version} entraîné en {training_duration}s - "
+            f"{num_appliances} appareils, {total_signatures} signatures"
+        )
         
         return {
             'status': 'success',
             'version': version,
-            'num_signatures': len(signatures),
-            'num_classes': len(cnn_model.class_names),
+            'model_type': model_type_str,
+            'num_signatures': total_signatures,
+            'num_appliances': num_appliances,
             'metrics': metrics,
             'training_duration_seconds': training_duration,
             'timestamp': datetime.utcnow().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Erreur lors de l'entraînement: {e}", exc_info=True)
+        logger.error(f"Erreur entraînement: {e}", exc_info=True)
         return {'status': 'error', 'message': str(e)}
 
 
 @celery_app.task(name='detect_cnn_appliances')
 def detect_cnn_appliances(
     hours: int = None,
-    min_confidence: float = 0.6
+    min_confidence: float = 0.3
 ) -> Dict[str, Any]:
     """
-    Détecte les appareils dans la période récente
+    Détecte et désagrège les appareils (S2P ou CNN legacy)
     
     Args:
         hours: Nombre d'heures à analyser (défaut: depuis config)
@@ -225,17 +225,21 @@ def detect_cnn_appliances(
         Statut et nombre de détections
     """
     try:
+        from sqlalchemy import text
+        import json
+        
         # Utiliser la valeur de configuration par défaut si non spécifié
         if hours is None:
             hours = settings.cnn_detection_period_hours
         
-        logger.info(f"Détection d'appareils sur les {hours} dernières heures...")
+        logger.info(f"Détection sur les {hours} dernières heures...")
         
         # Vérifier qu'un modèle est disponible
-        from sqlalchemy import text
         with db_manager.engine.connect() as conn:
             result = conn.execute(
-                text("SELECT version FROM cnn_models WHERE is_active = TRUE ORDER BY training_date DESC LIMIT 1")
+                text("SELECT version, model_type FROM cnn_models "
+                     "WHERE is_active = TRUE "
+                     "ORDER BY training_date DESC LIMIT 1")
             )
             row = result.first()
             
@@ -245,25 +249,36 @@ def detect_cnn_appliances(
                 return {'status': 'skipped', 'message': message}
             
             active_version = row.version
-        
-        # Charger le modèle
-        if not cnn_model.load_model(active_version):
-            return {'status': 'error', 'message': 'Échec du chargement du modèle'}
+            model_type = row.model_type
         
         # Définir la période d'analyse
         end_time = datetime.utcnow()
         start_time = end_time - timedelta(hours=hours)
         
-        # Détecter les événements
-        events = cnn_model.detect_events(start_time, end_time, min_confidence)
+        # Désagrégation S2P multi-sorties
+        logger.info(f"🔍 Désagrégation S2P multi-sorties: {start_time} -> {end_time}")
+        # Charger le modèle actif
+        if not nilm_manager.models:
+            if not nilm_manager.load_active_models():
+                return {
+                    'status': 'error',
+                    'message': 'Échec chargement modèle S2P multi-sorties'
+                }
+        # Désagrégation
+        events = nilm_manager.disaggregate(start_time, end_time)
         
         if not events:
             logger.info("Aucun événement détecté")
             return {
                 'status': 'success',
                 'num_detections': 0,
-                'period': {'start': start_time.isoformat(), 'end': end_time.isoformat()}
+                'period': {
+                    'start': start_time.isoformat(),
+                    'end': end_time.isoformat()
+                }
             }
+        
+        logger.info(f"📊 {len(events)} événements à traiter")
         
         # Sauvegarder les détections en base
         num_saved = 0
@@ -272,26 +287,32 @@ def detect_cnn_appliances(
         
         with db_manager.get_session() as session:
             for event in events:
-                # Trouver l'ID de l'appareil par son nom
-                result = session.execute(
-                    text("SELECT id FROM cnn_appliances WHERE name = :name LIMIT 1"),
-                    {'name': event['appliance_name']}
-                )
-                row = result.first()
-                appliance_id = row.id if row else None
+                # Récupérer l'appliance_id (déjà présent en S2P)
+                appliance_id = event.get('appliance_id')
+                
+                # Si pas d'appliance_id, chercher par nom (mode legacy)
+                if not appliance_id:
+                    result = session.execute(
+                        text("SELECT id FROM cnn_appliances "
+                             "WHERE name = :name LIMIT 1"),
+                        {'name': event['appliance_name']}
+                    )
+                    row = result.first()
+                    appliance_id = row.id if row else None
                 
                 if not appliance_id:
-                    logger.warning(f"Appareil inconnu: {event['appliance_name']}")
+                    logger.warning(
+                        f"Appareil inconnu: {event['appliance_name']}"
+                    )
                     num_skipped += 1
                     continue
                 
-                # Vérifier s'il existe une détection superposée du même appareil
+                # Vérifier chevauchements pour cet appareil
                 check_overlap_query = text("""
                     SELECT id, confidence_score, start_time, end_time
                     FROM cnn_detections
                     WHERE appliance_id = :appliance_id
                     AND (
-                        -- La nouvelle détection chevauche l'existante
                         (:start_time <= end_time AND :end_time >= start_time)
                     )
                     ORDER BY confidence_score DESC
@@ -329,6 +350,11 @@ def detect_cnn_appliances(
                             WHERE id = :detection_id
                         """)
                         
+                        # Préparer features selon le mode
+                        features_data = event.get('features', {})
+                        if 'probabilities' in event:
+                            features_data['probabilities'] = event['probabilities']
+                        
                         session.execute(
                             update_query,
                             {
@@ -336,12 +362,13 @@ def detect_cnn_appliances(
                                 'start_time': event['start_time'],
                                 'end_time': event['end_time'],
                                 'avg_power': event['avg_power'],
-                                'energy_consumed': event['energy_consumed'],
+                                'energy_consumed': event.get(
+                                    'energy_consumed',
+                                    event.get('energy_wh', 0)
+                                ),
                                 'confidence_score': event['confidence_score'],
                                 'prediction_class': event.get('prediction_class'),
-                                'features': json.dumps({
-                                    'probabilities': event['probabilities']
-                                })
+                                'features': json.dumps(features_data)
                             }
                         )
                         num_updated += 1
@@ -358,13 +385,20 @@ def detect_cnn_appliances(
                         )
                 else:
                     # Aucune détection superposée, insérer une nouvelle
+                    # Préparer features
+                    features_data = event.get('features', {})
+                    if 'probabilities' in event:
+                        features_data['probabilities'] = event['probabilities']
+                    
                     insert_query = text("""
                         INSERT INTO cnn_detections
-                        (appliance_id, start_time, end_time, avg_power, energy_consumed,
-                         confidence_score, prediction_class, features, created_at)
+                        (appliance_id, start_time, end_time,
+                         avg_power, energy_consumed, confidence_score,
+                         prediction_class, features, created_at)
                         VALUES
-                        (:appliance_id, :start_time, :end_time, :avg_power, :energy_consumed,
-                         :confidence_score, :prediction_class, :features, NOW())
+                        (:appliance_id, :start_time, :end_time,
+                         :avg_power, :energy_consumed, :confidence_score,
+                         :prediction_class, :features, NOW())
                     """)
                     
                     session.execute(
@@ -374,15 +408,21 @@ def detect_cnn_appliances(
                             'start_time': event['start_time'],
                             'end_time': event['end_time'],
                             'avg_power': event['avg_power'],
-                            'energy_consumed': event['energy_consumed'],
+                            'energy_consumed': event.get(
+                                'energy_consumed',
+                                event.get('energy_wh', 0)
+                            ),
                             'confidence_score': event['confidence_score'],
                             'prediction_class': event.get('prediction_class'),
-                            'features': json.dumps({
-                                'probabilities': event['probabilities']
-                            })
+                            'features': json.dumps(features_data)
                         }
                     )
                     num_saved += 1
+                    logger.debug(
+                        f"✅ Nouvelle détection: {event['appliance_name']} "
+                        f"- {event.get('duration_seconds', 0)}s "
+                        f"- {event['avg_power']:.1f}W"
+                    )
         
         total_processed = num_saved + num_updated + num_skipped
         logger.info(
@@ -590,6 +630,50 @@ def get_cnn_stats() -> Dict[str, Any]:
         return {'status': 'error', 'message': str(e)}
 
 
+@celery_app.task(name='enrich_cnn_signatures')
+def enrich_cnn_signatures() -> Dict[str, Any]:
+    """
+    Enrichit toutes les signatures avec les cycles détectés par S2P
+    
+    Returns:
+        Statut et nombre de signatures enrichies
+    """
+    try:
+        logger.info("🔍 Enrichissement des signatures avec cycles...")
+        
+        if not USE_S2P:
+            return {
+                'status': 'skipped',
+                'message': 'Mode S2P non disponible',
+                'enriched_count': 0
+            }
+        
+        # Charger les modèles actifs si pas déjà chargés
+        if not nilm_manager.models:
+            if not nilm_manager.load_active_models():
+                return {
+                    'status': 'error',
+                    'message': 'Impossible de charger les modèles S2P',
+                    'enriched_count': 0
+                }
+        
+        # Enrichir toutes les signatures
+        enriched_count = nilm_manager.enrich_all_signatures()
+        
+        logger.info(f"✅ {enriched_count} signatures enrichies avec cycles")
+        
+        return {
+            'status': 'success',
+            'enriched_count': enriched_count,
+            'num_appliances': len(nilm_manager.models),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Erreur enrichissement: {e}", exc_info=True)
+        return {'status': 'error', 'message': str(e)}
+
+
 # Configuration des tâches périodiques
 celery_app.conf.beat_schedule = {
     'train-cnn-model': {
@@ -599,7 +683,7 @@ celery_app.conf.beat_schedule = {
     'detect-cnn-appliances': {
         'task': 'detect_cnn_appliances',
         'schedule': settings.cnn_detection_interval_minutes * 60.0,
-        'kwargs': {'hours': 1, 'min_confidence': 0.6}
+        'kwargs': {'hours': 2, 'min_confidence': 0.6}  # Analyse 2h pour couvrir les cycles HC/HP
     },
     'get-cnn-stats': {
         'task': 'get_cnn_stats',
