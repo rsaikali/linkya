@@ -19,7 +19,7 @@ function App() {
           <Toolbar>
             <ElectricBolt sx={{ mr: 2 }} />
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Nilmia - Monitoring Linky & NILM
+              Linkya - Monitoring Linky & NILM
             </Typography>
           </Toolbar>
         </AppBar>
@@ -45,7 +45,7 @@ function App() {
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            Nilmia © {new Date().getFullYear()} - Plateforme de monitoring intelligent
+            Linkya © {new Date().getFullYear()} - Plateforme de monitoring intelligent
           </Typography>
         </Box>
       </Box>

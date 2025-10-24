@@ -332,10 +332,6 @@ function ApplianceRow({ appliance, onUpdate, onShowSnackbar }) {
         <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
           <Collapse in={open} timeout="auto" unmountOnExit>
             <Box sx={{ margin: 2 }}>
-              <Typography variant="h6" gutterBottom component="div" sx={{ fontSize: '1rem' }}>
-                Signatures ({signatures.length})
-              </Typography>
-
               {signaturesLoading && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
                   <CircularProgress size={24} />

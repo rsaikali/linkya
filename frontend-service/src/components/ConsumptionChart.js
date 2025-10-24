@@ -56,12 +56,9 @@ const ConsumptionChart = () => {
 
   // Déterminer l'intervalle d'agrégation selon la période
   const getIntervalForTimeRange = (range) => {
-    if (range <= 1) {
+    if (range <= 6) {
       // 1 hour ou moins: pas d'agrégation (données brutes)
       return 'raw';
-    } else if (range <= 6) {
-      // Jusqu'à 6 heures: agrégation à 5 minutes
-      return '1 minutes';
     } else if (range <= 24) {
       // Jusqu'à 24 heures: agrégation à 15 minutes
       return '1 minutes';
@@ -214,6 +211,7 @@ const ConsumptionChart = () => {
 
   const options = {
     responsive: true,
+    borderWidth:1,
     maintainAspectRatio: false,
     onClick: (event, elements) => {
       // Extraire l'index du point cliqué
@@ -285,6 +283,8 @@ const ConsumptionChart = () => {
                   <MenuItem value={15/60}>15 minutes</MenuItem>
                   <MenuItem value={30/60}>30 minutes</MenuItem>
                   <MenuItem value={1}>1 heure</MenuItem>
+                  <MenuItem value={2}>2 heures</MenuItem>
+                  <MenuItem value={4}>4 heures</MenuItem>
                   <MenuItem value={6}>6 heures</MenuItem>
                   <MenuItem value={12}>12 heures</MenuItem>
                   <MenuItem value={24}>24 heures</MenuItem>

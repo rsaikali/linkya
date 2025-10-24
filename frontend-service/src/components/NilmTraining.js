@@ -161,8 +161,22 @@ const NilmTraining = () => {
 
   // Formater une date
 
+  // Extraire les métriques selon le type de modèle
+  const extractMetrics = (model) => {
+    if (!model || !model.metrics) return null;
+    
+    // Pour les modèles S2P, les métriques sont dans appliances[0].metrics
+    if (model.model_type?.startsWith('S2P') && model.metrics.appliances?.length > 0) {
+      return model.metrics.appliances[0].metrics;
+    }
+    
+    // Pour les modèles CNN classiques, les métriques sont directement dans model.metrics
+    return model.metrics;
+  };
+
   // Formater les métriques pour l'affichage
-  const formatMetrics = (metrics) => {
+  const formatMetrics = (model) => {
+    const metrics = extractMetrics(model);
     if (!metrics) return 'N/A';
     
     const {
@@ -170,19 +184,43 @@ const NilmTraining = () => {
       val_accuracy,
       train_loss,
       val_loss,
+      train_mae,
+      val_mae,
+      train_mse,
+      val_mse,
       epochs_trained,
     } = metrics;
 
+    // Pour les modèles S2P (régression), on utilise MAE au lieu de accuracy
+    const isS2P = train_mae !== undefined && train_mae !== null;
+
+    if (isS2P) {
+      return (
+        <Box>
+          <Typography variant="caption" display="block">
+            MAE: <strong>{train_mae?.toFixed(2) || 'N/A'}W</strong> / <strong>{val_mae?.toFixed(2) || 'N/A'}W</strong>
+          </Typography>
+          <Typography variant="caption" display="block">
+            MSE: <strong>{train_mse?.toFixed(4) || 'N/A'}</strong> / <strong>{val_mse?.toFixed(4) || 'N/A'}</strong>
+          </Typography>
+          <Typography variant="caption" display="block" color="text.secondary">
+            (Train/Val · {epochs_trained || 'N/A'} epochs)
+          </Typography>
+        </Box>
+      );
+    }
+
+    // Pour les modèles CNN (classification)
     return (
       <Box>
         <Typography variant="caption" display="block">
-          Accuracy: <strong>{(train_accuracy * 100).toFixed(1)}%</strong> / <strong>{(val_accuracy * 100).toFixed(1)}%</strong>
+          Accuracy: <strong>{train_accuracy ? (train_accuracy * 100).toFixed(1) : 'N/A'}%</strong> / <strong>{val_accuracy ? (val_accuracy * 100).toFixed(1) : 'N/A'}%</strong>
         </Typography>
         <Typography variant="caption" display="block">
-          Loss: <strong>{train_loss.toFixed(4)}</strong> / <strong>{val_loss.toFixed(4)}</strong>
+          Loss: <strong>{train_loss?.toFixed(4) || 'N/A'}</strong> / <strong>{val_loss?.toFixed(4) || 'N/A'}</strong>
         </Typography>
         <Typography variant="caption" display="block" color="text.secondary">
-          (Train/Val · {epochs_trained} epochs)
+          (Train/Val · {epochs_trained || 'N/A'} epochs)
         </Typography>
       </Box>
     );
@@ -218,9 +256,34 @@ const NilmTraining = () => {
     }
   };
 
-  // Obtenir le score de qualité (basé sur val_accuracy)
-  const getQualityScore = (metrics) => {
-    if (!metrics || !metrics.val_accuracy) return null;
+  // Obtenir le score de qualité (basé sur val_accuracy pour CNN, val_mae pour S2P)
+  const getQualityScore = (model) => {
+    const metrics = extractMetrics(model);
+    if (!metrics) return null;
+    
+    // Pour les modèles S2P (régression avec MAE)
+    if (metrics.val_mae !== undefined && metrics.val_mae !== null) {
+      const mae = metrics.val_mae;
+      let color = 'error';
+      let label = 'Faible';
+      
+      // MAE plus bas = meilleur (inversé par rapport à accuracy)
+      if (mae <= 30) {
+        color = 'success';
+        label = 'Excellent';
+      } else if (mae <= 60) {
+        color = 'warning';
+        label = 'Bon';
+      } else if (mae <= 100) {
+        color = 'info';
+        label = 'Moyen';
+      }
+      
+      return { score: mae.toFixed(1), color, label, unit: 'W' };
+    }
+    
+    // Pour les modèles CNN (classification avec accuracy)
+    if (!metrics.val_accuracy) return null;
     const score = metrics.val_accuracy * 100;
     
     let color = 'error';
@@ -237,7 +300,7 @@ const NilmTraining = () => {
       label = 'Moyen';
     }
     
-    return { score, color, label };
+    return { score: score.toFixed(1), color, label, unit: '%' };
   };
 
   return (
@@ -293,7 +356,7 @@ const NilmTraining = () => {
                 </TableHead>
                 <TableBody>
                   {models.map((model) => {
-                    const quality = getQualityScore(model.metrics);
+                    const quality = getQualityScore(model);
                     return (
                       <TableRow key={model.id} hover>
                         <TableCell>
@@ -315,7 +378,7 @@ const NilmTraining = () => {
                         <TableCell>
                             {quality ? (
                               <Chip
-                                label={`${quality.label} (${quality.score.toFixed(1)}%)`}
+                                label={`${quality.label} (${quality.score}${quality.unit})`}
                                 color={quality.color}
                                 size="small"
                               />
@@ -354,7 +417,7 @@ const NilmTraining = () => {
                             />
                           </TableCell>
                           <TableCell>
-                            {formatMetrics(model.metrics)}
+                            {formatMetrics(model)}
                           </TableCell>
                           <TableCell align="center">
                             <Tooltip 

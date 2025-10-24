@@ -18,6 +18,7 @@ import {
   Select,
   MenuItem,
   FormControl,
+  InputLabel,
   Box,
   IconButton,
   Tooltip,
@@ -211,8 +212,10 @@ function DetectionsList() {
                 {detectLoading ? 'Détection...' : 'Lancer détection'}
               </Button>
               <FormControl size="small" sx={{ minWidth: 160 }}>
+                <InputLabel>Période</InputLabel>
                 <Select
                   value={selectedPeriod}
+                  label="Période"
                   onChange={handlePeriodChange}
                   displayEmpty
                   sx={{ bgcolor: 'background.paper' }}
