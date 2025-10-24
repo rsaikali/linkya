@@ -448,7 +448,7 @@ nilmia/
 │   ├── src/
 │   │   ├── config.py           # Configuration NILM-CNN
 │   │   ├── database.py         # Tables CNN (appareils, signatures, détections)
-│   │   ├── cnn_nilm.py         # Modèles CNN 1D (TensorFlow/Keras)
+│   │   ├── seq2point_nilm.py   # Modèle Sequence-to-Point multi-appareils
 │   │   └── tasks.py            # Tâches Celery NILM-CNN
 │   ├── Dockerfile              # Image TensorFlow avec GPU optionnel
 │   ├── pyproject.toml          # Dépendances ML

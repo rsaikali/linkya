@@ -554,6 +554,46 @@ async def trigger_nilm_detection():
         )
 
 
+@app.post("/api/nilm/enrich")
+async def trigger_signature_enrichment():
+    """
+    Lance l'enrichissement manuel des signatures avec les cycles détectés.
+    
+    Envoie une tâche Celery pour enrichir toutes les signatures existantes
+    avec les cycles/états détectés par le modèle S2P actif.
+    
+    Returns:
+        Status de la tâche Celery
+    """
+    try:
+        from .config import get_celery_app
+        
+        celery_app = get_celery_app()
+        logger.info("Lancement de l'enrichissement des signatures")
+        
+        # Envoyer la tâche à la queue NILM-CNN
+        task = celery_app.send_task(
+            'enrich_cnn_signatures',
+            queue='nilm_cnn',
+            routing_key='nilm_cnn.enrich_cnn_signatures'
+        )
+        
+        logger.info(f"Tâche d'enrichissement créée: {task.id}")
+        
+        return {
+            "status": "pending",
+            "message": "Enrichissement des signatures lancé",
+            "task_id": str(task.id),
+        }
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du lancement de l'enrichissement: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
 @app.get("/api/nilm/models")
 async def get_nilm_models(
     page: int = Query(default=1, ge=1, description="Numéro de page"),

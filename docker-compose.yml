@@ -226,7 +226,7 @@ services:
       context: ./nilm-cnn-service
       dockerfile: Dockerfile
     container_name: nilmia-tensorboard
-    command: tensorboard --logdir=/app/models/cnn/logs --host=0.0.0.0 --port=6006
+    command: tensorboard --logdir=/app/models/tensorboard --host=0.0.0.0 --port=6006
     environment:
       TZ: Europe/Paris
     ports:
