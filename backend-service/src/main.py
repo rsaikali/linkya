@@ -395,30 +395,23 @@ async def create_signature(signature: SignatureCreate):
     """
     try:
         logger.info(f"Création de signature pour: {signature.appliance_name}")
-        
-        # Valider les timestamps
+
+        # Valider les timestamps et les normaliser
         try:
             start_dt = datetime.fromisoformat(signature.start_time)
             end_dt = datetime.fromisoformat(signature.end_time)
-            
-            logger.debug(f"start_dt: {start_dt} (tzinfo: {start_dt.tzinfo})")
-            logger.debug(f"end_dt: {end_dt} (tzinfo: {end_dt.tzinfo})")
-            
-            # S'assurer que les deux datetimes ont le même type de timezone
+            # S'assurer que les deux datetimes ont le même tzinfo si possible
             if start_dt.tzinfo is None and end_dt.tzinfo is not None:
                 start_dt = start_dt.replace(tzinfo=end_dt.tzinfo)
-                logger.debug(f"start_dt après normalisation: {start_dt}")
             elif start_dt.tzinfo is not None and end_dt.tzinfo is None:
                 end_dt = end_dt.replace(tzinfo=start_dt.tzinfo)
-                logger.debug(f"end_dt après normalisation: {end_dt}")
-                
         except ValueError as e:
             logger.error(f"Format de timestamp invalide: {str(e)}")
             raise HTTPException(status_code=422, detail=f"Format de timestamp invalide: {str(e)}")
-        
+
         # Log détaillé avant comparaison
         logger.info(f"Comparaison: {start_dt} >= {end_dt} = {start_dt >= end_dt}")
-        
+
         if start_dt >= end_dt:
             logger.error(f"start_time >= end_time: {start_dt} >= {end_dt}")
             raise HTTPException(

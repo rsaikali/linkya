@@ -483,6 +483,12 @@ function ApplianceRow({ appliance, onUpdate, onShowSnackbar }) {
       minute: '2-digit',
     });
   };
+  const formatEndTime = (date) => {
+    return new Date(date).toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   return (
     <>
@@ -558,21 +564,16 @@ function ApplianceRow({ appliance, onUpdate, onShowSnackbar }) {
                 <Table size="small" aria-label="signatures">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Début</TableCell>
-                      <TableCell>Fin</TableCell>
+                      <TableCell>Plage horaire</TableCell>
                       <TableCell>Durée</TableCell>
                       <TableCell align="right">Puissance (W)</TableCell>
-                      <TableCell align="right">Énergie (Wh)</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {signatures.map((sig) => (
                       <TableRow key={sig.id}>
-                        <TableCell sx={{ fontSize: 'small' }}>
-                          {formatTime(sig.start_time)}
-                        </TableCell>
-                        <TableCell sx={{ fontSize: 'small' }}>
-                          {formatTime(sig.end_time)}
+                        <TableCell sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+                          {`${formatTime(sig.start_time)} -> ${formatEndTime(sig.end_time)}`}
                         </TableCell>
                         <TableCell>
                           {sig.duration_seconds
@@ -583,9 +584,6 @@ function ApplianceRow({ appliance, onUpdate, onShowSnackbar }) {
                         </TableCell>
                         <TableCell align="right">
                           {sig.avg_power?.toFixed(1) || 'N/A'}
-                        </TableCell>
-                        <TableCell align="right">
-                          {sig.energy_consumed?.toFixed(1) || 'N/A'}
                         </TableCell>
                       </TableRow>
                     ))}

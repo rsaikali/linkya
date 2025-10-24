@@ -57,6 +57,7 @@ function DetectionsList() {
   const [detectionToDelete, setDetectionToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [detectLoading, setDetectLoading] = useState(false);
+  const [signatureLoading, setSignatureLoading] = useState(false);
 
   const fetchDetections = useCallback(async () => {
     try {
@@ -177,6 +178,34 @@ function DetectionsList() {
     }
   };
 
+  const handleCreateSignature = async (detection) => {
+    setSignatureLoading(true);
+    try {
+      await apiService.createSignature({
+        appliance_name: detection.name,
+        start_time: detection.start_time,
+        end_time: detection.end_time,
+        description: `Signature issue de la détection ${detection.id}`,
+      });
+      setSnackbar({
+        open: true,
+        message: `Signature créée pour ${detection.name}`,
+        severity: 'success',
+      });
+    } catch (err) {
+      let msg = 'Erreur lors de la création de la signature';
+      if (err.response?.data?.detail) msg = err.response.data.detail;
+      setSnackbar({
+        open: true,
+        message: msg,
+        severity: 'error',
+      });
+    } finally {
+      setSignatureLoading(false);
+      fetchDetections();
+    }
+  };
+
   if (error) {
     return (
       <Card>
@@ -247,11 +276,9 @@ function DetectionsList() {
                   <TableHead>
                     <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                       <TableCell>Appareil</TableCell>
-                      <TableCell align="right">Début</TableCell>
-                      <TableCell align="right">Fin</TableCell>
+                      <TableCell align="right">Plage horaire</TableCell>
                       <TableCell align="right">Durée</TableCell>
                       <TableCell align="right">Puissance (W)</TableCell>
-                      <TableCell align="right">Énergie (Wh)</TableCell>
                       <TableCell align="center">Confiance</TableCell>
                       <TableCell align="center">Actions</TableCell>
                     </TableRow>
@@ -262,11 +289,12 @@ function DetectionsList() {
                         key={detection.id}
                         detection={detection}
                         onDelete={handleDeleteClick}
+                        onCreateSignature={handleCreateSignature}
                       />
                     ))}
                     {loading && (
                       <TableRow>
-                        <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                           <CircularProgress size={32} />
                         </TableCell>
                       </TableRow>
@@ -341,15 +369,22 @@ function DetectionsList() {
 /**
  * Ligne de tableau pour une détection
  */
-function DetectionRow({ detection, onDelete }) {
+function DetectionRow({ detection, onDelete, onCreateSignature }) {
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
   const durationMinutes = Math.round((endTime - startTime) / 60000);
 
-  const formatTime = (date) => {
+  const formatDateTime = (date) => {
     return date.toLocaleString('fr-FR', {
       month: 'short',
       day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatTimeOnly = (date) => {
+    return date.toLocaleTimeString('fr-FR', {
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -372,11 +407,8 @@ function DetectionRow({ detection, onDelete }) {
       <TableCell sx={{ fontWeight: 500 }}>
         {detection.name || 'Inconnu'}
       </TableCell>
-      <TableCell align="right" sx={{ fontSize: 'small' }}>
-        {formatTime(startTime)}
-      </TableCell>
-      <TableCell align="right" sx={{ fontSize: 'small' }}>
-        {formatTime(endTime)}
+      <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+        {`${formatDateTime(startTime)} -> ${formatTimeOnly(endTime)}`}
       </TableCell>
       <TableCell align="right">
         <Typography variant="body2">
@@ -390,11 +422,6 @@ function DetectionRow({ detection, onDelete }) {
           {detection.avg_power?.toFixed(1) || 'N/A'}
         </Typography>
       </TableCell>
-      <TableCell align="right">
-        <Typography variant="body2">
-          {detection.energy_consumed?.toFixed(1) || 'N/A'}
-        </Typography>
-      </TableCell>
       <TableCell align="center">
         <Chip
           label={getConfidenceLabel(detection.confidence_score || 0)}
@@ -404,6 +431,18 @@ function DetectionRow({ detection, onDelete }) {
         />
       </TableCell>
       <TableCell align="center">
+        <Tooltip title="Transformer en signature">
+          <span>
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => onCreateSignature(detection)}
+              aria-label="signature"
+            >
+              <Timeline fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Supprimer cette détection">
           <IconButton
             size="small"

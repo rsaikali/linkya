@@ -25,6 +25,70 @@ def format_datetime(dt: datetime | None) -> str | None:
 
 
 class DatabaseManager:
+    def create_signature_if_no_overlap(
+        self,
+        appliance_name: str,
+        start_time: datetime,
+        end_time: datetime,
+        description: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Crée une signature pour un appareil si aucune période n'overlap.
+        Args:
+            appliance_name: nom de l'appareil
+            start_time: début de la signature
+            end_time: fin de la signature
+            description: description optionnelle
+        Returns:
+            dict avec la signature créée ou une erreur
+        """
+        # Résoudre l'id de l'appareil
+        get_id_query = text("""
+            SELECT id FROM cnn_appliances WHERE name = :appliance_name
+        """)
+        with self.engine.connect() as conn:
+            row = conn.execute(get_id_query, {"appliance_name": appliance_name}).fetchone()
+            if not row:
+                return {"error": f"Aucun appareil nommé '{appliance_name}'"}
+            appliance_id = row[0]
+
+            # Vérifier l'overlap
+            overlap_query = text("""
+                SELECT 1 FROM cnn_signatures
+                WHERE appliance_id = :appliance_id
+                  AND NOT (end_time <= :start_time OR start_time >= :end_time)
+                LIMIT 1
+            """)
+            overlap = conn.execute(overlap_query, {
+                "appliance_id": appliance_id,
+                "start_time": start_time,
+                "end_time": end_time
+            }).fetchone()
+            if overlap:
+                return {"error": "Une signature existe déjà pour cet appareil sur une période chevauchante."}
+
+            # Insérer la signature
+            insert_query = text("""
+                INSERT INTO cnn_signatures (appliance_id, start_time, end_time, description, created_at)
+                VALUES (:appliance_id, :start_time, :end_time, :description, NOW())
+                RETURNING id, appliance_id, start_time, end_time, description, created_at
+            """)
+            result = conn.execute(insert_query, {
+                "appliance_id": appliance_id,
+                "start_time": start_time,
+                "end_time": end_time,
+                "description": description
+            })
+            conn.commit()
+            row = result.fetchone()
+            return {
+                "id": row[0],
+                "appliance_id": row[1],
+                "start_time": format_datetime(row[2]),
+                "end_time": format_datetime(row[3]),
+                "description": row[4],
+                "created_at": format_datetime(row[5]),
+            }
     """Gestionnaire de connexion à TimescaleDB."""
 
     def __init__(self):
