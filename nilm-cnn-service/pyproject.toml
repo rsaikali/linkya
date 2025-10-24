@@ -1,7 +1,7 @@
 [project]
 name = "nilm-cnn-service"
 version = "0.1.0"
-description = "Service NILM basé sur CNN pour détection de signatures complexes d'appareils"
+description = "Service NILM Sequence-to-Point pour désagrégation d'appareils concurrents"
 requires-python = ">=3.12"
 dependencies = [
     "celery[redis]>=5.4.0",
@@ -15,6 +15,7 @@ dependencies = [
     "scikit-learn>=1.5.0",
     "scipy>=1.14.0",
     "tensorboard>=2.18.0",
+    "hmmlearn>=0.3.0",
 ]
 
 [build-system]
