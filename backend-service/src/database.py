@@ -1,6 +1,7 @@
 """Gestion de la base de données TimescaleDB."""
 
 from datetime import datetime
+import json
 from typing import Any
 
 from sqlalchemy import create_engine, text
@@ -210,20 +211,24 @@ class DatabaseManager:
         """
         query = text("""
             SELECT
-                cd.id,
+                cd.id AS detection_id,
                 cd.appliance_id,
-                ca.name,
-                ca.description,
-                cd.start_time,
-                cd.end_time,
+                ca.name AS appliance_name,
+                ca.description AS appliance_description,
+                cd.start_time AS detection_start,
+                cd.end_time AS detection_end,
                 cd.avg_power,
                 cd.energy_consumed,
                 cd.confidence_score,
                 cd.prediction_class,
                 cd.signature_id,
-                cd.created_at
+                cd.features,
+                cd.created_at AS detection_created_at,
+                cs.start_time AS signature_start,
+                cs.end_time AS signature_end
             FROM cnn_detections cd
             JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            LEFT JOIN cnn_signatures cs ON cs.id = cd.signature_id
             WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
               AND (:end_time IS NULL OR cd.end_time <= :end_time)
             ORDER BY cd.start_time DESC
@@ -233,31 +238,42 @@ class DatabaseManager:
             result = conn.execute(
                 query, {"start_time": start_time, "end_time": end_time}
             )
-            return [
-                {
-                    "id": row[0],
-                    "appliance_id": row[1],
-                    "name": row[2],
-                    "description": row[3],
-                    "start_time": format_datetime(row[4]),
-                    "end_time": format_datetime(row[5]),
-                    "avg_power": float(row[6]) if row[6] is not None else None,
-                    "energy_consumed": (
-                        float(row[7]) if row[7] is not None else None
-                    ),
-                    "confidence_score": (
-                        float(row[8]) if row[8] is not None else None
-                    ),
-                    "prediction_class": (
-                        int(row[9]) if row[9] is not None else None
-                    ),
-                    "signature_id": (
-                        int(row[10]) if row[10] is not None else None
-                    ),
-                    "created_at": format_datetime(row[11]),
+            detections = []
+            for row in result:
+                m = row._mapping
+                det = {
+                    "id": m["detection_id"],
+                    "appliance_id": m["appliance_id"],
+                    "name": m["appliance_name"],
+                    "description": m["appliance_description"],
+                    "start_time": format_datetime(m["detection_start"]),
+                    "end_time": format_datetime(m["detection_end"]),
+                    "avg_power": float(m["avg_power"]) if m["avg_power"] is not None else None,
+                    "energy_consumed": float(m["energy_consumed"]) if m["energy_consumed"] is not None else None,
+                    "confidence_score": float(m["confidence_score"]) if m["confidence_score"] is not None else None,
+                    "prediction_class": int(m["prediction_class"]) if m["prediction_class"] is not None else None,
+                    "signature_id": int(m["signature_id"]) if m["signature_id"] is not None else None,
+                    "created_at": format_datetime(m["detection_created_at"]),
                 }
-                for row in result
-            ]
+                # Exposer les features JSON (peut contenir matched_signature_id, matching.score)
+                if "features" in m and m["features"] is not None:
+                    feat = m["features"]
+                    if isinstance(feat, str):
+                        try:
+                            feat = json.loads(feat)
+                        except Exception:
+                            pass
+                    det["features"] = feat
+                # Ajouter les bornes de la signature correspondante si disponibles
+                if m["signature_start"] is not None and m["signature_end"] is not None:
+                    det["matched_signature"] = {
+                        "id": det["signature_id"],
+                        "start_time": format_datetime(m["signature_start"]),
+                        "end_time": format_datetime(m["signature_end"]),
+                    }
+                detections.append(det)
+
+            return detections
 
     def get_all_appliances(self) -> list[dict[str, Any]]:
         """Récupère la liste de tous les appareils connus avec leurs statistiques CNN calculées à la volée."""

@@ -349,6 +349,7 @@ def detect_cnn_appliances(
                                 energy_consumed = :energy_consumed,
                                 confidence_score = :confidence_score,
                                 prediction_class = :prediction_class,
+                                signature_id = :signature_id,
                                 features = :features,
                                 created_at = NOW()
                             WHERE id = :detection_id
@@ -372,6 +373,7 @@ def detect_cnn_appliances(
                                 ),
                                 'confidence_score': event['confidence_score'],
                                 'prediction_class': event.get('prediction_class'),
+                                'signature_id': event.get('signature_id'),
                                 'features': json.dumps(features_data)
                             }
                         )
@@ -396,11 +398,11 @@ def detect_cnn_appliances(
                     
                     insert_query = text("""
                         INSERT INTO cnn_detections
-                        (appliance_id, start_time, end_time,
+                        (appliance_id, signature_id, start_time, end_time,
                          avg_power, energy_consumed, confidence_score,
                          prediction_class, features, created_at)
                         VALUES
-                        (:appliance_id, :start_time, :end_time,
+                        (:appliance_id, :signature_id, :start_time, :end_time,
                          :avg_power, :energy_consumed, :confidence_score,
                          :prediction_class, :features, NOW())
                     """)
@@ -409,6 +411,7 @@ def detect_cnn_appliances(
                         insert_query,
                         {
                             'appliance_id': appliance_id,
+                            'signature_id': event.get('signature_id'),
                             'start_time': event['start_time'],
                             'end_time': event['end_time'],
                             'avg_power': event['avg_power'],

@@ -13,6 +13,7 @@ import {
   MenuItem,
   Chip,
 } from '@mui/material';
+import { Tooltip as MuiTooltip } from '@mui/material';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -307,16 +308,47 @@ const ConsumptionChart = () => {
                 Appareils détectés ({detections.length})
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {detections.map((detection) => (
-                  <Chip
-                    key={detection.id}
-                    label={`${detection.name} (${detection.avg_power?.toFixed(0)} W)`}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    sx={{ fontWeight: 500 }}
-                  />
-                ))}
+                {detections.map((detection) => {
+                  const matched = detection.matched_signature || null;
+                  const score = detection?.features?.matching?.score ?? null;
+                  const scorePct = score != null ? `${(score * 100).toFixed(0)}%` : null;
+                  const sigId = detection.signature_id;
+                  const sigRange = matched
+                    ? `${new Date(matched.start_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })} → ${new Date(matched.end_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+                    : null;
+
+                  const title = (
+                    <Box sx={{ py: 0.5 }}>
+                      {sigId && (
+                        <Typography variant="caption" sx={{ display: 'block' }}>
+                          Signature correspondante: <strong>#{sigId}</strong>
+                        </Typography>
+                      )}
+                      {sigRange && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          Période: {sigRange}
+                        </Typography>
+                      )}
+                      {scorePct && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          Score de correspondance: {scorePct}
+                        </Typography>
+                      )}
+                    </Box>
+                  );
+
+                  return (
+                    <MuiTooltip key={detection.id} placement="top" arrow title={title}>
+                      <Chip
+                        label={`${detection.name} (${detection.avg_power?.toFixed(0)} W)`}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        sx={{ fontWeight: 500 }}
+                      />
+                    </MuiTooltip>
+                  );
+                })}
               </Box>
             </Box>
           )}

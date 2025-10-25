@@ -12,7 +12,7 @@ import {
   Tooltip,
   Stack,
 } from '@mui/material';
-import { ElectricBolt, Info } from '@mui/icons-material';
+import { ElectricBolt, InfoOutlined } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
 /**
@@ -135,6 +135,44 @@ function DetectionTimelineCard({ detection, index }) {
 
   const dotColor = getConfidenceColorValue(detection.confidence_score || 0);
 
+  const buildSignatureTooltip = (det) => {
+    const matched = det.matched_signature || null;
+    const score = det?.features?.matching?.score ?? null;
+    const scorePct = score != null ? `${(score * 100).toFixed(0)}%` : null;
+    const sigId = det.signature_id;
+
+    if (!sigId && !scorePct) return '';
+
+    const sigRange = matched
+      ? `${new Date(matched.start_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+         → ${new Date(matched.end_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+      : null;
+
+    return (
+      <Box sx={{ py: 0.5 }}>
+        {sigId && (
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Signature correspondante: <strong>#{sigId}</strong>
+          </Typography>
+        )}
+        {sigRange && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Période: {sigRange}
+          </Typography>
+        )}
+        {scorePct && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Score de correspondance: {scorePct}
+          </Typography>
+        )}
+      </Box>
+    );
+  };
+
+  const hasMatchInfo = Boolean(
+    detection?.signature_id || (detection?.features?.matching?.score != null)
+  );
+
   return (
     <Box
       sx={{
@@ -182,11 +220,18 @@ function DetectionTimelineCard({ detection, index }) {
           },
         }}
       >
-        {/* Nom de l'appareil */}
+        {/* Nom de l'appareil (icône info à gauche si correspondance) */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-            {detection.appliance_name || 'Appareil inconnu'}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            {hasMatchInfo && (
+              <Tooltip placement="top-start" arrow title={buildSignatureTooltip(detection)}>
+                <InfoOutlined fontSize="small" color="info" sx={{ cursor: 'help' }} />
+              </Tooltip>
+            )}
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              {detection.appliance_name || 'Appareil inconnu'}
+            </Typography>
+          </Box>
           <Chip
             label={getConfidenceLabel(detection.confidence_score || 0)}
             color={getConfidenceColor(detection.confidence_score || 0)}

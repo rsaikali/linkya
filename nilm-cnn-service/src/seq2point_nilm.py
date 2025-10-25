@@ -550,7 +550,8 @@ class ChangePointPatternDetector:
         self.signature_profiles = {}  # {appliance_id: [profils]}
 
     def add_signature_profile(self, appliance_id: int, appliance_name: str,
-                             power_sequence: np.ndarray, duration: int):
+                             power_sequence: np.ndarray, duration: int,
+                             signature_id: Optional[int] = None):
         """
         Ajoute un profil de signature depuis les données d'entraînement.
 
@@ -572,6 +573,7 @@ class ChangePointPatternDetector:
             if profile_max > 0:
                 normalized = power_sequence / profile_max
                 self.signature_profiles[appliance_id]['profiles'].append({
+                    'signature_id': signature_id,
                     'pattern': normalized,
                     'duration': duration,
                     'avg_power': float(np.mean(power_sequence)),
@@ -699,7 +701,7 @@ class ChangePointPatternDetector:
     def match_pattern(
         self,
         pattern_data: Dict[str, Any]
-    ) -> Optional[Tuple[int, str, float]]:
+    ) -> Optional[Tuple[int, str, Optional[int], float]]:
         """
         Compare un pattern avec les profils de signatures connus.
 
@@ -709,7 +711,7 @@ class ChangePointPatternDetector:
             pattern_data: Données du pattern à matcher
 
         Returns:
-            (appliance_id, appliance_name, confidence) ou None
+            (appliance_id, appliance_name, signature_id, confidence) ou None
         """
         if not self.signature_profiles:
             return None
@@ -724,8 +726,8 @@ class ChangePointPatternDetector:
             return None
         pattern_normalized = pattern / pattern_max
 
-        best_match = None
-        best_score = 0
+        best_match: Optional[Tuple[int, str, Optional[int], float]] = None
+        best_score: float = 0.0
 
         for appliance_id, data in self.signature_profiles.items():
             appliance_name = data['name']
@@ -782,18 +784,25 @@ class ChangePointPatternDetector:
 
                 if combined_score > best_score:
                     best_score = combined_score
-                    best_match = (appliance_id, appliance_name, combined_score)
+                    best_match = (
+                        appliance_id,
+                        appliance_name,
+                        profile.get('signature_id'),
+                        combined_score,
+                    )
                     logger.info(f"  Profil#{i}: ✓ nouveau meilleur score! ({combined_score:.3f})")
 
         # Seuil de confiance minimum (abaissé à 0.35 car durée/puissance sont très fiables)
         logger.info(f"Fin matching: best_score={best_score:.3f}, seuil=0.35")
-        if best_match and best_match[2] > 0.35:
-            logger.info(f"✓ Match trouvé: {best_match[1]} (confiance={best_match[2]:.3f})")
+        if best_match and best_match[3] > 0.35:
+            logger.info(
+                f"✓ Match trouvé: {best_match[1]} (sig_id={best_match[2]}, confiance={best_match[3]:.3f})"
+            )
             return best_match
         else:
             logger.info(f"✗ Aucun match suffisant (best={best_score:.3f} < 0.35)")
-
-        return None
+            
+            return None
 
 
 class ApplianceStateDetector:
@@ -1675,7 +1684,8 @@ class Seq2PointNILMManager:
                             appliance_id=appliance_id,
                             appliance_name=appliance_name,
                             power_sequence=appliance_power,
-                            duration=duration
+                            duration=duration,
+                            signature_id=sig['id']
                         )
 
                 total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
@@ -1916,7 +1926,8 @@ class Seq2PointNILMManager:
                         appliance_id=appliance_id,
                         appliance_name=appliance_name,
                         power_sequence=appliance_power,
-                        duration=duration
+                        duration=duration,
+                        signature_id=sig_id
                     )
 
         total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
@@ -1993,7 +2004,7 @@ class Seq2PointNILMManager:
                 match_result = self.change_point_detector.match_pattern(pattern_data)
 
                 if match_result:
-                    appliance_id, appliance_name, confidence = match_result
+                    appliance_id, appliance_name, matched_signature_id, confidence = match_result
 
                     # Mapper les indices vers les timestamps
                     start_idx = pattern_data['start_idx']
@@ -2003,6 +2014,7 @@ class Seq2PointNILMManager:
                         detection = {
                             'appliance_id': appliance_id,
                             'appliance_name': appliance_name,
+                            'signature_id': matched_signature_id,
                             'start_time': timestamps[start_idx],
                             'end_time': timestamps[min(end_idx, len(timestamps)-1)],
                             'duration_seconds': pattern_data['duration'],
@@ -2015,6 +2027,12 @@ class Seq2PointNILMManager:
                                 'change_point_based': True
                             }
                         }
+                        if matched_signature_id is not None:
+                            detection['features']['matched_signature_id'] = int(matched_signature_id)
+                            detection['features']['matching'] = {
+                                'score': float(confidence),
+                                'method': 'duration_power_shape_combined'
+                            }
                         detections.append(detection)
 
                         logger.info(f"Pattern matché: {appliance_name} - "

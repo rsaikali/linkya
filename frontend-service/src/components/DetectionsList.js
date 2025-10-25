@@ -30,7 +30,7 @@ import {
   Button,
   Snackbar,
 } from '@mui/material';
-import { Timeline, Delete, Search as DetectIcon } from '@mui/icons-material';
+import { Timeline, Delete, Search as DetectIcon, InfoOutlined } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
 
 // Options de période disponibles
@@ -402,10 +402,55 @@ function DetectionRow({ detection, onDelete, onCreateSignature }) {
     return 'Faible';
   };
 
+  const buildSignatureTooltip = (det) => {
+    const matched = det.matched_signature || null;
+    const score = det?.features?.matching?.score ?? null;
+    const scorePct = score != null ? `${(score * 100).toFixed(0)}%` : null;
+    const sigId = det.signature_id;
+
+    if (!sigId && !scorePct) return '';
+
+    const sigRange = matched
+      ? `${new Date(matched.start_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+         → ${new Date(matched.end_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+      : null;
+
+    return (
+      <Box sx={{ py: 0.5 }}>
+        {sigId && (
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Signature correspondante: <strong>#{sigId}</strong>
+          </Typography>
+        )}
+        {sigRange && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Période: {sigRange}
+          </Typography>
+        )}
+        {scorePct && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Score de correspondance: {scorePct}
+          </Typography>
+        )}
+      </Box>
+    );
+  };
+
+  const hasMatchInfo = Boolean(
+    detection?.signature_id || (detection?.features?.matching?.score != null)
+  );
+
   return (
     <TableRow hover>
       <TableCell sx={{ fontWeight: 500 }}>
-        {detection.name || 'Inconnu'}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          {hasMatchInfo && (
+            <Tooltip placement="top-start" arrow title={buildSignatureTooltip(detection)}>
+              <InfoOutlined fontSize="small" color="info" sx={{ cursor: 'help' }} />
+            </Tooltip>
+          )}
+          <span>{detection.name || 'Inconnu'}</span>
+        </Box>
       </TableCell>
       <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
         {`${formatDateTime(startTime)} -> ${formatTimeOnly(endTime)}`}
