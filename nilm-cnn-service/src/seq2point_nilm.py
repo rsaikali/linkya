@@ -32,6 +32,128 @@ from .database import db_manager
 
 logger = logging.getLogger(__name__)
 
+
+# --- Custom Loss Functions ---
+@tf.keras.utils.register_keras_serializable(package='custom_losses')
+def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
+    """
+    Focal Loss pour se concentrer sur les exemples difficiles.
+    
+    Réduit la perte pour les exemples bien classifiés et augmente
+    pour les difficiles. Utile pour rejeter les faux positifs.
+    
+    Args:
+        y_true: Valeurs réelles (None si utilisé comme constructeur)
+        y_pred: Valeurs prédites (None si utilisé comme constructeur)
+        gamma: Facteur de modulation (2.0 par défaut).
+               Plus élevé = focus sur difficiles
+        alpha: Facteur de balance (0.25 par défaut).
+               Poids relatif des classes
+        
+    Returns:
+        Perte calculée si y_true et y_pred fournis, sinon fonction de perte
+    """
+    # Si y_true et y_pred sont fournis, calculer la perte directement
+    if y_true is not None and y_pred is not None:
+        # MAE de base
+        mae = tf.abs(y_true - y_pred)
+        
+        # Normaliser les erreurs pour focal
+        # Pour les prédictions proches de la vérité, p_t sera proche de 1
+        # Pour les erreurs importantes, p_t sera proche de 0
+        max_error = tf.reduce_max(mae) + 1e-7
+        p_t = 1.0 - (mae / max_error)
+        
+        # Focal term: (1 - p_t)^gamma
+        # Quand p_t proche de 1 (bonne prédiction): focal_weight ~0
+        # Quand p_t proche de 0 (mauvaise prédiction): focal_weight ~1
+        focal_weight = tf.pow(1.0 - p_t, gamma)
+        
+        # Pénaliser plus les faux positifs (y_true=0 mais y_pred>0)
+        false_positive_mask = tf.cast(y_true < 0.1, tf.float32)
+        alpha_weight = 1.0 + alpha * false_positive_mask
+        
+        # Loss finale
+        loss = alpha_weight * focal_weight * mae
+        
+        return tf.reduce_mean(loss)
+    
+    # Sinon retourner une fonction de perte paramétrée
+    def loss_fn(y_true, y_pred):
+        # MAE de base
+        mae = tf.abs(y_true - y_pred)
+        
+        # Normaliser les erreurs pour focal
+        # Pour les prédictions proches de la vérité, p_t sera proche de 1
+        # Pour les erreurs importantes, p_t sera proche de 0
+        max_error = tf.reduce_max(mae) + 1e-7
+        p_t = 1.0 - (mae / max_error)
+        
+        # Focal term: (1 - p_t)^gamma
+        # Quand p_t proche de 1 (bonne prédiction): focal_weight ~0
+        # Quand p_t proche de 0 (mauvaise prédiction): focal_weight ~1
+        focal_weight = tf.pow(1.0 - p_t, gamma)
+        
+        # Pénaliser plus les faux positifs (y_true=0 mais y_pred>0)
+        false_positive_mask = tf.cast(y_true < 0.1, tf.float32)
+        alpha_weight = 1.0 + alpha * false_positive_mask
+        
+        # Loss finale
+        loss = alpha_weight * focal_weight * mae
+        
+        return tf.reduce_mean(loss)
+    
+    return loss_fn
+
+
+@tf.keras.utils.register_keras_serializable(package='custom_losses')
+def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=2.5):
+    """
+    Loss asymétrique qui pénalise plus les faux positifs.
+    
+    Quand y_true=0 (appareil éteint ou signature négative),
+    les erreurs de prédiction sont pénalisées davantage.
+    
+    Args:
+        y_true: Valeurs réelles (None si utilisé comme constructeur)
+        y_pred: Valeurs prédites (None si utilisé comme constructeur)
+        false_positive_penalty: Multiplicateur pour les faux positifs
+                                (défaut: 2.5)
+        
+    Returns:
+        Perte calculée si y_true et y_pred fournis, sinon fonction de perte
+    """
+    # Si y_true et y_pred sont fournis, calculer la perte directement
+    if y_true is not None and y_pred is not None:
+        mae = tf.abs(y_true - y_pred)
+        
+        # Détecter où y_true est proche de 0 (OFF ou négatif)
+        is_negative = tf.cast(y_true < 0.1, tf.float32)
+        
+        # Pénaliser plus les erreurs quand l'appareil devrait être OFF
+        weight = 1.0 + (false_positive_penalty - 1.0) * is_negative
+        
+        weighted_mae = weight * mae
+        
+        return tf.reduce_mean(weighted_mae)
+    
+    # Sinon retourner une fonction de perte paramétrée
+    def loss_fn(y_true, y_pred):
+        mae = tf.abs(y_true - y_pred)
+        
+        # Détecter où y_true est proche de 0 (OFF ou négatif)
+        is_negative = tf.cast(y_true < 0.1, tf.float32)
+        
+        # Pénaliser plus les erreurs quand l'appareil devrait être OFF
+        weight = 1.0 + (false_positive_penalty - 1.0) * is_negative
+        
+        weighted_mae = weight * mae
+        
+        return tf.reduce_mean(weighted_mae)
+    
+    return loss_fn
+
+
 # --- S2P Multi-sorties : un seul modèle pour tous les appareils ---
 class Seq2PointMultiModel:
     """Modèle Sequence-to-Point multi-sorties pour tous les appareils"""
@@ -75,15 +197,33 @@ class Seq2PointMultiModel:
         x = layers.Dropout(0.1)(x)
         x = layers.Dense(32, activation='relu', name='dense_2')(x)
         # Multi-sorties : une sortie par appareil
-        outputs = [layers.Dense(1, activation='linear', name=f'power_{i}')(x) for i in range(self.num_appliances)]
-        model = models.Model(inputs=inputs, outputs=outputs, name=f's2p_multi_{self.model_type}')
-        metrics = {f'power_{i}': ['mae', 'mse'] for i in range(self.num_appliances)}
+        outputs = [
+            layers.Dense(1, activation='linear', name=f'power_{i}')(x)
+            for i in range(self.num_appliances)
+        ]
+        model = models.Model(
+            inputs=inputs,
+            outputs=outputs,
+            name=f's2p_multi_{self.model_type}'
+        )
+        
+        # Utiliser la loss asymétrique qui pénalise les faux positifs
+        loss_fn = asymmetric_loss(false_positive_penalty=2.5)
+        
+        metrics = {
+            f'power_{i}': ['mae', 'mse']
+            for i in range(self.num_appliances)
+        }
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=0.001),
-            loss='mae',
+            loss=loss_fn,  # Loss asymétrique au lieu de 'mae'
             metrics=metrics
         )
-        logger.info(f"Modèle S2P-MULTI {self.model_type.upper()} construit ({self.num_appliances} appareils, séquence={self.sequence_length})")
+        logger.info(
+            f"Modèle S2P-MULTI {self.model_type.upper()} construit "
+            f"({self.num_appliances} appareils, "
+            f"séquence={self.sequence_length}, loss=asymmetric)"
+        )
         return model
 
     def _load_negative_signatures(self) -> Dict[int, List[Dict[str, Any]]]:
@@ -134,13 +274,21 @@ class Seq2PointMultiModel:
             logger.error(f"Erreur lors du chargement des signatures négatives: {e}")
             return {}
 
-    def _add_negative_examples(self, X_all: List, y_all: List[List]) -> int:
+    def _add_negative_examples(
+        self,
+        X_all: List,
+        y_all: List[List]
+    ) -> int:
         """
-        Ajoute des exemples négatifs à partir des signatures négatives.
+        Ajoute des exemples négatifs avec augmentation de données.
 
-        Les signatures négatives sont créées automatiquement quand l'utilisateur
-        invalide une détection. Elles persistent dans la base et peuvent être
-        réutilisées même après avoir vidé la table des détections.
+        Les signatures négatives sont créées automatiquement quand
+        l'utilisateur invalide une détection. Elles persistent dans
+        la base et peuvent être réutilisées même après avoir vidé
+        la table des détections.
+        
+        Amélioration: Génère des variations des signatures négatives
+        pour augmenter la robustesse du modèle.
 
         Args:
             X_all: Liste des séquences d'input (agrégat)
@@ -162,20 +310,48 @@ class Seq2PointMultiModel:
                     signature['end_time']
                 )
 
-                if aggregate_power is None or len(aggregate_power) < self.sequence_length:
+                if (aggregate_power is None or
+                        len(aggregate_power) < self.sequence_length):
                     continue
 
-                # Créer des séquences avec target = 0 (appareil non actif)
-                zero_target = np.zeros(len(aggregate_power), dtype=np.float32)
-                X, y = self.preprocessor.create_sequences(aggregate_power, zero_target, stride=50)
+                # Générer des variations pour augmentation de données
+                # Cela rend le modèle plus robuste aux faux positifs
+                augmented_powers = [aggregate_power]
+                
+                # Variation 1: Ajouter du bruit gaussien (±5%)
+                noise_level = np.std(aggregate_power) * 0.05
+                noisy = aggregate_power + np.random.normal(
+                    0, noise_level, len(aggregate_power)
+                )
+                augmented_powers.append(noisy.astype(np.float32))
+                
+                # Variation 2: Scaling (±10%)
+                for scale in [0.9, 1.1]:
+                    scaled = aggregate_power * scale
+                    augmented_powers.append(scaled.astype(np.float32))
 
-                if len(X) > 0:
-                    X_all.append(X)
-                    # Pour cet appareil (idx), la target est 0
-                    # Pour les autres appareils, on met aussi 0 car on ne sait pas
-                    y_all[idx].append(y)
-                    negative_count += len(X)
+                # Créer des séquences pour chaque variation
+                for aug_power in augmented_powers:
+                    # Target = 0 (appareil non actif / faux positif)
+                    zero_target = np.zeros(len(aug_power), dtype=np.float32)
+                    X, y = self.preprocessor.create_sequences(
+                        aug_power,
+                        zero_target,
+                        stride=50
+                    )
 
+                    if len(X) > 0:
+                        # Ajouter avec répétition pour augmenter le poids
+                        # (2x plus d'exemples négatifs dans le dataset)
+                        for _ in range(2):
+                            X_all.append(X)
+                            y_all[idx].append(y)
+                        negative_count += len(X) * 2
+
+        logger.info(
+            f"Ajout de {negative_count} exemples négatifs "
+            f"(avec augmentation de données)"
+        )
         return negative_count
 
     @staticmethod
@@ -530,8 +706,32 @@ class Seq2PointMultiModel:
         logger.info(f"Modèle multi-sorties sauvegardé: {filepath}")
 
     def load(self, filepath: str):
-        """Charge le modèle multi-sorties ainsi que les scalers s'ils sont disponibles."""
-        self.model = keras.models.load_model(filepath)
+        """Charge le modèle multi-sorties avec les custom losses."""
+        # Charger le modèle avec les custom objects
+        custom_objects = {
+            'asymmetric_loss': asymmetric_loss,
+            'focal_loss_fixed': focal_loss_fixed,
+            'loss_fn': asymmetric_loss,  # Pour les anciens modèles
+        }
+        try:
+            self.model = keras.models.load_model(
+                filepath,
+                custom_objects=custom_objects
+            )
+        except Exception as e:
+            logger.warning(f"Erreur chargement avec custom_objects: {e}")
+            # Essayer sans compile si problème avec loss
+            self.model = keras.models.load_model(
+                filepath,
+                compile=False
+            )
+            # Recompiler avec la nouvelle loss
+            self.model.compile(
+                optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                loss=asymmetric_loss(false_positive_penalty=2.5),
+                metrics=['mae', 'mse']
+            )
+            logger.info("Modèle rechargé et recompilé avec nouvelle loss")
 
         metadata_path = Path(filepath).with_suffix('.metadata.json')
         if not metadata_path.exists():
@@ -2138,6 +2338,161 @@ class Seq2PointNILMManager:
         total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
         logger.info(f"Profils chargés: {len(self.change_point_detector.signature_profiles)} appareils, {total_profiles} profils")
 
+    def _filter_against_negative_signatures(
+        self,
+        detections: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Filtre les détections qui ressemblent aux signatures négatives.
+        
+        Une signature négative est créée quand l'utilisateur invalide
+        une détection. On compare durée, puissance moyenne et énergie
+        pour rejeter les faux positifs similaires.
+        
+        Args:
+            detections: Liste de détections à filtrer
+            
+        Returns:
+            Liste de détections filtrées (sans les faux positifs)
+        """
+        if not detections:
+            return []
+        
+        # Charger les signatures négatives depuis la base
+        negative_sigs = {}
+        try:
+            with db_manager.engine.connect() as conn:
+                query = text("""
+                    SELECT
+                        id,
+                        appliance_id,
+                        start_time,
+                        end_time,
+                        avg_power,
+                        energy_consumed
+                    FROM cnn_signatures
+                    WHERE is_negative = TRUE
+                    ORDER BY created_at DESC
+                """)
+                
+                result = conn.execute(query)
+                
+                for row in result:
+                    sig_id, app_id, start_t, end_t, avg_pwr, energy = row
+                    duration = int((end_t - start_t).total_seconds())
+                    
+                    if app_id not in negative_sigs:
+                        negative_sigs[app_id] = []
+                    
+                    negative_sigs[app_id].append({
+                        'id': sig_id,
+                        'duration_seconds': duration,
+                        'avg_power': float(avg_pwr) if avg_pwr else 0.0,
+                        'energy_wh': float(energy) if energy else 0.0
+                    })
+                
+                total_negs = sum(len(s) for s in negative_sigs.values())
+                if total_negs > 0:
+                    logger.info(
+                        f"Filtrage contre {total_negs} signatures négatives"
+                    )
+        except Exception as e:
+            logger.error(f"Erreur chargement signatures négatives: {e}")
+            return detections  # Retourner sans filtrer si erreur
+        
+        # Filtrer les détections
+        filtered = []
+        rejected_count = 0
+        
+        for det in detections:
+            app_id = det['appliance_id']
+            negs = negative_sigs.get(app_id, [])
+            
+            if not negs:
+                # Pas de signatures négatives pour cet appareil
+                filtered.append(det)
+                continue
+            
+            is_false_positive = False
+            
+            # DEBUG: Log de la détection à analyser
+            logger.info(
+                f"🔍 Analyse détection: {det['duration_seconds']}s, "
+                f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh"
+            )
+            
+            for neg in negs:
+                # Critère 1: Durée similaire (±50% car change points)
+                duration_ratio = (
+                    det['duration_seconds'] / neg['duration_seconds']
+                    if neg['duration_seconds'] > 0 else 0
+                )
+                
+                # DEBUG: Log détaillé de la comparaison
+                logger.info(
+                    f"  vs signature négative #{neg['id']}: "
+                    f"{neg['duration_seconds']:.0f}s, "
+                    f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
+                )
+                logger.info(
+                    f"    Ratios: durée={duration_ratio:.2f}, "
+                    f"seuils=[0.50, 1.50]"
+                )
+                
+                if not (0.50 <= duration_ratio <= 1.50):
+                    logger.info(f"    ✗ Durée hors limite")
+                    continue
+                
+                logger.info(f"    ✓ Durée OK")
+                
+                # Critère 2: Puissance moyenne similaire (±5% strict!)
+                if neg['avg_power'] > 0:
+                    power_ratio = det['avg_power'] / neg['avg_power']
+                    logger.info(
+                        f"    Puissance: ratio={power_ratio:.2f}, "
+                        f"seuils=[0.95, 1.05]"
+                    )
+                    if not (0.95 <= power_ratio <= 1.05):
+                        logger.info(f"    ✗ Puissance hors limite")
+                        continue
+                    logger.info(f"    ✓ Puissance OK")
+                
+                # Critère 3: Énergie similaire (±10%)
+                det_energy = det.get('energy_wh', 0)
+                if neg['energy_wh'] > 0 and det_energy > 0:
+                    energy_ratio = det_energy / neg['energy_wh']
+                    logger.info(
+                        f"    Énergie: ratio={energy_ratio:.2f}, "
+                        f"seuils=[0.90, 1.10]"
+                    )
+                    if not (0.90 <= energy_ratio <= 1.10):
+                        logger.info(f"    ✗ Énergie hors limite")
+                        continue
+                    logger.info(f"    ✓ Énergie OK")
+                
+                # Tous les critères correspondent → faux positif
+                is_false_positive = True
+                logger.info(
+                    f"❌ Détection rejetée (similaire à signature "
+                    f"négative #{neg['id']}): {det.get('appliance_name')} - "
+                    f"{det['duration_seconds']}s, "
+                    f"{det['avg_power']:.1f}W"
+                )
+                break
+            
+            if not is_false_positive:
+                filtered.append(det)
+            else:
+                rejected_count += 1
+        
+        if rejected_count > 0:
+            logger.info(
+                f"✅ Filtrage terminé: {rejected_count} faux positifs "
+                f"rejetés, {len(filtered)} détections conservées"
+            )
+        
+        return filtered
+
     def disaggregate(
         self,
         start_time: datetime,
@@ -2245,7 +2600,26 @@ class Seq2PointNILMManager:
                                   f"{pattern_data['avg_power']:.1f}W - "
                                   f"confiance {confidence:.2%}")
 
-            logger.info(f"Total détections hybrides: {len(detections)}")
+            logger.info(f"Total détections avant filtrage: {len(detections)}")
+            
+            # ✨ NOUVEAU: Filtrer contre les signatures négatives
+            detections = self._filter_against_negative_signatures(detections)
+            
+            # ✨ NOUVEAU: Filtrer par seuil de confiance minimum
+            min_confidence = 0.55  # 55% de confiance minimum
+            before_conf_filter = len(detections)
+            detections = [
+                d for d in detections
+                if d.get('confidence_score', 0) >= min_confidence
+            ]
+            if before_conf_filter > len(detections):
+                logger.info(
+                    f"Filtrage confiance: "
+                    f"{before_conf_filter - len(detections)} "
+                    f"détections rejetées (confiance < {min_confidence:.0%})"
+                )
+            
+            logger.info(f"Total détections après filtrage: {len(detections)}")
             return detections
 
             #############################################################

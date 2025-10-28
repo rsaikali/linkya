@@ -277,12 +277,6 @@ def detect_cnn_appliances(
         from sqlalchemy import text
         import json
         
-        # Utiliser la valeur de configuration par défaut si non spécifié
-        if hours is None:
-            hours = settings.cnn_detection_period_hours
-        
-        logger.info(f"Détection sur les {hours} dernières heures...")
-        
         # Vérifier qu'un modèle est disponible
         with db_manager.engine.connect() as conn:
             result = conn.execute(
@@ -301,8 +295,36 @@ def detect_cnn_appliances(
             model_type = row.model_type
         
         # Définir la période d'analyse
-        end_time = datetime.utcnow()
-        start_time = end_time - timedelta(hours=hours)
+        from datetime import timezone
+        end_time = datetime.now(timezone.utc)
+        
+        # Si hours est None, analyser toute la période disponible
+        if hours is None:
+            with db_manager.engine.connect() as conn:
+                result = conn.execute(
+                    text("SELECT MIN(time) as min_date "
+                         "FROM linky_realtime")
+                )
+                row = result.first()
+                if row and row.min_date:
+                    start_time = row.min_date
+                    total_hours = int(
+                        (end_time - start_time).total_seconds() / 3600
+                    )
+                    logger.info(
+                        f"Détection sur TOUTE la période disponible "
+                        f"({total_hours}h - depuis {start_time})..."
+                    )
+                else:
+                    # Fallback sur la config par défaut si pas de données
+                    hours = settings.cnn_detection_period_hours or 240
+                    start_time = end_time - timedelta(hours=hours)
+                    logger.info(
+                        f"Détection sur les {hours} dernières heures..."
+                    )
+        else:
+            start_time = end_time - timedelta(hours=hours)
+            logger.info(f"Détection sur les {hours} dernières heures...")
         
         # Désagrégation S2P multi-sorties
         logger.info(f"🔍 Désagrégation S2P multi-sorties: {start_time} -> {end_time}")

@@ -81,6 +81,23 @@ make nilm-models
 make nilm-check-signatures
 ```
 
+### NILM Model Improvements (2025-10-28)
+
+**Architecture améliorée pour réduire les faux positifs** :
+
+1. **Loss asymétrique** : Utilisation d'une fonction de perte personnalisée qui pénalise 2.5x plus les faux positifs (quand le modèle prédit de la puissance alors que target=0). Cela force le modèle à mieux apprendre les signatures négatives.
+
+2. **Augmentation de données négatives** : Les signatures négatives (créées lors de l'invalidation de détections) sont augmentées avec :
+   - Bruit gaussien (±5%)
+   - Scaling (±10%)
+   - Répétition (2x) pour augmenter leur poids dans le dataset
+   
+3. **Filtrage post-détection contre signatures négatives** : Chaque détection est comparée aux signatures négatives du même appareil. Si durée (±15%), puissance (±12%) et énergie (±15%) correspondent, la détection est rejetée comme faux positif.
+
+4. **Seuil de confiance minimum** : Les détections avec un score de confiance < 55% sont automatiquement rejetées.
+
+**Impact attendu** : Réduction drastique des faux positifs tout en conservant les vraies détections, grâce à l'apprentissage explicite des patterns à rejeter.
+
 ### API Operations
 
 ```bash

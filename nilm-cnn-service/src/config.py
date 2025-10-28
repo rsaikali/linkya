@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Configuration NILM
     cnn_training_interval_hours: int = 24  # Entraînement toutes les 24h
     cnn_detection_interval_minutes: int = 5  # Détection toutes les 5min
-    cnn_detection_period_hours: int = 240  # Période analysée (défaut: 10x24h)
+    cnn_detection_period_hours: Optional[int] = None  # Période analysée (None=tout, ou nombre d'heures)
     # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
     cnn_window_size_minutes: int = 10  # 10 min = 600 points à 1Hz
     cnn_min_power_threshold: int = 30  # Seuil minimal de puissance (W)
