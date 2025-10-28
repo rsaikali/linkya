@@ -446,6 +446,22 @@ const ConsumptionChart = () => {
           avatar={<ShowChart />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showAnnotations}
+                    onChange={(e) => setShowAnnotations(e.target.checked)}
+                    size="small"
+                    color="primary"
+                  />
+                }
+                label={
+                  <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
+                    Détections
+                  </Typography>
+                }
+                sx={{ ml: 1 }}
+              />
               <FormControl size="small" sx={{ minWidth: 150 }}>
                 <InputLabel>Période</InputLabel>
                 <Select
@@ -466,22 +482,7 @@ const ConsumptionChart = () => {
                   <MenuItem value={168}>7 jours</MenuItem>
                 </Select>
               </FormControl>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={showAnnotations}
-                    onChange={(e) => setShowAnnotations(e.target.checked)}
-                    size="small"
-                    color="primary"
-                  />
-                }
-                label={
-                  <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
-                    Détections
-                  </Typography>
-                }
-                sx={{ ml: 1 }}
-              />
+              
               {loading && <CircularProgress size={24} />}
             </Box>
           }
