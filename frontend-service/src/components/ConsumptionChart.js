@@ -224,61 +224,107 @@ const ConsumptionChart = () => {
     }
 
     const annotations = {};
+    
+    // Préparer les détections avec leurs indices de graphique
+    const detectionWithIndices = detections
+      .filter(d => d.start_time && d.end_time)
+      .map(d => {
+        const startTime = new Date(d.start_time).getTime();
+        const endTime = new Date(d.end_time).getTime();
+        const startIndex = history.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
+        const endIndex = history.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
+        
+        return {
+          ...d,
+          startIndex: startIndex !== -1 ? startIndex : 0,
+          endIndex: endIndex !== -1 ? endIndex : history.data.length - 1,
+          centerIndex: startIndex !== -1 ? (startIndex + (endIndex !== -1 ? endIndex : history.data.length - 1)) / 2 : 0,
+        };
+      })
+      .filter(d => d.startIndex !== -1)
+      .sort((a, b) => a.startIndex - b.startIndex);
 
-    detections.forEach((detection) => {
-      // Les détections ont directement start_time et end_time
-      if (!detection.start_time || !detection.end_time) {
-        console.log(`📊 Détection ${detection.id} sans timestamps`);
-        return;
+    // Calculer le niveau (row) de chaque label pour éviter les superpositions visuelles
+    // On considère qu'un label occupe environ 15% de la largeur du graphique autour de son centre
+    const labelWidth = history.data.length * 0.15;
+    
+    const detectionRows = [];
+    detectionWithIndices.forEach((detection) => {
+      let row = 0;
+      const labelStart = detection.centerIndex - labelWidth / 2;
+      const labelEnd = detection.centerIndex + labelWidth / 2;
+      
+      // Trouver la première ligne disponible sans chevauchement de labels
+      while (detectionRows[row]) {
+        const hasOverlap = detectionRows[row].some(d => {
+          const dLabelStart = d.centerIndex - labelWidth / 2;
+          const dLabelEnd = d.centerIndex + labelWidth / 2;
+          // Chevauchement si les labels se superposent visuellement
+          const overlap = labelStart < dLabelEnd && dLabelStart < labelEnd;
+          if (overlap) {
+            console.log(`🔍 Chevauchement de labels: ${detection.name} vs ${d.name}`);
+          }
+          return overlap;
+        });
+        
+        if (!hasOverlap) break;
+        row++;
       }
+      
+      if (!detectionRows[row]) detectionRows[row] = [];
+      detectionRows[row].push(detection);
+      detection.row = row;
+      console.log(`📍 ${detection.name} assigné à row ${row}`);
+    });
 
-      const startTime = new Date(detection.start_time).getTime();
-      const endTime = new Date(detection.end_time).getTime();
-      
-      // Trouver les indices correspondants dans les données
-      const startIndex = history.data.findIndex(d => new Date(d.time).getTime() >= startTime);
-      const endIndex = history.data.findIndex(d => new Date(d.time).getTime() >= endTime);
-      
-      if (startIndex === -1) {
-        console.log(`📊 Détection ${detection.id} (${detection.name}) hors période graphique`);
-        return;
-      }
-      
+    // Calculer le nombre maximum de lignes nécessaires
+    const maxRow = detectionWithIndices.reduce((max, d) => Math.max(max, d.row), 0);
+
+    detectionWithIndices.forEach((detection) => {
       const colors = getApplianceColor(detection.name);
+      
+      // Les labels sont positionnés AU-DESSUS de la zone de tracé
+      // Hauteur estimée d'un label : ~30px
+      const labelHeight = 30;
+      const rowSpacing = 2;
+      // yAdjust négatif pour remonter au-dessus de la zone de tracé
+      // Row 0 : -10px (juste au-dessus), row 1 : -42px, row 2 : -74px
+      const yAdjust = -30 - (detection.row * (labelHeight + rowSpacing));
 
       annotations[`detection-${detection.id}`] = {
         type: 'box',
-        xMin: startIndex,
-        xMax: endIndex !== -1 ? endIndex : history.data.length - 1,
+        xMin: detection.startIndex,
+        xMax: detection.endIndex,
         backgroundColor: colors.bg,
         borderColor: colors.border,
         borderWidth: 1,
         label: {
           display: true,
-          content: `${detection.name} (${detection.avg_power?.toFixed(0)} W)`,
+          content: `${detection.name}`,
           position: {
             x: 'center',
             y: 'start'
           },
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
           color: colors.dark,
-          borderColor: colors.solid,
-          borderWidth: 2,
-          borderRadius: 4,
+          borderColor: 'rgba(114, 114, 114, 0.95)',
+          borderWidth: 0.5,
+          borderRadius: 8,
           font: {
-            size: 11,
-            weight: 'bold',
+            family: 'monospace',
+            size: 14,
+            weight: 'normal',
           },
-          padding: 6,
-          yAdjust: 0,
+          padding: 3,
+          yAdjust: yAdjust,
         },
       };
       
-      console.log(`📊 Annotation créée pour ${detection.name} (${startIndex} → ${endIndex})`);
+      console.log(`📊 Annotation créée pour ${detection.name} (${detection.startIndex} → ${detection.endIndex}), row: ${detection.row}, yAdjust: ${yAdjust}px`);
     });
 
-    console.log(`📊 Total annotations créées: ${Object.keys(annotations).length}`);
-    return annotations;
+    console.log(`📊 Total annotations créées: ${Object.keys(annotations).length}, max rows: ${maxRow + 1}`);
+    return { annotations, maxRows: maxRow + 1 };
   };
 
   // Créer la légende des appareils détectés
@@ -321,10 +367,22 @@ const ConsumptionChart = () => {
     ],
   };
 
+  // Calculer les annotations et le nombre de lignes nécessaires
+  const annotationsData = createDetectionAnnotations();
+  const maxRows = annotationsData.maxRows || 0;
+  
+  // Calculer le padding dynamiquement : hauteur de label (30px) * nombre de lignes + marge (20px)
+  const topPadding = showAnnotations && maxRows > 0 ? (maxRows * 32) : 10;
+
   const options = {
     responsive: true,
     borderWidth:1,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: topPadding,
+      },
+    },
     onClick: (event, elements) => {
       // Extraire l'index du point cliqué
       if (elements.length > 0) {
@@ -336,6 +394,10 @@ const ConsumptionChart = () => {
       intersect: false,
     },
     plugins: {
+      annotation: {
+        clip: false, // Ne pas clipper les annotations en dehors de la zone
+        annotations: annotationsData.annotations,
+      },
       legend: {
         display: false,
       },
@@ -348,9 +410,6 @@ const ConsumptionChart = () => {
             return `${context.dataset.label}: ${context.parsed.y.toFixed(0)} VA`;
           },
         },
-      },
-      annotation: {
-        annotations: createDetectionAnnotations(),
       },
     },
     scales: {
