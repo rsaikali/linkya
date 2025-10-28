@@ -1,4 +1,4 @@
-"""Gestion de la base de données TimescaleDB."""
+"""TimescaleDB database management."""
 
 from datetime import datetime
 import json
@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 def format_datetime(dt: datetime | None) -> str | None:
     """
-    Formate un datetime en ISO string.
+    Formats a datetime to ISO string.
 
     Args:
-        dt: Datetime à formater (avec timezone)
+        dt: Datetime to format (with timezone)
 
     Returns:
-        String ISO avec timezone ou None
+        ISO string with timezone or None
     """
     if dt is None:
         return None
@@ -29,10 +29,10 @@ def format_datetime(dt: datetime | None) -> str | None:
 
 
 class DatabaseManager:
-    """Gestionnaire de connexion à TimescaleDB."""
+    """TimescaleDB connection manager."""
 
     def __init__(self):
-        """Initialise la connexion à TimescaleDB."""
+        """Initializes the TimescaleDB connection."""
         self.engine = create_engine(
             settings.local_db_url,
             pool_pre_ping=True,
@@ -44,7 +44,7 @@ class DatabaseManager:
         )
 
     def get_latest_consumption(self) -> dict[str, Any] | None:
-        """Récupère la dernière valeur de consommation."""
+        """Retrieves the latest consumption value."""
         query = text("""
             SELECT time, papp, hchp, hchc, temperature, libelle_tarif
             FROM linky_realtime
@@ -69,17 +69,17 @@ class DatabaseManager:
         self, start_time: datetime, end_time: datetime, interval: str = "5 minutes"
     ) -> list[dict[str, Any]]:
         """
-        Récupère l'historique de consommation sur une période.
+        Retrieves consumption history over a period.
 
         Args:
-            start_time: Date de début
-            end_time: Date de fin
-            interval: Intervalle d'agrégation (ex: '5 minutes', '1 hour', 'raw' pour données brutes)
+            start_time: Start date
+            end_time: End date
+            interval: Aggregation interval (e.g., '5 minutes', '1 hour', 'raw' for raw data)
 
         Returns:
-            Liste des points de consommation agrégés ou bruts
+            List of aggregated or raw consumption points
         """
-        # Si interval est "raw" ou "none", retourner les données brutes sans agrégation
+        # If interval is "raw" or "none", return raw data without aggregation
         if interval in ("raw", "none"):
             query = text("""
                 SELECT
@@ -139,14 +139,14 @@ class DatabaseManager:
         self, start_time: datetime | None = None, end_time: datetime | None = None
     ) -> list[dict[str, Any]]:
         """
-        Récupère les appareils détectés par le NILM-CNN.
+        Retrieves appliances detected by NILM-CNN.
 
         Args:
-            start_time: Filtre optionnel sur date de début
-            end_time: Filtre optionnel sur date de fin
+            start_time: Optional start date filter
+            end_time: Optional end date filter
 
         Returns:
-            Liste des détections avec informations sur les appareils
+            List of detections with appliance information
         """
         query = text("""
             SELECT
@@ -209,7 +209,7 @@ class DatabaseManager:
             return detections
 
     def get_all_appliances(self) -> list[dict[str, Any]]:
-        """Récupère la liste de tous les appareils connus avec leurs statistiques CNN calculées à la volée."""
+        """Retrieves the list of all known appliances with CNN stats computed on-the-fly."""
         query = text("""
             SELECT
                 ca.id,
@@ -260,13 +260,13 @@ class DatabaseManager:
         self, appliance_id: int
     ) -> list[dict[str, Any]]:
         """
-        Récupère toutes les signatures d'un appareil spécifique.
+        Retrieves all signatures for a specific appliance.
 
         Args:
-            appliance_id: ID de l'appareil
+            appliance_id: Appliance ID
 
         Returns:
-            Liste des signatures avec leurs détails
+            List of signatures with their details
         """
         query = text("""
             SELECT
@@ -319,17 +319,17 @@ class DatabaseManager:
         description: str | None = None
     ) -> dict[str, Any] | None:
         """
-        Met à jour le nom et/ou la description d'un appareil.
+        Updates the name and/or description of an appliance.
 
         Args:
-            appliance_id: ID de l'appareil
-            name: Nouveau nom (optionnel)
-            description: Nouvelle description (optionnel)
+            appliance_id: Appliance ID
+            name: New name (optional)
+            description: New description (optional)
 
         Returns:
-            Appareil mis à jour ou None si non trouvé
+            Updated appliance or None if not found
         """
-        # Construire dynamiquement la requête UPDATE
+        # Dynamically build the UPDATE query
         set_clauses = []
         params = {"appliance_id": appliance_id}
         
@@ -384,15 +384,15 @@ class DatabaseManager:
 
     def delete_appliance(self, appliance_id: int) -> dict[str, int] | None:
         """
-        Supprime un appareil et toutes ses données associées.
+        Deletes an appliance and all its associated data.
 
         Args:
-            appliance_id: ID de l'appareil à supprimer
+            appliance_id: ID of the appliance to delete
 
         Returns:
-            Dictionnaire avec le nombre de signatures et détections supprimées
+            Dictionary with the number of deleted signatures and detections
         """
-        # Vérifier d'abord que l'appareil existe
+        # First check that the appliance exists
         check_query = text("""
             SELECT id FROM cnn_appliances WHERE id = :appliance_id
         """)
@@ -464,16 +464,16 @@ class DatabaseManager:
         self, page: int = 1, per_page: int = 10
     ) -> dict[str, Any]:
         """
-        Récupère les modèles CNN avec pagination.
+        Retrieves CNN models with pagination.
 
         Args:
-            page: Numéro de page (commence à 1)
-            per_page: Nombre de modèles par page
+            page: Page number (starts at 1)
+            per_page: Number of models per page
 
         Returns:
-            Dictionnaire avec total, total_pages et liste de modèles
+            Dictionary with total, total_pages and list of models
         """
-        # Calculer l'offset
+        # Calculate the offset
         offset = (page - 1) * per_page
 
         # Requête pour le total
@@ -545,21 +545,21 @@ class DatabaseManager:
 
     def delete_cnn_model(self, model_id: int) -> dict[str, Any]:
         """
-        Supprime un modèle CNN de la base de données et du filesystem.
+        Deletes a CNN model from the database and filesystem.
 
-        Si le modèle 'current' est supprimé, le modèle 'backup' est automatiquement
-        promu en 'current' pour garantir qu'il y a toujours un modèle actif.
+        If the 'current' model is deleted, the 'backup' model is automatically
+        promoted to 'current' to ensure there's always an active model.
 
         Args:
-            model_id: ID du modèle à supprimer
+            model_id: ID of the model to delete
 
         Returns:
-            Dictionnaire avec le statut de suppression
+            Dictionary with deletion status
 
         Raises:
-            ValueError: Si le modèle n'existe pas
+            ValueError: If the model doesn't exist
         """
-        # Vérifier que le modèle existe
+        # Check that the model exists
         check_query = text("""
             SELECT id, version, model_status, model_path
             FROM cnn_models
@@ -619,16 +619,16 @@ class DatabaseManager:
 
     def delete_detection(self, detection_id: int) -> dict[str, Any] | None:
         """
-        Supprime une détection spécifique de la base de données.
+        Deletes a specific detection from the database.
 
         Args:
-            detection_id: ID de la détection à supprimer
+            detection_id: ID of the detection to delete
 
         Returns:
-            Dictionnaire avec les informations de la détection supprimée
-            ou None si la détection n'existe pas
+            Dictionary with deleted detection information
+            or None if the detection doesn't exist
         """
-        # Vérifier que la détection existe et récupérer ses informations
+        # Check that the detection exists and retrieve its information
         check_query = text("""
             SELECT
                 cd.id,
@@ -671,10 +671,10 @@ class DatabaseManager:
 
     def delete_all_detections(self) -> dict[str, Any]:
         """
-        Supprime toutes les détections de la base de données.
+        Deletes all detections from the database.
 
         Returns:
-            Dictionnaire avec le nombre de détections supprimées
+            Dictionary with the number of deleted detections
         """
         with self.engine.connect() as conn:
             # Compter d'abord le nombre de détections
@@ -701,17 +701,17 @@ class DatabaseManager:
         self, detection_id: int, is_correct: bool
     ) -> dict[str, Any] | None:
         """
-        Marque une détection comme validée par l'utilisateur.
+        Marks a detection as validated by the user.
 
         Args:
-            detection_id: ID de la détection à valider
-            is_correct: True si correcte, False si incorrecte
+            detection_id: ID of the detection to validate
+            is_correct: True if correct, False if incorrect
 
         Returns:
-            Dictionnaire avec les informations de la détection validée
-            ou None si la détection n'existe pas
+            Dictionary with validated detection information
+            or None if the detection doesn't exist
         """
-        # Vérifier que la détection existe et récupérer ses informations
+        # Check that the detection exists and retrieve its information
         check_query = text("""
             SELECT
                 cd.id,
@@ -881,10 +881,10 @@ class DatabaseManager:
 
     def delete_all_signatures(self) -> dict[str, int]:
         """
-        Supprime toutes les signatures de tous les appareils.
+        Deletes all signatures from all appliances.
 
         Returns:
-            Dictionnaire avec le nombre de signatures supprimées
+            Dictionary with the number of deleted signatures
         """
         count_query = text("""
             SELECT COUNT(*) FROM cnn_signatures
@@ -908,15 +908,15 @@ class DatabaseManager:
 
     def delete_signature(self, signature_id: int) -> dict[str, Any] | None:
         """
-        Supprime une signature spécifique.
+        Deletes a specific signature.
 
         Args:
-            signature_id: ID de la signature à supprimer
+            signature_id: ID of the signature to delete
 
         Returns:
-            Informations de la signature supprimée ou None si non trouvée
+            Deleted signature information or None if not found
         """
-        # Récupérer les informations avant suppression
+        # Retrieve information before deletion
         get_query = text("""
             SELECT
                 s.id,
@@ -967,10 +967,11 @@ class DatabaseManager:
 
     def get_all_signatures_with_appliance(self) -> list[dict[str, Any]]:
         """
-        Récupère toutes les signatures avec les informations de l'appareil associé.
+        Retrieves all signatures with associated appliance information.
 
         Returns:
-            Liste des signatures avec appliance_name, appliance_description, start_time, end_time, is_negative
+            List of signatures with appliance_name, appliance_description,
+            start_time, end_time, is_negative
         """
         query = text("""
             SELECT

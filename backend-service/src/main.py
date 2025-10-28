@@ -1,4 +1,4 @@
-"""Backend FastAPI principal pour Nilmia."""
+"""Main FastAPI backend for Nilmia."""
 
 import asyncio
 import json
@@ -14,28 +14,28 @@ from fastapi.responses import StreamingResponse
 from .config import settings
 from .database import db_manager
 
-# Configuration du logging
+# Logging configuration
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Modèles Pydantic
+# Pydantic models
 class SignatureCreate(BaseModel):
-    """Modèle pour créer une nouvelle signature d'appareil."""
+    """Model for creating a new appliance signature."""
     appliance_name: str
-    start_time: str  # Format ISO
-    end_time: str    # Format ISO
+    start_time: str  # ISO format
+    end_time: str    # ISO format
 
-# Création de l'application FastAPI
+# FastAPI application creation
 app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
     description=settings.api_description,
 )
 
-# Configuration CORS pour permettre les requêtes depuis le frontend
+# CORS configuration to allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -47,7 +47,7 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Point d'entrée racine de l'API."""
+    """API root entry point."""
     return {
         "message": "Nilmia API",
         "version": settings.api_version,
@@ -66,17 +66,17 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Vérification de l'état de santé de l'API."""
+    """API health check."""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
 @app.get("/api/consumption/latest")
 async def get_latest_consumption():
     """
-    Récupère la dernière valeur de consommation d'énergie.
+    Retrieves the latest energy consumption value.
 
     Returns:
-        Dernière mesure avec timestamp, puissance, index, température
+        Latest measurement with timestamp, power, index, temperature
     """
     try:
         data = db_manager.get_latest_consumption()
@@ -89,20 +89,20 @@ async def get_latest_consumption():
 
 @app.get("/api/consumption/history")
 async def get_consumption_history(
-    hours: int = Query(default=None, description="Nombre d'heures d'historique (pour périodes longues)"),
-    minutes: int = Query(default=None, description="Nombre de minutes d'historique (pour courtes périodes)"),
-    interval: str = Query(default="5 minutes", description="Intervalle d'agrégation (ex: '5 minutes', '1 hour')"),
+    hours: int = Query(default=None, description="Number of history hours (for long periods)"),
+    minutes: int = Query(default=None, description="Number of history minutes (for short periods)"),
+    interval: str = Query(default="5 minutes", description="Aggregation interval (e.g., '5 minutes', '1 hour')"),
 ):
     """
-    Récupère l'historique de consommation sur une période donnée.
+    Retrieves consumption history over a given period.
 
     Args:
-        hours: Nombre d'heures d'historique à récupérer (pour périodes >= 1 heure)
-        minutes: Nombre de minutes d'historique à récupérer (pour périodes < 1 heure)
-        interval: Intervalle d'agrégation des données
+        hours: Number of hours of history to retrieve (for periods >= 1 hour)
+        minutes: Number of minutes of history to retrieve (for periods < 1 hour)
+        interval: Data aggregation interval
 
     Returns:
-        Liste des points de consommation agrégés par intervalle
+        List of consumption points aggregated by interval
     """
     try:
         # Déterminer la période à récupérer
@@ -138,10 +138,10 @@ async def get_consumption_history(
 @app.get("/api/appliances")
 async def get_all_appliances():
     """
-    Récupère la liste de tous les appareils électriques connus.
+    Retrieves the list of all known electrical appliances.
 
     Returns:
-        Liste des appareils avec leurs caractéristiques
+        List of appliances with their characteristics
     """
     try:
         appliances = db_manager.get_all_appliances()
@@ -156,13 +156,13 @@ async def get_all_appliances():
 @app.get("/api/appliances/{appliance_id}/signatures")
 async def get_appliance_signatures(appliance_id: int):
     """
-    Récupère toutes les signatures d'un appareil spécifique.
+    Retrieves all signatures for a specific appliance.
 
     Args:
-        appliance_id: ID de l'appareil
+        appliance_id: Appliance ID
 
     Returns:
-        Liste des signatures avec leurs détails
+        List of signatures with their details
     """
     try:
         signatures = db_manager.get_appliance_signatures(appliance_id)
@@ -177,18 +177,18 @@ async def get_appliance_signatures(appliance_id: int):
 
 @app.get("/api/signatures")
 async def get_all_signatures(
-    page: int = Query(default=1, ge=1, description="Numéro de page"),
-    per_page: int = Query(default=20, ge=1, le=100, description="Signatures par page"),
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Signatures per page"),
 ):
     """
-    Récupère toutes les signatures avec pagination.
+    Retrieves all signatures with pagination.
 
     Args:
-        page: Numéro de page (commence à 1)
-        per_page: Nombre de signatures par page (1-100)
+        page: Page number (starts at 1)
+        per_page: Number of signatures per page (1-100)
 
     Returns:
-        Liste paginée des signatures avec informations de l'appareil
+        Paginated list of signatures with appliance information
     """
     try:
         # Utiliser la fonction existante qui retourne toutes les signatures
@@ -218,13 +218,13 @@ async def get_all_signatures(
 @app.delete("/api/signatures/{signature_id}")
 async def delete_signature(signature_id: int):
     """
-    Supprime une signature spécifique.
+    Deletes a specific signature.
 
     Args:
-        signature_id: ID de la signature à supprimer
+        signature_id: ID of the signature to delete
 
     Returns:
-        Message de confirmation
+        Confirmation message
     """
     try:
         result = db_manager.delete_signature(signature_id)
@@ -244,7 +244,7 @@ async def delete_signature(signature_id: int):
 
 
 class ApplianceUpdate(BaseModel):
-    """Modèle pour mettre à jour un appareil."""
+    """Model for updating an appliance."""
     name: Optional[str] = None
     description: Optional[str] = None
 
@@ -255,14 +255,14 @@ async def update_appliance(
     update_data: ApplianceUpdate
 ):
     """
-    Met à jour le nom et/ou la description d'un appareil.
+    Updates the name and/or description of an appliance.
 
     Args:
-        appliance_id: ID de l'appareil à modifier
-        update_data: Données à mettre à jour (name et/ou description)
+        appliance_id: ID of the appliance to modify
+        update_data: Data to update (name and/or description)
 
     Returns:
-        Appareil mis à jour
+        Updated appliance
     """
     try:
         # Valider qu'au moins un champ est fourni
@@ -323,13 +323,13 @@ async def update_appliance(
 @app.delete("/api/appliances/{appliance_id}")
 async def delete_appliance(appliance_id: int):
     """
-    Supprime un appareil et toutes ses signatures/détections associées.
+    Deletes an appliance and all its associated signatures/detections.
 
     Args:
-        appliance_id: ID de l'appareil à supprimer
+        appliance_id: ID of the appliance to delete
 
     Returns:
-        Message de confirmation
+        Confirmation message
     """
     try:
         result = db_manager.delete_appliance(appliance_id)
