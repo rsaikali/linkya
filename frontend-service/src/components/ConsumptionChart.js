@@ -11,9 +11,9 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Chip,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
-import { Tooltip as MuiTooltip } from '@mui/material';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -25,6 +25,7 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
+import annotationPlugin from 'chartjs-plugin-annotation';
 import { Line } from 'react-chartjs-2';
 import { ShowChart } from '@mui/icons-material';
 import { apiService } from '../services/api';
@@ -39,7 +40,8 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  annotationPlugin
 );
 
 const ConsumptionChart = () => {
@@ -47,9 +49,10 @@ const ConsumptionChart = () => {
   const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeRange, setTimeRange] = useState(30/60);
+  const [timeRange, setTimeRange] = useState(24);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
+  const [showAnnotations, setShowAnnotations] = useState(true);
   const detectionEventSourceRef = useRef(null);
   const historyIntervalRef = useRef(null);
   const chartRef = useRef(null);
@@ -194,6 +197,110 @@ const ConsumptionChart = () => {
 
   const powerData = history.data.map(d => d.avg_papp);
 
+  // Créer une palette de couleurs par appareil
+  const getApplianceColor = (applianceName) => {
+    // Générer une couleur unique et cohérente basée sur le nom de l'appareil
+    let hash = 0;
+    for (let i = 0; i < applianceName.length; i++) {
+      hash = applianceName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    // Utiliser le hash pour choisir une teinte (hue) cohérente
+    const hue = Math.abs(hash % 360);
+    
+    return {
+      bg: `hsla(${hue}, 70%, 60%, 0.15)`,
+      border: `hsla(${hue}, 70%, 60%, 0.6)`,
+      solid: `hsl(${hue}, 70%, 60%)`,
+      dark: `hsl(${hue}, 70%, 35%)` // Version sombre pour le texte
+    };
+  };
+
+  // Créer les annotations pour les périodes de détection
+  const createDetectionAnnotations = () => {
+    if (!showAnnotations || !detections || detections.length === 0) {
+      console.log('📊 Annotations désactivées ou pas de détections');
+      return {};
+    }
+
+    const annotations = {};
+
+    detections.forEach((detection) => {
+      // Les détections ont directement start_time et end_time
+      if (!detection.start_time || !detection.end_time) {
+        console.log(`📊 Détection ${detection.id} sans timestamps`);
+        return;
+      }
+
+      const startTime = new Date(detection.start_time).getTime();
+      const endTime = new Date(detection.end_time).getTime();
+      
+      // Trouver les indices correspondants dans les données
+      const startIndex = history.data.findIndex(d => new Date(d.time).getTime() >= startTime);
+      const endIndex = history.data.findIndex(d => new Date(d.time).getTime() >= endTime);
+      
+      if (startIndex === -1) {
+        console.log(`📊 Détection ${detection.id} (${detection.name}) hors période graphique`);
+        return;
+      }
+      
+      const colors = getApplianceColor(detection.name);
+
+      annotations[`detection-${detection.id}`] = {
+        type: 'box',
+        xMin: startIndex,
+        xMax: endIndex !== -1 ? endIndex : history.data.length - 1,
+        backgroundColor: colors.bg,
+        borderColor: colors.border,
+        borderWidth: 1,
+        label: {
+          display: true,
+          content: `${detection.name} (${detection.avg_power?.toFixed(0)} W)`,
+          position: 'center',
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          color: colors.dark,
+          borderColor: colors.solid,
+          borderWidth: 2,
+          borderRadius: 4,
+          font: {
+            size: 11,
+            weight: 'bold',
+          },
+          padding: 6,
+        },
+      };
+      
+      console.log(`📊 Annotation créée pour ${detection.name} (${startIndex} → ${endIndex})`);
+    });
+
+    console.log(`📊 Total annotations créées: ${Object.keys(annotations).length}`);
+    return annotations;
+  };
+
+  // Créer la légende des appareils détectés
+  const getLegendItems = () => {
+    if (!detections || detections.length === 0) return [];
+    
+    // Grouper par nom d'appareil pour éviter les doublons
+    const applianceMap = new Map();
+    detections.forEach(detection => {
+      if (!applianceMap.has(detection.name)) {
+        applianceMap.set(detection.name, {
+          name: detection.name,
+          color: getApplianceColor(detection.name).solid,
+          count: 1,
+          totalEnergy: detection.energy_consumed || 0,
+        });
+      } else {
+        const item = applianceMap.get(detection.name);
+        item.count += 1;
+        item.totalEnergy += detection.energy_consumed || 0;
+      }
+    });
+    
+    return Array.from(applianceMap.values());
+  };
+
   const chartData = {
     labels,
     datasets: [
@@ -237,6 +344,9 @@ const ConsumptionChart = () => {
             return `${context.dataset.label}: ${context.parsed.y.toFixed(0)} VA`;
           },
         },
+      },
+      annotation: {
+        annotations: createDetectionAnnotations(),
       },
     },
     scales: {
@@ -293,6 +403,22 @@ const ConsumptionChart = () => {
                   <MenuItem value={168}>7 jours</MenuItem>
                 </Select>
               </FormControl>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showAnnotations}
+                    onChange={(e) => setShowAnnotations(e.target.checked)}
+                    size="small"
+                    color="primary"
+                  />
+                }
+                label={
+                  <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
+                    Détections
+                  </Typography>
+                }
+                sx={{ ml: 1 }}
+              />
               {loading && <CircularProgress size={24} />}
             </Box>
           }
@@ -302,53 +428,43 @@ const ConsumptionChart = () => {
             <Line ref={chartRef} data={chartData} options={options} />
           </Box>
 
-          {detections.length > 0 && (
+          {getLegendItems().length > 0 && (
             <Box>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-                Appareils détectés ({detections.length})
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 600 }}>
+                Légende des appareils détectés
               </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {detections.map((detection) => {
-                  const matched = detection.matched_signature || null;
-                  const score = detection?.features?.matching?.score ?? null;
-                  const scorePct = score != null ? `${(score * 100).toFixed(0)}%` : null;
-                  const sigId = detection.signature_id;
-                  const sigRange = matched
-                    ? `${new Date(matched.start_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })} → ${new Date(matched.end_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
-                    : null;
-
-                  const title = (
-                    <Box sx={{ py: 0.5 }}>
-                      {sigId && (
-                        <Typography variant="caption" sx={{ display: 'block' }}>
-                          Signature correspondante: <strong>#{sigId}</strong>
-                        </Typography>
-                      )}
-                      {sigRange && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          Période: {sigRange}
-                        </Typography>
-                      )}
-                      {scorePct && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          Score de correspondance: {scorePct}
-                        </Typography>
-                      )}
-                    </Box>
-                  );
-
-                  return (
-                    <MuiTooltip key={detection.id} placement="top" arrow title={title}>
-                      <Chip
-                        label={`${detection.name} (${detection.avg_power?.toFixed(0)} W)`}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        sx={{ fontWeight: 500 }}
-                      />
-                    </MuiTooltip>
-                  );
-                })}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                {getLegendItems().map((item) => (
+                  <Box
+                    key={item.name}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      px: 1.5,
+                      py: 0.75,
+                      borderRadius: 1,
+                      backgroundColor: 'background.paper',
+                      border: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: 0.5,
+                        backgroundColor: item.color,
+                      }}
+                    />
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {item.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ({item.count} détection{item.count > 1 ? 's' : ''}, {item.totalEnergy.toFixed(0)} Wh)
+                    </Typography>
+                  </Box>
+                ))}
               </Box>
             </Box>
           )}
