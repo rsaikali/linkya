@@ -156,8 +156,16 @@ class DatabaseManager:
                 ca.description AS appliance_description,
                 cd.start_time AS detection_start,
                 cd.end_time AS detection_end,
-                cd.avg_power,
-                cd.energy_consumed,
+                (
+                    SELECT AVG(papp)
+                    FROM linky_realtime
+                    WHERE time >= cd.start_time AND time <= cd.end_time
+                ) as avg_power,
+                (
+                    SELECT SUM(papp) / 3600.0
+                    FROM linky_realtime
+                    WHERE time >= cd.start_time AND time <= cd.end_time
+                ) as energy_consumed,
                 cd.confidence_score,
                 cd.prediction_class,
                 cd.features,
@@ -209,7 +217,7 @@ class DatabaseManager:
             return detections
 
     def get_all_appliances(self) -> list[dict[str, Any]]:
-        """Retrieves the list of all known appliances with CNN stats computed on-the-fly."""
+        """Retrieves all appliances with stats from linky_realtime."""
         query = text("""
             SELECT
                 ca.id,
@@ -217,18 +225,59 @@ class DatabaseManager:
                 ca.description,
                 ca.created_at,
                 ca.updated_at,
-                -- Statistiques calculées depuis les signatures
-                AVG(cs.avg_power) as avg_power,
-                STDDEV(cs.avg_power) as power_std,
-                AVG(EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))) as avg_duration,
-                COUNT(DISTINCT cs.id) as num_signatures,
-                MAX(cs.start_time) as last_signature_start,
-                MAX(cs.end_time) as last_signature_end,
-                COUNT(DISTINCT cd.id) as detection_count
+                -- Calculer avg_power depuis linky_realtime
+                (
+                    SELECT AVG(
+                        (SELECT AVG(papp)
+                         FROM linky_realtime
+                         WHERE time >= cs.start_time 
+                           AND time <= cs.end_time)
+                    )
+                    FROM cnn_signatures cs
+                    WHERE cs.appliance_id = ca.id
+                      AND cs.is_negative = false
+                ) as avg_power,
+                -- Calculer power_std depuis linky_realtime
+                (
+                    SELECT STDDEV(
+                        (SELECT AVG(papp)
+                         FROM linky_realtime
+                         WHERE time >= cs.start_time 
+                           AND time <= cs.end_time)
+                    )
+                    FROM cnn_signatures cs
+                    WHERE cs.appliance_id = ca.id
+                      AND cs.is_negative = false
+                ) as power_std,
+                (
+                    SELECT AVG(
+                        EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))
+                    )
+                    FROM cnn_signatures cs
+                    WHERE cs.appliance_id = ca.id
+                      AND cs.is_negative = false
+                ) as avg_duration,
+                (
+                    SELECT COUNT(*)
+                    FROM cnn_signatures cs
+                    WHERE cs.appliance_id = ca.id
+                ) as num_signatures,
+                (
+                    SELECT MAX(start_time)
+                    FROM cnn_signatures cs
+                    WHERE cs.appliance_id = ca.id
+                ) as last_signature_start,
+                (
+                    SELECT MAX(end_time)
+                    FROM cnn_signatures cs
+                    WHERE cs.appliance_id = ca.id
+                ) as last_signature_end,
+                (
+                    SELECT COUNT(*)
+                    FROM cnn_detections cd
+                    WHERE cd.appliance_id = ca.id
+                ) as detection_count
             FROM cnn_appliances ca
-            LEFT JOIN cnn_signatures cs ON ca.id = cs.appliance_id
-            LEFT JOIN cnn_detections cd ON ca.id = cd.appliance_id
-            GROUP BY ca.id, ca.name, ca.description, ca.created_at, ca.updated_at
             ORDER BY ca.name ASC
         """)
 
@@ -274,9 +323,21 @@ class DatabaseManager:
                 cs.appliance_id,
                 cs.start_time,
                 cs.end_time,
-                cs.avg_power,
-                cs.power_std,
-                cs.energy_consumed,
+                (
+                    SELECT AVG(papp)
+                    FROM linky_realtime
+                    WHERE time >= cs.start_time AND time <= cs.end_time
+                ) as avg_power,
+                (
+                    SELECT STDDEV(papp)
+                    FROM linky_realtime
+                    WHERE time >= cs.start_time AND time <= cs.end_time
+                ) as power_std,
+                (
+                    SELECT SUM(papp) / 3600.0
+                    FROM linky_realtime
+                    WHERE time >= cs.start_time AND time <= cs.end_time
+                ) as energy_consumed,
                 cs.created_at,
                 EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))
                     as duration_seconds
@@ -981,9 +1042,18 @@ class DatabaseManager:
                 ca.description as appliance_description,
                 cs.start_time,
                 cs.end_time,
-                cs.avg_power,
-                cs.energy_consumed,
-                EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) as duration_seconds,
+                (
+                    SELECT AVG(papp)
+                    FROM linky_realtime
+                    WHERE time >= cs.start_time AND time <= cs.end_time
+                ) as avg_power,
+                (
+                    SELECT SUM(papp) / 3600.0
+                    FROM linky_realtime
+                    WHERE time >= cs.start_time AND time <= cs.end_time
+                ) as energy_consumed,
+                EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) 
+                    as duration_seconds,
                 cs.is_negative
             FROM cnn_signatures cs
             JOIN cnn_appliances ca ON cs.appliance_id = ca.id

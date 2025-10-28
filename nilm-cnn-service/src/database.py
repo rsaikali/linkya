@@ -264,31 +264,21 @@ class DatabaseManager:
                         f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})"
                     )
             
-            # Récupérer les données de consommation pour validation et statistiques
+            # Vérifier qu'il y a des données dans cette période
             consumption_data = self.get_consumption_data(start_time, end_time)
             
             if not consumption_data:
                 logger.error("Aucune donnée de consommation trouvée pour cette période")
                 return None
-            
-            # Calculer les statistiques
-            power_values = [d['papp'] for d in consumption_data]
-            avg_power = sum(power_values) / len(power_values)
-            power_std = (sum((p - avg_power) ** 2 for p in power_values) / len(power_values)) ** 0.5
-            
-            # Calculer l'énergie consommée (Wh)
-            duration_hours = (end_time - start_time).total_seconds() / 3600
-            energy_consumed = avg_power * duration_hours
 
             with self.get_session() as session:
-                # Note: raw_data supprimé - les données sont récupérées
-                # depuis linky_realtime
+                # Note: avg_power, power_std, energy_consumed supprimés
+                # Ces valeurs sont calculées à la volée depuis linky_realtime
                 query = text("""
                     INSERT INTO cnn_signatures
-                    (appliance_id, start_time, end_time, avg_power,
-                     power_std, energy_consumed, is_negative, created_at)
+                    (appliance_id, start_time, end_time, 
+                     is_negative, created_at)
                     VALUES (:appliance_id, :start_time, :end_time,
-                            :avg_power, :power_std, :energy_consumed,
                             :is_negative, NOW())
                     RETURNING id
                 """)
@@ -299,9 +289,6 @@ class DatabaseManager:
                         'appliance_id': appliance_id,
                         'start_time': start_time,
                         'end_time': end_time,
-                        'avg_power': avg_power,
-                        'power_std': power_std,
-                        'energy_consumed': energy_consumed,
                         'is_negative': is_negative,
                     }
                 )
@@ -328,7 +315,6 @@ class DatabaseManager:
                 query_text = """
                     SELECT
                         s.id, s.appliance_id, s.start_time, s.end_time,
-                        s.avg_power, s.power_std, s.energy_consumed,
                         a.name as appliance_name
                     FROM cnn_signatures s
                     JOIN cnn_appliances a ON s.appliance_id = a.id
@@ -339,23 +325,41 @@ class DatabaseManager:
 
                 signatures = []
                 for row in result:
+                    # Récupérer les données brutes depuis linky_realtime
+                    raw_data = self.get_consumption_data(
+                        row.start_time,
+                        row.end_time
+                    )
+                    
+                    # Calculer les statistiques à la volée
+                    avg_power = None
+                    power_std = None
+                    energy_consumed = None
+                    if raw_data:
+                        power_values = [d['papp'] for d in raw_data]
+                        if power_values:
+                            avg_power = sum(power_values) / len(power_values)
+                            power_std = (
+                                sum((p - avg_power) ** 2 
+                                    for p in power_values) / len(power_values)
+                            ) ** 0.5
+                            duration_hours = (
+                                (row.end_time - row.start_time).total_seconds() 
+                                / 3600
+                            )
+                            energy_consumed = avg_power * duration_hours
+                    
                     sig = {
                         'id': row.id,
                         'appliance_id': row.appliance_id,
                         'appliance_name': row.appliance_name,
                         'start_time': row.start_time,
                         'end_time': row.end_time,
-                        'avg_power': row.avg_power,
-                        'power_std': row.power_std,
-                        'energy_consumed': row.energy_consumed
+                        'avg_power': avg_power,
+                        'power_std': power_std,
+                        'energy_consumed': energy_consumed,
+                        'raw_data': raw_data
                     }
-
-                    # Récupérer les données brutes depuis linky_realtime
-                    raw_data = self.get_consumption_data(
-                        row.start_time,
-                        row.end_time
-                    )
-                    sig['raw_data'] = raw_data
 
                     signatures.append(sig)
 

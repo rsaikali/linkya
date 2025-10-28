@@ -464,12 +464,12 @@ def detect_cnn_appliances(
                     insert_query = text("""
                         INSERT INTO cnn_detections
                         (appliance_id, start_time, end_time,
-                         avg_power, energy_consumed, confidence_score,
-                         prediction_class, features, created_at)
+                         confidence_score, prediction_class, 
+                         features, created_at)
                         VALUES
                         (:appliance_id, :start_time, :end_time,
-                         :avg_power, :energy_consumed, :confidence_score,
-                         :prediction_class, :features, NOW())
+                         :confidence_score, :prediction_class,
+                         :features, NOW())
                     """)
                     
                     session.execute(
@@ -478,11 +478,6 @@ def detect_cnn_appliances(
                             'appliance_id': appliance_id,
                             'start_time': event['start_time'],
                             'end_time': event['end_time'],
-                            'avg_power': event['avg_power'],
-                            'energy_consumed': event.get(
-                                'energy_consumed',
-                                event.get('energy_wh', 0)
-                            ),
                             'confidence_score': event['confidence_score'],
                             'prediction_class': event.get('prediction_class'),
                             'features': json.dumps(features_data)

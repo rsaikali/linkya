@@ -1,0 +1,2425 @@
+Journal of Building Engineering 112 (2025) 113731 
+
+Contents lists available at ScienceDirect
+
+Journal of Building Engineering
+
+journal homepage: www.elsevier.com/locate/jobe
+
+A cascaded deep learning framework for simultaneous 
+non-intrusive load and occupancy monitoring using multi-channel 
+aggregated smart meter data
+
+Sakib Mahmud a, Mahdi Houchati b, Muhammad E.H. Chowdhury a, 
+Faycal Bensaali a,*
+a Department of Electrical Engineering, College of Engineering, Qatar University, Doha, 2713, Qatar
+b Iberdrola Innovation Middle East, Doha, 210177, Qatar
+
+A R T I C L E  I N F O
+
+A B S T R A C T
+
+Keywords:
+Non-intrusive occupancy monitoring
+Energy disaggregation
+Non-intrusive load state monitoring
+Sequence-to-sequence-to-point learning
+Smart meter
+
+Non-intrusive  load  monitoring  (NILM)  and  non-intrusive  occupancy  monitoring  (NIOM)  are 
+critical for smart home management, enabling device-level energy optimization, fault detection, 
+and  improved  energy  efficiency,  comfort,  and  security.  However,  most  existing  methods  treat 
+NILM and NIOM separately, limiting their combined potential. Traditional NILM struggles with 
+overlapping device loads, while NIOM often relies on intrusive sensors, raising concerns about 
+privacy, scalability, and integration. The proliferation of smart meters presents an opportunity to 
+unify NILM and NIOM in a single, non-intrusive framework, though challenges remain in accurate 
+device-level  disaggregation  and  complex  occupancy  pattern  recognition.  To  address  this,  we 
+propose  non-intrusive  load  and  occupancy  monitoring  (NILOM),  a  dual-phase  deep  learning 
+framework for real-time NILM and NIOM using multi-channel smart meter data. The framework 
+cascades  a  load  disaggregation  network  (LD-Net),  a  1D  sequence-to-sequence  model  for 
+appliance-level  load  disaggregation,  and  an  occupancy  detection  network  (OD-Net),  a  1D 
+sequence-to-point  classifier  for  occupancy  detection  from  reaggregated  household-level  load 
+event patterns. We also introduce the dice of energies of interest (DEOI) metric for robust load 
+disaggregation assessment. Evaluated on the Electricity Consumption & Occupancy (ECO) data-
+set,  NILOM  outperforms  domain  benchmarks  for  both  load  disaggregation  and  occupancy 
+detection,  achieving  approximately  90  %  accuracy  and  F1-score  in  occupancy  classification. 
+Further improvements are realized through targeted device selection for generating household- 
+level load event pulses after load disaggregation. Overall, NILOM provides a scalable, accurate, 
+and  privacy-preserving  solution  for  integrated  energy  and  occupancy  management  in  smart 
+homes.
+
+* Corresponding author.
+E-mail  addresses: 
+
+sakib.mahmud@qu.edu.qa
+
+(S.  Mahmud),  mhouchati@iberdrola.com (M.  Houchati),  mchowdhury@qu.edu.qa
+
+(M.E.H. Chowdhury), f.bensaali@qu.edu.qa (F. Bensaali). 
+
+https://doi.org/10.1016/j.jobe.2025.113731
+Received 17 April 2025; Received in revised form 1 August 2025; Accepted 10 August 2025  
+Available online 11 August 2025 
+2352-7102/©  2025  The  Authors. 
+( http://creativecommons.org/licenses/by/4.0/ ). 
+
+Published  by  Elsevier  Ltd. 
+
+This 
+
+is  an  open  access  article  under  the  CC  BY 
+
+license 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+Nomenclature
+
+Selected abbreviations
+AMI
+DEOI
+DL
+dw
+ECO
+Event-NILM
+LD-Net
+MAE
+ML
+MRP
+NILOM
+OD-Net
+pw
+s2p
+SAE
+Parameters
+1ϕ
+Dagg
+
+Advanced metering infrastructure
+Dice of energies of interest
+Deep learning
+Depthwise
+Electricity Consumption & Occupancy
+Non-intrusive load event monitoring
+Load disaggregation network
+Mean absolute error
+Machine learning
+Multi-resolution pooling
+Non-intrusive load and occupancy monitoring
+Occupancy detection network
+Pointwise
+Sequence-to-point
+Signal aggregate error
+
+Single-phase
+Aggregated smart meter data
+
+CV
+DFA
+DSC
+EA
+EOI
+ILM
+LM
+MFS-LSTM
+MLP
+NILM
+NIOM
+PCC
+ReLU
+s2s
+State-NILM
+
+3ϕ
+D
+
+═
+agg,1
+
+ϕ
+
+Cross-validation
+Deep feature augmentation
+Sørensen-Dice similarity coefficient
+Estimation accuracy
+Energies of interest
+Intrusive load monitoring
+Load monitoring
+Multi-feature input space LSTM
+Multilayer perceptron
+Non-intrusive load monitoring
+Non-intrusive occupancy monitoring
+Pearson correlation coefficient
+Rectified linear unit
+Sequence-to-sequence
+Non-intrusive load state monitoring
+
+Three-phase
+Appliance correlated aggregated smart meter channels
+
+Manually annotated occupancy labels
+
+Appliance correlated aggregated current channels
+
+Docp
+Iagg,1ϕ(I1,I2,I3,IN)
+
+Predicted occupancy labels
+
+Aggregated single-phase current
+
+Aggregated three-phase current
+
+Aggregated single-phase power
+Household-level aggregated load event pulse
+Estimated appliance single-phase load
+
+Aggregated three-phase voltage
+Ground truth or GT energy
+Overlapping energy
+
+P
+
+ϕ
+
+═
+agg,1
+Pagg,3ϕ
+Papp,1ϕ
+Papp(pulse)
+Ee
+Em
+Ep
+
+Appliance correlated aggregated power channels
+
+Aggregated three-phase power
+Appliance single-phase load
+Appliance-level load event pulse
+
+Extra energy
+Missing energy
+Predicted energy
+
+Docp
+I
+
+═
+agg,1
+Iagg,3ϕ
+
+ϕ
+
+Pagg,1ϕ(L1,L2,L3)
+Pagg(pulse)
+Papp,1ϕ
+Vagg,3ϕ
+Eg
+Eo
+
+1. Introduction
+
+Global electricity demand grew by 4.3 % in 2024, twice the growth rate of total energy demand from 2010 to 2023. Buildings 
+accounted for over 600 Terawatt hours or TWh (5 %) of this increase, due to rising air conditioning use during extreme heatwaves in 
+countries like China and India [1]. The building and construction sector now consumes around 55 % of global energy, underscoring the 
+urgent need for efficient energy management [2]. A key aspect of household energy optimization is monitoring appliance usage, 
+traditionally achieved through load monitoring (LM) techniques. Conventional intrusive load monitoring (ILM) systems use dedicated 
+sensors installed on each appliance to measure voltage, current, harmonics, and electrical noise [3]. While accurate, these systems are 
+expensive, difficult to scale, and raise privacy concerns due to their invasive nature and susceptibility to external control [4], [5]. In 
+contrast, modern smart meters, commonly installed outside homes, offer a scalable, cost-effective alternative. They capture aggregated 
+household electricity data, which can be disaggregated using advanced techniques to estimate device-level consumption patterns [6]. 
+This has led to the rise of smart meter-based non-intrusive load monitoring (NILM), which avoids the hardware and privacy issues 
+associated with ILM while enabling efficient, real-time household energy management [7].
+
+Effective energy management in smart homes, particularly those integrated into smart grids or energy internet systems, demands 
+adaptive, user-focused strategies beyond basic LM. While LM tracks appliance usage and power consumption, it lacks intelligence 
+without behavioral adaptation. Recent studies show that occupancy-aware approaches can outperform traditional demand response 
+methods in energy savings [8]. Accurate occupancy data is essential for identifying peak loads, enabling household participation in 
+grid services, and supporting remote load control [9]. However, most existing occupancy detection or classification methods rely on 
+intrusive sensors, raising concerns around cost, privacy, and scalability, especially in diverse residential settings [10]. These issues 
+have  prompted  the  development  of  non-intrusive  alternatives  [11]-  [13].  Non-intrusive  occupancy  monitoring  (NIOM)  refers  to 
+technologies  and  methodologies  that  detect human  presence  within  a  built  environment, typically  homes,  offices,  or  commercial 
+spaces, without direct user interaction or invasive sensing modalities. Conventional non-intrusive techniques often use communication 
+protocols such as Wi-Fi [11] or Bluetooth [12], which are affordable and less invasive but still limited in scalability and privacy 
+protection. In contrast, smart meters offer a robust, scalable solution by providing detailed electricity usage data that correlates with 
+occupancy patterns, allowing for better energy management, improved comfort, and reduced consumption [13]. With over 1.06 billion 
+smart meters deployed globally by late 2023 and a 77 % penetration rate in the United States, their widespread adoption is evident 
+[14]. Unlike communication-based systems, smart meters can support both NILM and NIOM within a unified framework, functionality 
+that Wi-Fi, Bluetooth, or sensor-based systems cannot provide [15]. This dual capability positions smart meter-based NIOM as a key 
+enabler for future smart grid integration and intelligent home energy management.
+
+Current NILM and NIOM frameworks are typically developed separately, using different tools, setups, and objectives despite their 
+inherent interdependence. Since occupancy patterns often align with appliance usage, both tasks can be addressed concurrently using 
+smart meter data. However, NIOM research lags behind NILM in the literature. While NILM focuses on disaggregating appliance-level 
+consumption, NIOM involves interpreting user behavior, making it more complex due to external influences beyond appliance activity 
+[16]. Unlike NILM, which isolates individual device loads, NIOM requires simultaneous consideration of multiple devices, increasing 
+
+2 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+noise and computational complexity [17]. For example, non-occupancy-related devices like refrigerators introduce persistent noise 
+that cannot be filtered using traditional signal processing. Furthermore, class imbalance (e.g., more frequent ‘vacant’ labels) can bias 
+NIOM models [18]. Some studies mitigate these challenges by extracting engineered features instead of using raw data [19]. However, 
+using  appliance  load  states  from  state-NILM  (non-intrusive  load  state  monitoring)  offers  a  more  reliable  foundation  for  NIOM, 
+capturing nuanced correlations between occupancy and device usage [9], [20]. Based on these insights, this study proposes a deep 
+learning (DL)-based cascaded NILOM framework that sequentially integrates NILM and NIOM, where occupancy detection benefits 
+directly from the disaggregated load outputs, offering the following contributions. 
+
+• A  unified  non-intrusive  load  and  occupancy  monitoring  (NILOM)  framework  that  integrates  NILM  and  NIOM  within  a  single 
+
+architecture.
+
+• Introduction of the dice of energies of interest (DEOI) metric for robust evaluation of state-based NILM performance, addressing 
+
+limitations in conventional metrics.
+
+• Improved NIOM performance on a diverse and challenging dataset by leveraging disaggregated appliance-level load signatures 
+
+generated through NILM.
+
+• Transformation of disaggregated appliance loads into event pulses, reaggregated at the household level to suppress device noise 
+
+and mitigate class imbalance in NIOM.
+
+• Dynamic  device  selection  strategy  during  event  pulse  reaggregation,  leading  to  notable  gains  in  occupancy  classification 
+
+performance.
+
+• Development  of  two novel  DL models:  LD-Net  for NILM  and  OD-Net  for  NIOM, that outperform  existing benchmarks in  their 
+
+respective domains.
+
+The remainder of the manuscript is organized as follows: Section 2 offers a concise review of recent NILM and NIOM research, 
+highlighting  machine  learning  (ML)  applications  and  the  potential  of  smart  meter-based  solutions.  Section  3  outlines  the  overall 
+methodology, including the framework architecture, dataset, and preprocessing for both NILM and NIOM phases, experimental setup, 
+evaluation  metrics,  the  proposed  LD-Net  and  OD-Net  models,  and  the  DEOI  metric  for  robust  load  disaggregation  performance 
+assessment. Section 4 presents experimental results, benchmark comparisons, ablation studies, computational feasibility, and discusses 
+limitations, challenges, and future directions. Finally, Section 5 provides a succinct summary of the study.
+
+2. Literature review
+
+In this section, we review existing NILM and NIOM systems relevant to the current study, highlighting their challenges, limitations, 
+
+and recent advancements in utilizing smart meter data across both domains.
+
+2.1. Deep learning methods for NILM using smart meter data
+
+Numerous studies have explored NILM using smart meter data, with DL techniques becoming increasingly prominent. Given the 
+DL-based approach used in this study, this review focuses on DL-driven NILM techniques. Broadly, NILM can be categorized into event- 
+and  state-based  techniques.  Event-based  NILM  or  event-NILM  (non-intrusive  load  event  monitoring)  aims  to  detect  appliance 
+switching events (e.g., ON/OFF states) using classification models, particularly convolutional neural networks (CNNs), which are 
+effective at identifying load edges but do not capture full device-level power profiles [21], [22]. In contrast, state-based NILM or 
+state-NILM, aligned with the goals of this study, employs regression models to continuously estimate device load states or consumption 
+patterns from aggregated meter data, offering a more detailed and practical representation [23]. State-NILM is more complex due to 
+the  wide  variability  in  power  usage  patterns  across  appliances,  making  generalization  difficult.  Some  CNN-based  studies  have 
+introduced multitask learning frameworks that jointly perform event detection and state estimation [24]. Recent innovations include 
+NILM-AO, developed by Feng et al. [25], which combines graph signal processing and optimization to enhance performance in noisy 
+environments while lowering data acquisition and processing costs. Hao et al. [26] proposed a reconstruction-based domain adap-
+tation method to address the synthetic-to-real data gap and reduce the need for extensive labeled datasets.
+
+Beyond CNNs, recurrent neural networks (RNNs), such as long short-term memory (LSTM) and gated recurrent units (GRU), have 
+been used for both event- and state-NILM tasks [27], [28]. More recently, generative models have gained attention in the state-NILM 
+domain. Variational autoencoders (VAEs) have been used to infer appliance-level loads from aggregated signals [29], while Sun et al. 
+[30] proposed a conditional diffusion denoising model for disaggregation. Generative adversarial networks (GANs), including con-
+ditional GAN (cGAN) [31] and GAN-NILM [32] have been employed to synthesize realistic load signatures and augment training 
+datasets,  improving  generalizability.  Despite  these  advances,  CNN-based  sequence-to-sequence  (s2s)  applications  for  state-NILM 
+remain limited. Only one prior study, UNet-NILM [33], explored basic UNet architecture for disaggregation. In this work, we pro-
+pose a novel 1D-s2s model for robust single-target load estimation, which offers greater resilience than multi-target models [23], [34]. 
+Single-target outputs are also essential for the second phase of our framework, which is developed for NIOM and relies on accurate 
+device-level  event  pulse  generation.  Though  computationally  heavier,  such  single-target  frameworks  are  feasible  under  modern 
+advanced metering infrastructure (AMI) infrastructure [35]. Furthermore, unlike earlier works that solely used single- or three-phase 
+power [24], [33], our model integrates both power and current data from single- and three-phase channels, significantly improving 
+disaggregation performance and supporting more reliable downstream NIOM applications.
+
+3 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+2.2. Recent advances in NIOM and the rationale for proposing NILOM
+
+The domains of NILM and NIOM differ significantly in their use of smart meter data. NILM, particularly event-NILM, has been 
+extensively studied due to its direct nature, with advanced approaches such as GAN-based models now being explored for state-NILM, 
+as discussed in Section 2.1. In contrast, traditional occupancy monitoring methods, whether intrusive or non-intrusive, rarely utilize 
+smart meter data as they typically rely on sensing networks and the internet of things (IoT). Commonly employed intrusive solutions 
+include visual sensors such as depth cameras [36] and closed-circuit television (CCTV) [37]. Other frequently used sensors include 
+thermal sensors [38], passive infrared (PIR) sensors [39], ultrasonic detectors [40], Doppler and millimeter-wave (mmWave) radar 
+systems  [41],  [42],  infrared  time-of-flight  (ToF)  sensors  [43],  and  magnetic  reed  switches  [44].  To  improve  detection  accuracy, 
+multisensor fusion techniques have been proposed, such as the integration of radar, PIR, and ultrasound [45]. Additionally, envi-
+ronmental sensors like CO2 are widely used for occupancy estimation, often combined with other sensors for occupancy monitoring 
+and relevant applications [46]. Other indicators, such as particulate matter (PM) [47] and volatile organic compound (VOC) [48] 
+sensors, have also been explored. Despite their potential, these sensor-based intrusive systems face significant limitations, such as high 
+deployment costs, privacy concerns, and complex maintenance, which hinder scalability and broader integration into energy internet 
+systems.
+
+Conventional  NIOM  systems  frequently  use  communication-based  technologies  such  as  Wi-Fi  [11],  Bluetooth  [12],  and  RFID 
+badges [49], which are cost-effective and less intrusive than sensor-based methods discussed earlier, but still raise concerns about 
+scalability and privacy. Smart meters present a viable alternative by providing detailed electricity consumption data that can indirectly 
+reflect occupancy patterns, supporting smart grid integration, energy efficiency, and user comfort [11]. Early NIOM studies using raw 
+aggregated smart meter data yielded mediocre performance and unreliable results [12]. Later works applied preprocessing [50], [51], 
+automated  [52],  or  handcrafted  [17],  [53]  feature  extraction  on  aggregated  smart  meter  data,  often  coupled  with  classification 
+models. However, we would like to argue that accurate occupancy detection requires robust disaggregation of smart meter data, 
+normally required for state-NILM, since user occupancy behavior is linked to the use of specific appliances. The success of such ap-
+proaches relies on the large-scale implementation of AMI, which enables smart meters to capture richer parameters such as power, 
+
+Fig. 1. Proposed NILOM for simultaneous state-NILM and NIOM using aggregated multi-channel smart meter data.
+
+4 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+current, voltage, and metadata from a wider variety of customers. A key challenge remains the limited availability of public datasets 
+with occupancy labels. Only a few, such as the University of Massachusetts (UMass) [54] and Electricity Consumption & Occupancy 
+(ECO) datasets [55] currently offer such annotations, impeding progress in NIOM compared to the more developed NILM field. This 
+scarcity has driven some researchers toward unsupervised ML for occupancy inference [56]. Moreover, NIOM is inherently complex, as 
+it must accommodate variations due to time, behavior, season, and geography [18]. Importantly, the use of device-level disaggregation 
+to enhance occupancy detection remains underexplored, a critical gap that this study aims to address.
+
+3. Methodology
+
+In this section, we elaborate on the methodology followed in this study to develop the proposed NILOM framework for simulta-
+
+neous and non-intrusive load-state (state-NILM) and occupancy (NIOM) monitoring based on aggregated smart meter data.
+
+3.1. Proposed NILOM framework overview
+
+The proposed NILOM framework operates in two sequential phases: first, a 1D reconstruction (segmentation) network performs 
+load disaggregation using 1D-s2s-based domain transformation; second, a 1D classifier detects occupancy via sequence-to-point (s2p) 
+estimation. The acronym ‘NILOM’ merges the widely used terms ‘NILM’ and ‘NIOM,’ emphasizing the framework’s dual functionality. 
+In Phase 1, aggregated daily smart meter data undergo preprocessing and are fed into the 1D-s2s model, converting household-level 
+energy consumption into appliance-specific load profiles. In Phase 2, these disaggregated appliance load patterns are processed into 
+per-appliance  binary  event  pulses  and  reaggregated  into  a  single  household-level  event  pulse.  Instead  of  using  raw  aggregated 
+household power consumption data, which often contains significant noise and interference detrimental to occupancy detection, this 
+refined event pulse is utilized as input for the 1D-s2p model, enabling accurate real-time occupancy inference. Occupancy classifi-
+cation accuracy can be further optimized by excluding non-occupancy-relevant device patterns during reaggregation. Within NILOM, 
+NILM functions as an intermediate stage, providing detailed appliance-level insights that enhance NIOM’s robustness and accuracy. 
+NILOM integrates NILM and NIOM outputs, delivering a comprehensive, non-intrusive smart home monitoring solution. The complete 
+workflow is illustrated in Fig. 1.
+
+3.2. Dataset description
+
+We utilize the ECO dataset [55] to train and evaluate both phases of NILOM. Among publicly available NILM datasets [20], [57], 
+ECO is one of the few that contains ground truth (GT) labels for user occupancy status alongside simultaneous aggregated smart meter 
+and device-level power consumption data. The dataset spans approximately eight months and includes recordings from six households 
+(labeled ‘H01’ to ‘H06’ in this study). It provides three main types of sensor measurements: (1) aggregated smart meter data (Dagg) from 
+sixteen channels, which includes single-phase (1ϕ) and three-phase (3ϕ) power or load measurements (Pagg,3ϕ, Pagg,1ϕ(L1,L2,L3)); where ϕ 
+denotes  phase),  voltage  (Vagg,3ϕ),  current  (Iagg,3ϕ,  Iagg,1ϕ(I1,I2,I3,IN)),  and  power  factor  values  for  1ϕ  load  and  current  channels;  (2) 
+per-appliance 1ϕ power consumption data (Papp,1ϕ) collected via 6 to 10 smart plugs per household; and (3) manually annotated GT 
+occupancy labels (Docp) [53], [55]. Docp  is available for two months per household, one from summer and one from winter, for all 
+households except ‘H06’. In the NILOM framework, rather than using Dagg  directly to infer Docp, we first apply a 1D-s2s model to 
+disaggregate Dagg  into appliance-level load profiles (Papp,1ϕ), enabling state-NILM. These disaggregated outputs are then used in Phase 
+2,  following  post-processing,  to  estimate  Docp.  While  Phase  1  leverages  the  full  eight-month  dataset  across  diverse  devices  and 
+households, Phase 2 is constrained by the shorter duration of Docp. The Python-based DL pipeline developed for NILOM is available in 
+this GitHub repository [58].
+
+3.3. Phase 1: load disaggregation for state-NILM
+
+In this phase, the aggregated and preprocessed smart meter data is disaggregated into individual appliance load profiles using 1D- 
+s2s models for state-NILM. This section outlines the data preprocessing procedures tailored for 1D-s2s learning, introduces the novel 
+1D-s2s model designed to deliver robust disaggregation performance on the ECO dataset, and details the experimental setup and 
+evaluation metrics used to assess the effectiveness of 1D-s2s transformation for load disaggregation.
+
+3.3.1. Data preparation for s2s learning
+
+First, smart meter and appliance data from the ECO dataset were synchronized using per-second timestamps. Missing or invalid 
+entries, such as not a number (NaN) or infinity values, were corrected using linear interpolation. For load disaggregation, we excluded 
+voltage and power factor channels due to their weak temporal correlation with appliance-level load signatures [59]. Since all ap-
+pliances in the dataset operate on 1ϕ power, we identified the smart meter channels most strongly correlated with appliance loads 
+using the Pearson correlation coefficient (PCC). Based on this analysis, we selected three input smart meter channels for the 1D-s2s 
+models: Pagg,3ϕ, and the most correlated 1ϕ power (P
+ϕ  in general. To improve domain 
+transformation, we applied threshold-based filtering to both aggregated and appliance-level data, removing minor spikes, random 
+noise, and irrelevant signal artifacts [35]. Low-variance signals, which lacked measurable activity, were eliminated using amplitude 
+and variance criteria. We then normalized the dataset globally using min-max scaling, as commonly applied in NILM studies [35], [60]. 
+
+ϕ) channels, i.e., D
+
+ϕ) and current (I
+
+═
+agg,1
+
+═
+agg,1
+
+═
+agg,1
+
+5 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+For training, the dataset was divided into five folds, and each training set was augmented with a 90 % overlapping sliding window to 
+enhance learning efficiency.
+
+3.3.2. Proposed load disaggregation network (LD-Net)
+
+The proposed LD-Net 1D-s2s model for domain transformation employs an inverse pyramid backbone as its encoder and a fully 
+connected nested decoder, as illustrated in Fig. 2, where ‘X’ denotes a convolutional unit, Xm,w
+En  denotes an encoder block, and Xm,w
+denotes a decoder block, as annotated with color coding in Fig. 2(a–d). Here, ‘m’ and ‘w’ denote the semantic level and position of the 
+
+De 
+
+Fig.  2. (a)  Structure  of  LD-Net  with  inverse  pyramid  backbone  shaded;  (b)  the  MRP  block  expanded;  (c)  inside  the  DFA  layer;  (d)  glossary 
+and symbols.
+
+6 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+respective  convolutional  unit,  respectively,  within  LD-Net’s  nested  architecture.  LD-Net’s  inverse  pyramid  backbone  (Fig.  2  (a)) 
+consists  of  multi-resolution  pooling  (MRP)  blocks  (see  Fig.  2(b–d))  developed  based  on  the  concept  of  pyramid  pooling  used  to 
+construct the pyramid scene parsing network (PSP-Net) [61], where the feature maps are fragmented in parallel through subsequent 
+pooling (i.e., downsampling) and upsampling based on multiple levels of strides determined by a term known as ’cardinality’ [61], and 
+concatenated. The cardinality denoted as ‘c’ in Fig. 2 determines the complexity of an MRP block within the inverse pyramid backbone. 
+Following Eq. (1), cardinality is related to the semantic level of the MRP block. 
+
+c = 0 : d (cid:0) m
+
+(1) 
+
+Here, ‘d’ represents the depth (total semantic levels) of LD-Net. For LD-Net and other 1D-s2s models, we set d = 5 [62]; thus, ‘m’ ranges 
+from 1 to d and ‘w’ varies from 0 to d (cid:0) 1, as shown in Fig. 2 (a). For instance, the cardinality of X1,0
+En , the first MRP block of the encoder 
+backbone, varies between 0 and d (cid:0) m = 4, as illustrated in Fig. 2 (b). Within the MRP block, after concatenation, we perform scope 
+merging by convolving the feature maps through convolutional blocks with various filter or kernel sizes denoted as ‘k’ in Fig. 2 (b). We 
+use ‘k’ of 3, 5, and 7 to capture features with various spatial resolutions and concatenate. The number of filters ‘f’ for the convolutional 
+blocks in each semantic layer is determined based on the relationship formulated in Eq. (2). 
+
+f = n × 2m ≡ 32 × 2m; m ϵ 1 : 5
+
+(2) 
+
+Here, ‘n’ denotes the base number of filters applied in building the segmentation models and is fixed at 32 for all models used in this study 
+[63]. Before generating the final output, the dimensionality of the concatenated feature maps is reduced using a convolutional block with 
+a kernel size ‘k’ of 1 [64]. The complete operation of the MRP block is depicted in Fig. 2 (b) and mathematically defined in Eq. (3). 
+
+( ⋃
+
+( ⋃d(cid:0) m
+
+(cid:0)
+
+)
+, c
+
+xl(cid:0) 1
+
+i
+
+fDFA
+
+)
+
+)
+
+, k
+
+, k = 1
+
+(3) 
+
+xl
+i
+
+= Conv1D
+
+Conv1D
+
+k=3,5,7
+
+c=0
+
+In this context, xl(cid:0) 1
+i  represent the input and output of the block, respectively, with ∪ symbolizing concatenation. The function 
+fDFA  denotes the deep feature augmentation (DFA) layer (Fig. 2 (c)), proposed for automatic feature augmentation within the MRP 
+blocks. At the entry of the DFA layer, we apply the mix-pooling operation [65], as formulated in Eq. (4), 
+
+and xl
+
+i 
+
+xl = fmix
+
+(cid:0)
+
+)
+
+(cid:0)
+
+≡
+
+xl(cid:0) 1
+
+α × fmax
+
+(cid:0)
+
+xl(cid:0) 1, 2c
+
+))
+
+⨁
+
+(
+
+(1 (cid:0) α) × favg
+
+) )
+
+(cid:0)
+
+xl(cid:0) 1, 2c
+
+(4) 
+
+The mix-pooling operation (illustrated in Fig. 2 (c)) combines the outputs of max-pooling and average-pooling through element- 
+wise addition, denoted by the symbol ⨁. The weighting factor ‘α’ controls the contribution of each pooling type; in this study, it is 
+set to 0.5 to ensure equal weighting. After pooling, the feature maps are upsampled in parallel using transposed convolution and 
+bilinear interpolation, followed by concatenation as defined in Eq. (5), 
+
+(cid:0)
+
+xl = fupConv
+
+xl(cid:0) 1, Bilinear, 2c
+
+)
+
+(cid:0)
+
+∪ fTransConv
+
+xl(cid:0) 1, k = 4, 2c
+
+)
+
+(5) 
+
+The concatenated feature maps are subsequently passed through a convolutional block with 32 base filters to reduce dimension-
+ality. The stride length ‘s’ used in pooling and the upsampling size ‘sz’ (refer to Fig. 2(c and d)) are derived from the cardinality of the 
+DFA layer, as defined in Eq. (6). 
+
+s = sz = 2c; c ϵ 0 : 4
+
+(6) 
+
+On the other hand, the nested decoder blocks (Xm,w
+
+De ) assume the formation of the UNet++ [66] and UNet3+ [67]. The decoder 
+blocks are interconnected through a nested array of skip connections, similar to UNet++ [66], to alleviate the spatial distance between 
+the encoder and the decoder layers. Lastly, we residually connect the final block of each semantic layer using skip connections and 
+concatenation (Fig. 2 (a)) to achieve the full-scale connections [67] and enhance feature processing during decoding.
+
+3.3.3. Experimental setup for load disaggregation via 1D-s2s learning
+
+In this phase, we analyze data from 14 appliances across six ECO households, grouped into three broad categories [35]. High-energy 
+devices such as the ‘Dishwasher,’ ‘Kettle,’ ‘Stove,’ ‘Dryer,’ ‘Kitchen Appliances,’ ‘Washing Machine,’ and ‘Microwave’ exhibit distinct 
+load signatures, making them easier to disaggregate. Cyclic appliances like the ‘Fridge’ and ‘Freezer’ operate continuously with mod-
+erate power usage and are typically unrelated to user activities. In contrast, low-power devices such as ‘Air Exhaust,’ ‘Entertainment’ 
+systems, ‘Lamp,’ ‘Laptop,’ and ‘PC and Router’ setups have subtle, less distinguishable signatures in aggregated data, posing challenges 
+for disaggregation. However, these low-energy devices often align closely with occupant presence, as they are frequently used during 
+active home occupancy. We excluded ‘Tablet’ and ‘Fountain’ from our analysis due to insufficient sample sizes for effective 1D-s2s model 
+training [35]. For 1D-s2s learning, the preprocessed dataset is divided into five folds for cross-validation (CV), with each fold split into 
+day-independent train, test, and validation sets in a 72:20:8 ratio. Each fold represents a full day of data, comprising 86,400 samples at a 
+1 Hz sampling rate [55]. Each sample includes three input channels Pagg,3ϕ, P
+ϕ  alongside a synchronized appliance power 
+consumption channel as the output (see Section 3.3.1). To assess the disaggregation performance of s2s learning, we compare the 
+proposed LD-Net with four benchmark segmentation models: UNet [68], UNet++ [66], UNet3+ [67], and PSP-Net [61], all trained 
+under identical hyperparameter settings. Deep supervision [69] is used during training to enhance learning in shallow layers. Model 
+
+═
+agg,1
+
+═
+agg,1
+
+ϕ, I
+
+7 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+optimization is guided by validation loss, computed using mean absolute error (MAE) defined in Eq. (7). Training is conducted for up to 
+500 epochs guided by the Adam optimizer, with early stopping triggered after 30 epochs of no improvement in validation loss. The initial 
+(cid:0) 4 and dynamically adjusted using TensorFlow’s ’ReduceLROnPlateau’ scheduler, which lowers the rate by a 
+learning rate is set to 3 × 10
+factor of 0.1 if validation loss does not improve over 15 consecutive epochs.
+
+3.3.4. Common evaluation metrics for load disaggregation
+
+To evaluate the load disaggregation performance of the 1D-s2s models, we employed two categories of temporal metrics: error- 
+based and correlation-based. As noted in [20], [57], and [70], the most commonly used error metrics for assessing state-NILM per-
+formance are MAE, signal aggregate error (SAE), and estimation accuracy (EA), defined in Eqs. (7)–(9), respectively. 
+
+∑n
+
+i=1
+
+|xi (cid:0) ̂xi|
+
+n
+
+MAE =
+
+SAE =
+
+⃒
+⃒
+
+⃒
+⃒
+
+Ep (cid:0) Eg
+Eg
+
+⎛
+
+∑n
+
+EA = 1 (cid:0)
+
+⎜
+⎜
+⎝
+
+i=1
+
+|xi (cid:0) ̂xi|
+∑n
+
+2 ×
+
+xi
+
+i=1
+
+⎞
+
+⎟
+⎟
+⎠
+
+(7) 
+
+(8) 
+
+(9) 
+
+Here, x and ̂x represent the GT and predicted load samples, respectively. In the case of EA, Eg refers to the GT energy consumed, while 
+Ep denotes the predicted energy. To evaluate the temporal correlation between the true (Papp,1ϕ) and estimated (Papp,1ϕ) appliance load 
+profiles, we use the PCC, defined in Eq. (10). 
+
+PCC =
+
+√
+
+∑n
+
+(xi (cid:0) x)(yi (cid:0) y)
+√
+
+i=1
+
+̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅
+∑n
+
+(xi (cid:0) x)2
+
+i=1
+
+̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅̅
+∑n
+
+(yi (cid:0) y)2
+
+i=1
+
+(10) 
+
+Here, xi and yi denote the instantaneous GT and predicted load values at the ith temporal point of each sample, while x and y represent 
+their respective arithmetic means.
+
+3.3.5. Proposed DEOI metric
+
+This study proposes the DEOI metric, which consolidates the energies of interest (EOI) parameters introduced by Rafiq et al. [71] 
+into a single expression using the Sørensen-Dice similarity coefficient (DSC), a standard metric for evaluating 2D segmentation per-
+formance [72], as defined in Eq. (11). 
+
+DSC = 2 × |X ∩ ̂
+X|
+|X| + |̂X|
+
+≡
+
+2 × TP
+(2 × TP) + FP + FN
+
+≡ 2 × precision × recall
+precision + recall
+
+(11) 
+
+According to (11), DSC is computed as twice the intersection of the GT (X) and predicted (̂X) masks divided by the sum of their 
+magnitudes, where TP, FP, and FN denote true positives, false positives, and false negatives, respectively, in a confusion matrix. We 
+propose  DEOI  to  evaluate  the  segmentation  performance  of  1D-segmentation  (1D-s2s)  models  by  establishing  a  mathematical 
+equivalence between DSC and the EOI parameters. The EOI framework [71] consists of five parameters: Eg and Ep, used to calculate EA 
+(Eq. (9)), overlapping energy (Eo), missing energy (Em), and extra energy (Ee). By aligning EOI parameters mathematically with DSC, 
+we derive DEOI, as shown in Eq. (12). 
+
+DEOI = 2 × |X ∩ ̂
+X|
+|X| + |̂X|
+
+≡
+
+2 × Eo
+2 × Eo + Em + Ee
+
+≡ 2 × Eo
+
+Eo + Eg + Ee
+
+≡
+
+2 × Eo
+Eo + Ep + Em
+
+(12) 
+
+The terms X and ̂X in Eq. (12) denote the GT and estimated waveforms, respectively, corresponding to appliance load patterns in 
+this study. DEOI maps Eo, Em, and Ee  to TP, FN, and FP in DSC, respectively. Specifically, Eo  represents the overlap (intersection) 
+between the GT and estimated load patterns, equivalent to TP. Em  corresponds to regions present in the GT but missed by the 1D-s2s 
+model estimation, analogous to FN. Conversely, Ee indicates regions incorrectly estimated by the 1D-s2s model, with no corresponding 
+GT counterpart, equivalent to FP. While individual EOI parameters do not provide a comprehensive assessment of state-NILM model 
+performance, their unification into the DEOI metric enables robust 1D-s2s evaluation, outperforming conventional metrics such as 
+PCC, as discussed in Section 4.1.1. A visual depiction of EOI, adapted from [71], is provided in Supplementary Fig. S1. Additionally, Eq. 
+(12) offers alternative DEOI formulations based on inter-parameter relationships established in [71], allowing direct computation 
+without intermediate conversions. To implement DEOI as an evaluation metric within our Python-based DL pipeline [58], we derive 
+explicit formulas for computing its components. Eqs. (13)–(15) define the calculation methods for Eo, Em, and Ee, respectively. These 
+
+8 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+equations form the basis of the algorithm developed to compute DEOI. Additionally, we present an expanded, implementable version 
+of DEOI in Eq. (16), where ‘n’ denotes the total number of samples, and ‘t’ and ‘T’ represent the instantaneous time and overall duration 
+of a sample, respectively. 
+
+⎧
+⎨
+
+⎩
+
+Eot =
+
+Eg tor Ept
+
+,
+
+,
+
+,
+
+Eg t
+
+Ept
+
+ifEg t
+
+ifEg t
+
+ifEg t
+
+= Ept
+< Ept
+> Ept
+
+Emt =
+
+⎧
+⎨
+
+⎩
+
+0,
+0,
+(cid:0) Ept
+
+⃒
+⃒,
+
+⃒
+⃒
+Eg t
+
+⎧
+⎨
+
+⎩
+
+⃒
+⃒
+Ept
+
+Ee t =
+
+⃒
+⃒,
+
+0,
+(cid:0) Eg t
+0,
+
+ifEg t
+
+ifEg t
+
+ifEg t
+
+= Ept
+< Ept
+> Ept
+
+ifEg t
+
+ifEg t
+
+ifEg t
+
+= Ept
+< Ept
+> Ept
+⎡
+
+DEOI =
+
+2 × Eo
+2 × Eo + Em + Ee
+
+≈
+
+∑n
+
+i=1
+
+⎢
+⎢
+⎢
+⎣
+
+2×
+
+∑T
+
+t=1
+
+∑T
+
+2×
+
+(Eo t,n)
+
+(Eo t,n)+
+
+∑T
+
+(Em t,n)+
+
+t=1
+
+t=1
+∑T
+
+t=1
+
+n
+
+⎤
+
+⎥
+⎥
+⎥
+⎦
+
+(Ee t,n)
+
+(13) 
+
+(14) 
+
+(15) 
+
+(16) 
+
+Fig. 3. Plots (a)–(g) illustrate the disaggregated daily load profiles (in red) and corresponding post-processed binary load event pulses (in blue) for 
+individual appliances in household ‘H02’. Plot (h) presents the aggregated household-level load event pulse, while (i) depicts the aligned GT oc-
+cupancy labels for the same day.
+
+9 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+3.4. Phase 2: occupancy classification
+
+In this phase, household occupancy is detected via s2p learning. Within NILOM, disaggregated appliance-level load states from 
+Phase 1 are converted into individual load event pulses, which are then reaggregated to form a single household-level load event pulse. 
+This pulse is used as the input for 1D-s2p models to classify household occupancy status. Ablation studies further demonstrate that this 
+reaggregation process is customizable as appliances can be selectively included or excluded based on their relevance to user behavior, 
+enabling the development of a targeted and adaptive NIOM framework.
+
+3.4.1. Data preparation for s2p learning
+
+For s2p learning, additional preprocessing steps are performed to prepare data for occupancy classification. First, disaggregated 
+appliance load states (Papp,1ϕ) from Phase 1 are synchronized with Docp using ECO dataset timestamps [55]. Following prior work [52], 
+[73], 24-h segments with minimal power variation or occupancy levels below 10 % or above 90 % are excluded to reduce class 
+imbalance. Devices with extremely low absolute correlation to occupancy (|PCC| < 1 %; threshold 1 in Algorithm 1), such as ‘Fridge’ 
+and ‘Freezer’, or lacking sufficient (for training DL models) occupancy-aligned data are removed. Nine devices are retained for training 
+s2p  classifiers:  ‘Washing  Machine,’  ‘Kettle,’  ‘Dryer,’  ‘Dishwasher,’  ‘Entertainment,’  ‘Lamp,’  ‘Laptop,’  ‘PC  and  Router,’  and  ‘Air 
+Exhaust.’ This step eliminates device-specific noise that cannot be filtered through conventional processing and is only separable via 
+disaggregation.  Papp,1ϕ  for  each  device  is  normalized  between  0  and  1  via  min-max  normalization,  and  binary  load  event  pulses 
+(Papp(pulse)) are generated (Algorithm 1) to reflect ON/OFF states (Fig. 3(a–g)). To avoid erratic transitions, state changes that are 
+shorter than 1 h (3600 samples; threshold 2 in Algorithm 1) are removed. Docp  for classification, are assigned using 30-min windows 
+(1800 samples) with a 50 % threshold, i.e., if occupancy exceeds half the window, the label is ‘occupied’ (1); otherwise, ‘unoccupied’ 
+(0) [50]- [52]. To reduce false negatives from idle devices during occupancy, we apply a logical OR across all device pulses to create a 
+unified household event pulse, Pagg(pulse), as shown in Eq. (17) and Fig. 3 (h). 
+
+Pagg(pulse) =
+
+)
+
+Papp(pulse)
+
+i
+
+⋃j
+
+(cid:0)
+
+i=1
+
+(17) 
+
+We discard any 24-h segment where either Pagg(pulse) (Fig. 3 (h)) or Docp (Fig. 3 (i)) remains constant (Threshold 3 in Algorithm 1). An 
+ablation study further refines Pagg(pulse) by including only devices with a minimum 5 % PCC with Docp. The complete Pagg(pulse) generation 
+process is outlined in Algorithm 1.
+
+Algorithm 1: Aggregated household load event pulse (Pagg(pulse)) generation
+
+1
+2
+3
+
+4
+5
+6
+7
+
+8
+9
+10
+11
+12
+13
+14
+
+15
+16
+17
+18
+19
+20
+21
+22
+23
+
+Set Threshold 1 = 1 %, Threshold 2 = 60 min, Threshold 3 = 24 h
+for number of households n do
+
+═
+agg,1
+
+ϕ, Docp, and Papp,1ϕ  from all devices
+
+Match D
+Remove Papp,1ϕ  from devices that have PCC (Papp,1ϕ, Docp) < Threshold 1
+for number of matched samples i do
+
+for number of devices j do
+)
+Sij
+(cid:0)
+(cid:0) min
+
+(cid:0)
+Sij (cid:0) max
+)
+(cid:0)
+Sij
+
+⃦
+⃦ =
+
+max
+
+Sij
+
+⃦
+⃦
+
+Sij
+
+)
+
+% generate appliance-level load event pulses
+
+% generate household-level load event pulse via reaggregation
+
+for number of datapoints k do
+
+if Sij(k) > 0
+Pij(k) = 1
+else
+Pij(k) = 0
+end if
+
+Temporally aggregate Pij  < Threshold 2 to get Papp(pulse)
+
+Combine Papp(pulse) from all devices to generate Pi  using Eq. (17)
+for number of datapoints k do
+
+if Pi(k) > 0
+Pagg(pulse)(k) = 1
+
+else
+
+Pagg(pulse)(k) = 0
+end if
+
+Remove samples if either Docp  or Pagg(pulse) fail to satisfy Threshold 3
+
+Return Pagg(pulse)
+
+3.4.2. Novel occupancy detection network (OD-Net)
+
+The proposed OD-Net architecture, illustrated in Fig. 4, draws inspiration from the depthwise (dw) separable convolution and 
+inverted residual design principles introduced in MobileNetV1 [74] and MobileNetV2 [75]. It begins with a stem convolutional block 
+that employs 16 filters of size 3 × 3 with a stride of 2, followed by parallel max-pooling and average-pooling operations, each pro-
+ducing a 4× 4 output. The resulting features are then passed through a sequence of inverted residual blocks, collectively referred to as 
+
+10 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+the ‘inverted residual bank.’ [75] These initial feature representations are concatenated, forming the foundation for multi-level feature 
+augmentation, as shown in Fig. 4 (a). Subsequently, the concatenated features are processed through convolutional layers of varying 
+kernel sizes to facilitate multi-scale feature fusion. In the second feature augmentation stage, the multi-scope outputs are aligned with 
+the features from the residual bank using 1 × 1 convolution, then merged and expanded through another 1× 1 convolution. Adaptive 
+average pooling reduces the output to a single value per channel, and a ‘squeeze-and-excite’  module is applied to recalibrate the 
+feature maps [76]. These refined features are passed through a fully connected multilayer perceptron (MLP) block, ending with a 
+‘LogSigmoid’  activation layer  that produces  the  final  binary output  indicating  household occupancy.  The inverted  residual bank, 
+illustrated in Fig. 4 (b), is defined by five parameters: semantic levels (l), expansion ratio (t), input channels (c), inverted residual 
+blocks per level (n), and stride (s). As shown in Fig. 4 (c), each block includes three layers: a 1 × 1 pointwise (pw) convolution, a 3× 3 
+dw convolution, and another 1 × 1 pw convolution. Each convolution is followed by batch normalization and a rectified linear unit 
+(ReLU) activation, with a residual connection linking the block’s input and output to preserve information flow.
+
+3.4.3. Experimental setup for occupancy classification via 1D-s2p learning
+
+As outlined in Section 3.4.1, after preprocessing for 1D-s2p learning, only four households: ‘H01’, ‘H02’, ‘H04’, and ‘H05’ retain 
+sufficient  learnable  samples.  House  ‘H03’  was  excluded  entirely  due  to  a  lack  of  valid  data  after  applying  the  filtering  criteria 
+mentioned in Section 3.4.1 (see Algorithm 1), and ‘H06’ was excluded earlier due to missing Docp. We conduct both per-household and 
+overall evaluations of the proposed occupancy classification framework. For per-household tests, each dataset is split into five day- 
+independent  folds  with  a  72:20:8  train-test-validation  ratio.  For  overall  evaluation,  data  from  all  four  households  are  combined, 
+allowing the creation of household-independent folds: in each fold, three households are used for training and one for testing. This 
+setup enhances reliability by minimizing data leakage and bias. Model performance is validated using mean squared error (MSE), as 
+defined in Eq. (18). 
+
+Fig. 4. (a) OD-Net classification model architecture; (b) sequential inverted residual bank expanded; (c) inside a single inverted residual block 
+consisting pw and dw convolution layers.
+
+11 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+∑n
+
+i=1
+
+(xi (cid:0) ̂xi)2
+
+n
+
+MSE =
+
+(18) 
+
+The ‘Adam’ optimizer is employed to iteratively minimize the loss function. Models are trained for up to 300 epochs, with early 
+stopping activated if no improvement in validation loss is observed over 50 consecutive epochs. The initial learning rate is set to 5 ×
+(cid:0) 5, and TensorFlow’s ‘ReduceLROnPlateau’ scheduler is used to decrease the learning rate by a factor of 0.1 every 20 epochs when 
+10
+the validation loss plateaus.
+
+3.4.4. Evaluation metrics for occupancy classification
+
+Following literature [9], [12], [77], we evaluate the occupancy detection performance of NILOM using accuracy, precision, recall 
+
+(or sensitivity), F1-score, and specificity, as in Eqs. (19)–(23), respectively. 
+
+Accuracy =
+
+TP + TN
+TP + TN + FP + FN
+
+Precision = TP
+
+TP + FP
+
+Recall = TP
+
+TP + FN
+
+Specificity = TN
+
+TN + FP
+
+F1 (cid:0) score =
+
+2TP
+2TP + FP + FN
+
+≡ 2*Precision*Recall
+Precision + Recall
+
+(19) 
+
+(20) 
+
+(21) 
+
+(22) 
+
+(23) 
+
+These classification metrics are computed from a binary confusion matrix (TP, true negative or TN, FP, FN) based on the GT (Docp) 
+and predicted (Docp) occupancy labels. Occupancy classification performance of OD-Net is evaluated using the household-level Pagg(pulse), 
+both per household and across all households combined (Section 4.2.1). As part of the ablation studies, we assess OD-Net’s perfor-
+mance using load pulses from individual devices to understand their contribution to occupancy classification (Section 4.2.3). Addi-
+tionally, we compare classification performance when using the full set of devices per household versus a filtered subset with at least 5 
+% PCC to occupancy (Section 4.2.2).
+
+4. Results and discussion
+
+This section presents and analyzes the experimental results of the proposed NILOM framework for simultaneous load disaggre-
+gation and occupancy classification. We provide quantitative findings, followed by in-depth discussion and qualitative evaluations for 
+both state-NILM (Phase 1) and NIOM (Phase 2).
+
+4.1. Phase 1: load disaggregation outcomes
+
+We begin with an in-depth analysis of load disaggregation via 1D-s2s transformation. We present the performance of the 1D-s2s 
+
+models in terms of the five evaluation metrics (MAE, SAE, EA, PCC, and DEOI) discussed in Section 3.3.4.
+
+Table 1 
+LD-Net load disaggregation performance by appliance.
+
+Appliance
+
+Construction error
+
+Temporal correlation
+
+Segmentation
+
+Dishwasher
+Kettle
+Stove
+Dryer
+Kitchen Appliances
+Washing Machine
+Microwave
+Fridge
+Freezer
+Air Exhaust
+Entertainment
+Lamp
+Laptop
+PC/Router
+
+MAE
+
+4.343
+2.143
+9.840
+1.815
+1.822
+3.079
+4.747
+4.908
+0.490
+1.103
+7.703
+8.430
+6.621
+1.407
+
+SAE
+
+0.058
+0.062
+0.101
+0.025
+0.090
+0.075
+0.027
+0.034
+0.020
+0.028
+0.014
+0.041
+0.149
+0.113
+
+EA
+
+0.964
+0.809
+0.829
+0.973
+0.870
+0.814
+0.796
+0.924
+0.836
+0.583
+0.807
+0.842
+0.725
+0.721
+
+12 
+
+PCC (%)
+
+97.336
+87.947
+92.636
+98.617
+90.452
+87.522
+84.939
+87.792
+79.524
+67.222
+88.348
+86.219
+74.845
+58.254
+
+DEOI
+
+0.959
+0.836
+0.836
+0.973
+0.781
+0.842
+0.850
+0.889
+0.905
+0.499
+0.792
+0.841
+0.700
+0.779
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+4.1.1. LD-net performance on load disaggregation
+
+In  Phase  1,  a  dedicated  1D-s2s  model  is  trained  for  each  appliance,  with  LD-Net  results  summarized  in  Table  1.  The  model 
+accurately captured load patterns (Papp,1ϕ) for most devices. However, low-power appliances like ‘Air Exhaust’ and ‘PC and Router’ 
+showed weaker performance, with PCC values falling below 70 % [35]. High-energy devices such as ‘Dishwasher,’ ‘Stove,’ and ‘Fridge’ 
+demonstrated strong PCC and DEOI scores but exhibited higher MAE and SAE due to their significant energy signature. In contrast, the 
+EA metric aligned more closely with PCC and DEOI trends, reflecting its basis in relative energy error (Eq. (9)). LD-Net also performed 
+well in disaggregating cyclic loads for devices like the ‘Fridge’ and ‘Freezer.’
+
+The proposed DEOI metric provides a more detailed and reliable evaluation of Papp,1ϕ estimation performance of 1D-s2s models than 
+conventional correlation metrics. While Table 1 suggests overall robust performance per device, they often fail to account for sample- 
+level discrepancies. Fig. 5 demonstrates that DEOI captures such nuances more effectively than PCC. In some cases, PCC indicates a 
+high correlation despite clear mismatches between Papp,1ϕ  (GT, blue) and Papp,1ϕ  (pred, red) waveforms, whereas DEOI accurately 
+reflects these inconsistencies. PCC primarily evaluates waveform envelopes, often overlooking internal load-pattern mismatches (such 
+as Em  or Ee), as indicated by green arrows in Fig. 5. Conversely, in cases like the ‘Freezer’ sample (Fig. 5 (h)), PCC reports a low value 
+due  to  pattern  or  phase  mismatches  (highlighted  by  red  arrows),  which  minimally  affect  DEOI  because  these  deviations  involve 
+negligible load volume. However, unlike PCC, which ignores parallel load-level differences as in Fig. 5(h–k, m), DEOI effectively 
+penalizes  such  discrepancies.  Moreover,  DEOI  notably  outperforms  PCC  for  low-power  devices  with  subtle  load  profiles,  such  as 
+‘Laptop’ and ‘PC and Router’ (Fig. 5(m and n)), by explicitly identifying the incorrectly estimated Ee. Disaggregating these patterns 
+from Pagg,3ϕ is particularly challenging due to the dominance of high-power device signals. DEOI also accurately detects Em in cases like 
+‘Air Exhaust’ (Fig. 5 (j)), where PCC inaccurately suggests superior performance despite missing peaks. Additionally, for devices such 
+as ‘Dryer’ (Fig. 5 (d)), with significant active-use patterns followed by less prominent transition patterns, PCC fails to identify poor 
+estimations, while DEOI captures these mismatches. However, both PCC and DEOI showed similar performance for high-power devices 
+with consistent and clear patterns, such as the ‘Washing Machine’ (Fig. 5 (f)). Overall, DEOI is more meticulous and informative for 
+assessing  1D-s2s  load  disaggregation  performance  and  could  be  used  alongside  conventional  metrics  for  comprehensive  model 
+
+Fig. 5. Insight into the proposed DEOI metric against PCC to reliably quantify load disaggregation, visualized on a representative case by LD-Net 
+(blue: Papp,1ϕ  or GT; red: Papp,1ϕ  or pred) from each of the 14 appliances under study.
+
+13 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+evaluation.
+
+To qualitatively evaluate LD-Net’s performance across devices, Fig. 6 presents sample plots from randomly selected households. 
+Column 1 shows the pre-processed Pagg,3ϕ, while columns 2 and 3 display the corresponding Papp,1ϕ  and Papp,1ϕ, respectively. Low- 
+energy appliances (Fig. 6(j–n)) displayed lesser disaggregation performance due to overlapping signatures with higher-energy de-
+vices. However, LD-Net managed to capture key switching events for ‘Laptop’ (Fig. 6 (l)) and ‘PC or Router’ (Fig. 6 (n)) via robust 1D- 
+s2s domain transformation. For NIOM applications, accurately detecting these device switching events is often more critical than 
+estimating complete load patterns, particularly for appliances closely tied to occupant behavior. High-energy devices (Fig. 6(c–i)) 
+yielded  excellent  outcomes  because  of  their  prominent  load  consumption  patterns,  though  occasional  misclassifications  occurred 
+among similar appliances. Lastly, ‘Fridge’ and ‘Freezer’ (Fig. 6(a and b)) were accurately disaggregated owing to their consistent and 
+repetitive load profiles.
+
+Fig. 6. Illustrations of appliance load state disaggregation from Pagg,3ϕ  by LD-Net in various households. The columns show Pagg,3ϕ, Papp,1ϕ  and Papp,1ϕ, 
+respectively, from left to right.
+
+14 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+4.1.2. Comparative evaluation of LD-net against benchmark 1D-s2s models
+
+The bar charts in Fig. 7 used DEOI to compare the per-device load disaggregation performance of LD-Net against four benchmark 
+1D-s2s  models.  LD-Net  consistently  outperforms  the  other  models,  particularly  for  low-power  devices  like  ‘Laptop’  and  ‘PC  and 
+Router.’ However, accurately estimating the ‘Air Exhaust’ load remains challenging across all models due to limited data [55]. Among 
+the benchmarks, UNet++ [66] performed best for most devices, followed by UNet3+ [67], indicating that nested decoders or full-scale 
+skip connections improve performance over the basic UNet [68]. LD-Net, which integrates both nested decoders and full-scale skip 
+connections, further enhances performance. Notably, none of these models introduce modifications in the encoder, whereas LD-Net’s 
+inverse pyramid encoder backbone significantly improves performance, especially for challenging appliances.
+
+4.1.3. Benchmarking LD-Net against state-NILM studies
+
+Several notable state-NILM studies proposed using the ECO dataset, including the experiments performed by Buddhahai et al. [78], 
+who cascaded DL and  classical ML algorithms for multi-target load regression, and Rafiq et  al. [71], [79], who enhanced device 
+load-state estimation using modified RNNs, namely multi-feature input space LSTM (MFS-LSTM) [79], and DL-based regressors [71]. 
+Table 2 presents a comparative analysis of these methods using EA, the most commonly reported metric in this domain, ensuring a fair 
+evaluation. LD-Net outperforms existing methods with more consistent results across appliances. Notably, except for the DisAGGre-
+gation Network (DAGG-Net) by Mahmud et al. [35], prior studies typically evaluated only a subset of appliances and still achieved 
+lower performance than LD-Net for most devices.
+
+4.2. Phase 2: occupancy classification performance
+
+This section evaluates the occupancy classification performance of the proposed framework using Pagg(pulse). Performance is assessed 
+both per household and overall. To improve classification performance, we selectively reaggregate devices based on a predefined 
+correlation threshold (see Section 3.4.4) rather than using all devices. Additionally, ablation studies (Section 3.4.4) are conducted to 
+assess each appliance’s contribution to occupancy classification.
+
+4.2.1. Occupancy classification using reaggregated household load event pulses
+
+Table 3 summarizes real-time occupancy classification performance per or intra-household and overall (inter-household), evalu-
+ated using n-fold CV (see Section 3.4.3 for data preparation details). House ‘H02’ yielded the highest performance due to having the 
+most amount of clean data among all households, thereby enhancing train and test data quality per day-independent folds. Other 
+households individually showed lower performance due to insufficient high-quality training data. When data from all four households 
+were combined (household-independent folds, see Section 3.4.3), classification metrics exceeded 85 %, demonstrating the robustness 
+and generalizability of the proposed NILOM framework. These findings suggest that training on a diverse, well-annotated dataset with 
+multiple households and naturally varying appliance usage and occupancy behavior can significantly enhance this DL-based frame-
+work’s reliability and performance.
+
+Fig. 7. Comparison of LD-Net and benchmark 1D-s2s models in load disaggregation using DEOI.
+
+15 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+Table 2 
+LD-Net versus existing state-NILM methods in load disaggregation proposed using ECO and evaluated using EA.
+
+Device
+
+Rafiq et al. [71] (DL-based 
+regressor)
+
+Rafiq et al. [79] 
+(MFS-LSTM)
+
+Buddhahai et al. [78] 
+(Multi-target regressor)
+
+Mahmud et al. [35] 
+(DAGG-Net)
+
+Current (LD- 
+Net)
+
+Dishwasher
+Kettle
+Stove
+Dryer
+Kitchen 
+
+Appliances
+
+Washing 
+
+Machine
+
+Microwave
+Fridge
+Freezer
+Air Exhaust
+Entertainment
+Lamp
+Laptop
+PC and Router
+
+0.74
+0.59
+0.45
+–
+–
+
+0.50
+
+0.53
+0.64
+–
+–
+
+0.50
+–
+–
+–
+
+0.99
+0.98
+0.81
+–
+–
+
+0.68
+
+0.78
+0.94
+–
+–
+
+0.68
+–
+–
+–
+
+0.91
+0.67
+0.67
+–
+–
+
+–
+
+–
+
+0.91
+0.94
+–
+
+0.74
+0.66
+–
+–
+
+0.95
+0.92
+0.84
+0.98
+0.84
+
+0.93
+
+0.86
+0.93
+0.87
+0.56
+0.76
+0.80
+0.72
+0.73
+
+0.964
+0.809
+0.829
+0.973
+0.870
+
+0.814
+
+0.796
+0.924
+0.836
+0.583
+0.807
+0.842
+0.725
+0.721
+
+Table 3 
+OD-Net occupancy classification performance intra- and inter-household.
+
+Domain
+
+Accuracy
+
+Precision
+
+H01
+H02
+H04
+H05
+Overall (all households)
+
+77.59
+90.27
+79.85
+72.37
+85.72
+
+83.15
+91.60
+80.85
+75.85
+87.43
+
+Recall
+
+77.58
+90.27
+79.85
+72.37
+85.72
+
+F1-score
+
+Specificity
+
+75.75
+90.20
+79.88
+69.56
+85.63
+
+70.89
+90.98
+79.73
+68.02
+86.89
+
+4.2.2. Enhanced occupancy classification via intelligent device selection
+
+To improve occupancy classification, we aggregated load pulses only from devices with at least 5 % temporal PCC with occupancy 
+(see Section 3.4.4). As shown in Table 4, excluding low-correlation devices, led to a ~4 % boost across all evaluation metrics. In 
+practical deployment, device contributions may vary by household based on user behavior; thus, the system can dynamically select 
+relevant inputs to optimize performance while reducing computational and memory demands.
+
+The results in Table 4, based on devices with ≥ 5 % correlation is considered the final outcome of the proposed NILOM framework. 
+Fig. 8 presents the corresponding confusion matrix using 30-min aggregated Docp  (TP: occupied = 1; FN: unoccupied = 0), showing 
+balanced classification with minimal variation in performance, as discussed in Section 3.4.1. Approximately 12 % of occupied in-
+stances were misclassified as unoccupied, while 9 % of unoccupied instances were incorrectly labeled as occupied.
+
+Until now, our evaluation of the NIOM performance within the proposed NILOM framework has focused solely on quantitative 
+results. However, it is standard practice to present binary Docp  versus Docp, highlighting TP, TN, FP, and FN instances [18]. Fig. 9 il-
+lustrates Docp  and Docp  over seven days for each household, with time shown in hourly aggregated samples. The plots show that the 
+framework performs consistently well, with only minor misclassifications during abrupt occupancy transitions, and remains stable 
+under typical conditions.
+
+4.2.3. Ablation study: appliance-wise occupancy classification performance
+
+Not all appliances contribute equally to occupancy classification, as their effectiveness depends on how closely their usage aligns 
+with Docp. This relationship is influenced by external factors like user behavior, seasonal patterns, and weekends. To evaluate each 
+device’s general contribution across households, we applied NILOM (Phase 2) individually on each appliance. Table 5 reports the OD- 
+Net outcomes for the nine devices selected in Phase 2 (Section 3.4.1) and compares them with results from 1D-s2p learning applied 
+directly on aggregated smart meter data. The ‘Dishwasher’ yielded the highest accuracy, followed by ‘Entertainment,’ ‘Dryer,’ and ‘Air 
+Exhaust.’ Devices such as ‘PC and Router’ and ‘Lamp’ showed lower accuracy due to prolonged use that did not always correlate with 
+occupancy, while ‘Laptop’ usage aligned more consistently with occupant presence. Although disaggregating low-power devices is 
+difficult in NILM, their strong correlation with occupancy makes them valuable for NIOM.
+
+Table 4 
+OD-Net occupancy classification using smartly selected highly correlated devices.
+
+Domain
+
+Accuracy
+
+Precision
+
+Overall (all devices)
+Overall (5 % correlated devices)
+
+85.72
+89.62
+
+87.43
+90.55
+
+16 
+
+Recall
+
+85.72
+88.37
+
+F1-score
+
+85.63
+89.45
+
+Specificity
+
+86.89
+90.86
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+Fig. 8. Confusion matrix for optimal NILOM occupancy classification using ≥ 5 % correlated devices on the ECO dataset.
+
+Fig. 9. Docp  versus Docp  for (a) H01, (b) H02, (c) H04, and (d) H05, based on ≥ 5 % correlated devices, and presented as a seven-day-long hourly 
+aggregated binary pulse. TP, TN are shaded green while FP, FN are shown in red and blue, respectively.
+
+From Table 5, applying OD-Net directly to Pagg,3ϕ  resulted in significantly reduced performance, primarily due to signal overlap and 
+device-related noise. Although NILOM presents inherent challenges, Table 5 clearly shows that even the lowest-performing devices 
+outperform direct classification from Pagg,3ϕ, highlighting the benefits of prior load disaggregation and event pulse generation for 
+NIOM. Notably, the highest-performing device, ‘Dishwasher,’ demonstrated over 32 % accuracy improvement compared to using raw 
+Pagg,3ϕ  for classification. While individual devices, such as the ‘Dishwasher,’  outperform our reaggregated pulse-based method for 
+household occupancy classification (reported in Table 4), relying on a single appliance risks poor generalization in practical scenarios 
+due to variability in user behaviors, multiple occupants, and seasonal factors.
+
+4.2.4. Comparison of NILOM with benchmark NIOM studies
+
+Table 6 presents a comparative analysis of the NILOM framework against the existing NIOM method proposed based on ECO. To 
+ensure  an  unbiased  comparison,  only  studies  using  ECO  are  included.  These  works  vary  in  their  use  of  time  resolution,  feature 
+extraction, and model types, ranging from classical ML to lightweight and deep CNNs. In this study, we use a 30-min aggregation 
+
+17 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+Table 5 
+OD-Net occupancy classification performance by individual appliances.
+
+Appliances
+
+Accuracy
+
+Precision
+
+Dishwasher
+Air Exhaust
+Entertainment
+Kettle
+Lamp
+Laptop
+Dryer
+Washing machine
+PC and router
+Smart meter (aggregated)
+
+93.49
+84.40
+86.41
+81.60
+73.30
+81.21
+86.76
+78.76
+64.13
+61.35
+
+93.77
+85.77
+87.61
+82.33
+74.14
+82.06
+89.43
+81.70
+67.38
+62.94
+
+Recall
+
+94.29
+84.39
+86.42
+81.60
+73.30
+81.21
+86.76
+78.74
+64.13
+61.35
+
+F1-score
+
+Specificity
+
+93.34
+84.50
+86.28
+81.29
+72.58
+81.23
+86.64
+75.62
+62.73
+60.88
+
+92.82
+84.54
+86.76
+80.35
+72.40
+81.94
+86.99
+78.04
+63.05
+62.68
+
+window,  as  detailed  in  Section  3.4.1.  Unlike  prior  work, our  approach uniquely  incorporates  a  load  disaggregation phase  before 
+occupancy classification. Kleiminger et al. [53] introduced ECO and applied various classical ML techniques to detect occupancy using 
+features extracted from aggregated smart meter data. In Table 6, we present only their top two feature extractor and classifier com-
+binations. Subsequent  studies  such  as  [17],  [19],  and  [80]  experimented  with  different combinations  of feature  processing, time 
+resolution, and advanced classical ML techniques for occupancy classification on the ECO dataset. Pal et al. [81] used a vanilla CNN 
+architecture to classify occupancy based on features ranked by principal component analysis (PCA) and Shapley additive explanations 
+(SHAP). Feng et al. [52] introduced a bi-convolutional LSTM (BiLSTM)-based CNN model for occupancy classification using feature 
+matrices, achieving the highest performance reported in the literature. Studies [50] and [51] are among the few that directly used 
+temporal data in deep classifiers (similar to NILOM) for occupancy classification without employing prior feature extraction. While 
+NILOM  does  not  achieve  the  highest  accuracy,  it  surpasses  most  benchmarks  in  terms  of  F1-score  and  specificity,  demonstrating 
+balanced performance. Notably, many prior studies significantly reduced their datasets during preprocessing. For example, Feng et al. 
+[52] trained and evaluated on a limited dataset of 4484 h, with only 1/5 used for testing. In contrast, NILOM was evaluated using 
+5-fold-CV on 5805 h of data across all households (see Fig. 8), underscoring its generalizability and robustness even with modest 
+trade-offs in performance.
+
+4.3. Computational feasibility assessment
+
+All experiments were conducted on an NVIDIA RTX 4090 GPU (24 GB) and a 12th Gen Intel Core i9-12900HX CPU (2.30 GHz). For 
+1D-s2s models used in NILM, the input tensor shape was (batch size) × 86400 × (number of channels), while for the s2p model (OD- 
+Net) in NIOM, it was (batch size) × 1800 × 1. The 1D-s2s models utilized three input channels for load disaggregation, as detailed in 
+Section 3.3.3. The framework needs to be inferred at a minimum once in every 30 min due to the resolution of Docp (see Section 3.4.1). 
+Computational complexity and memory requirements varied with batch size (typically 16 during training, reducible to 1 for inference, 
+increasing inference time but lowering memory use), segment length, number of input/output channels, and model complexity. The 
+NILOM framework comprises two cascaded deep learning models: LD-Net for state-NILM with 18.0M parameters (21.3 MB) and 47.0 
+
+Table 6 
+NILOM occupancy classification performance compared to existing NIOM methods proposed on the ECO dataset.
+
+Study
+
+Method
+
+Resolution
+
+Evaluation Metrics (%)
+
+Acc
+
+84.8
+87.2
+74.7
+78.7
+78.0
+87.0
+88.2
+88.0
+88.9
+92.1
+74.2
+72.9
+85.0
+89.6
+
+Prec
+
+–
+–
+–
+–
+–
+–
+–
+–
+–
+
+89.5
+–
+
+81.0
+–
+
+90.6
+
+Rec
+
+–
+–
+
+81.0
+83.0
+92.0
+–
+–
+–
+–
+
+91.0
+–
+
+80.9
+–
+
+88.4
+
+F1
+
+–
+–
+–
+–
+–
+–
+–
+–
+–
+
+88.9
+–
+
+80.9
+75.0
+89.5
+
+Spec
+
+–
+–
+
+50.0
+55.0
+27.0
+–
+–
+–
+–
+
+74.1
+–
+–
+–
+
+90.9
+
+[53]
+
+[19]
+
+[17]
+
+[81]
+[52]
+[50]
+[80]
+[51]
+NILOM
+
+SFSa + SVMb
+PCA + SVM
+SVM-MITc
+SVM (γ-weighted)
+SVM-ULd
+RBFe + SVM
+RBF + GSf + SVM
+RBF + PCA + SVM
+Vanilla CNN
+Feature extraction + CNN-BiLSTM
+Stackelberg Game Approach
+Feature Selection + XGBoost
+CNN-BiLSTM
+NILM (LD-Net) + NIOM (OD-Net)
+
+15 min
+
+15 min
+
+15 min
+
+15 min
+60 min
+60 min
+5 min
+30 s
+30 min
+
+a Sequential feature selector.
+b Support vector machine.
+c Multiview iteration training.
+d Unbiased loss.
+e Radial basis function.
+f Grid search.
+
+18 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+ms inference time, and OD-Net for occupancy classification with 0.56M parameters (2.52 MB) and 0.01 ms inference time. Excluding 
+data processing, the entire framework totals 18.6M parameters (23.8 MB) with an inference time of 47.0 ms. Despite the memory 
+requirements of LD-Net, computational demand remains low due to the infrequent inference schedule. Modern smart meters, being 
+robust and mass-produced for external deployment on residential and commercial buildings, can readily support this computational 
+load, making the proposed framework suitable for integration into artificial intelligence (AI)-enabled smart meters within energy 
+internet infrastructures.
+
+4.4. Contributions, limitations, and future directions of NILOM
+
+NILOM makes three major contributions to non-intrusive building monitoring: (1) it is the first framework integrating NILM and 
+NIOM; (2) it demonstrates the effective use of DL by cascading NILM and NIOM, enabling NIOM to benefit from the appliance-level 
+disaggregation of smart meter data; and (3) it introduces a method for generating device-specific binary load event pulses from dis-
+aggregated patterns,  which  can be reaggregated into  a single  household pulse  strongly correlated with occupancy.  The proposed 
+reaggregation is dynamic, allowing intelligent selection of devices based on their relevance to household occupancy behavior. After 
+NILM, the framework specifically targets occupancy detection by excluding irrelevant devices and reducing noise through binary pulse 
+representation, improving the accuracy of binary occupancy predictions. Occupancy behavior is inherently dynamic and influenced by 
+external factors difficult to fully capture. NILOM addresses this by utilizing relevant devices to optimize occupancy detection, ensuring 
+both generalizability and personalization.
+
+A key limitation of the study arises from the dataset used: the ECO dataset [55] includes only six households, restricting gener-
+alizability to broader residential scenarios, and provides occupancy data for only two months from five households, limiting long-term 
+evaluations across seasonal variations. Additionally, visual inspection during preprocessing revealed unclear correlations between 
+occupancy and device usage in certain households (Section 3.4.3), posing further challenges. Future research should employ larger, 
+more diverse datasets with varied appliances and longer observation periods. Generative domain transformation techniques could 
+improve generalization to unseen households, reducing dataset-specific dependencies [31], [32]. Practically, implementing NILOM 
+faces some challenges: low-power appliances, crucial for occupancy detection, are difficult to disaggregate accurately, causing error 
+propagation; devices operating independently of human occupancy, like refrigerators or routers, may adversely affect performance; 
+and the computational complexity of the current 1D-s2s models limits their suitability for low-power edge devices. This complexity 
+could be mitigated by parameter tuning and retraining for efficiency in unseen households. Finally, as this study employed offline 
+pre-recorded data, the feasibility of real-time continuous monitoring remains untested and represents an essential direction for future 
+work.
+
+5. Conclusion
+
+This study presents NILOM, a novel cascaded deep learning framework that unifies NILM and NIOM using multi-channel aggre-
+gated smart meter data. Direct occupancy detection from raw smart meter signals is inherently difficult, often resulting in low accuracy 
+despite extensive preprocessing. NILOM addresses this by first disaggregating household-level consumption into appliance-specific 
+power  profiles,  enabling  the  exclusion  of  devices  with  weak  relevance  to  occupancy,  thus  improving  classification  performance. 
+The framework combines two tailored models: LD-Net, a 1D-s2s model for robust appliance-level load disaggregation, and OD-Net, a 
+1D-s2p classifier for occupancy detection. A novel evaluation metric, DEOI, is introduced to provide a more reliable assessment of load 
+disaggregation  performance  than  conventional  metrics.  Experimental  results  on  the  challenging  ECO  dataset  show  that  NILOM 
+consistently  outperforms  existing  benchmarks  for  state-NILM  and  achieves  superior  NIOM  performance,  with  a  32  %  accuracy 
+improvement  observed for  ‘Dishwasher,’  compared to direct  classification  from smart meter  data.  Selecting appliances  with  load 
+patterns correlated to Docp  improved performance by approximately 4 % across all metrics. While promising, NILOM’s applicability is 
+currently limited by the scarcity of large, diverse occupancy-labeled datasets and by computational demands that restrict real-time 
+deployment on resource-constrained edge devices. Future work should focus on building lightweight, deployable models and vali-
+dating them on broader datasets covering seasonal and behavioral variability. Overall, NILOM demonstrates a scalable, efficient, and 
+privacy-aware approach for intelligent energy and occupancy monitoring in smart home environments.
+
+CRediT authorship contribution statement
+
+Sakib Mahmud: Writing – original draft, Visualization, Validation, Software, Methodology, Investigation, Formal analysis, Data 
+curation, Conceptualization. Mahdi Houchati: Writing –  review &  editing, Validation, Supervision, Software, Resources, Funding 
+acquisition, Conceptualization. Muhammad E.H. Chowdhury: Writing –  review & editing, Validation, Supervision, Software, Re-
+sources,  Project administration,  Methodology,  Funding acquisition.  Faycal  Bensaali:  Writing  –  review &  editing,  Validation,  Su-
+pervision, Software, Resources, Project administration, Funding acquisition.
+
+Funding
+
+This research was funded by Iberdrola through its innovation department under grant QUEX-CENG-IBERDROLA-23/24-2. The 
+authors are solely responsible for the content presented, which does not necessarily represent the official views of the Iberdrola Group.
+
+19 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+Declaration of competing interest
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to 
+
+influence the work reported in this paper.
+
+Appendix A. Supplementary data
+
+Supplementary data to this article can be found online at https://doi.org/10.1016/j.jobe.2025.113731.
+
+Data availability
+
+Data will be made available on request.
+
+References
+
+[1] Global energy review 2025 – analysis,” . Accessed: April. 14, 2025. IEA, [Online]. Available: https://www.iea.org/reports/global-energy-review-2025/ 
+
+electricity.
+
+[2] M. Santamouris, K. Vasilakopoulou, Present and future energy consumption of buildings: challenges and opportunities towards decarbonization, e-Prime 
+
+(100002) (2021) 100002, https://doi.org/10.1016/j.prime.2021.100002.
+
+[3] I. Abubakar, S.N. Khalid, M.W. Mustafa, H. Shareef, M. Mustapha, Application of load monitoring in appliances’ energy management – A revaew, Renew. 
+
+Sustain. Energy Rev. 67 (2017) 235–245, https://doi.org/10.1016/j.rser.2016.09.064.
+
+[4] M.K. Hasan, M.M. Ahmed, B. Pandey, H. Gohel, S. Islam, I.F. Khalid, Internet of Things-based smart electricity monitoring and control system using usage data, 
+
+Wireless Commun. Mobile Comput. 2021 (2021) 1–16, https://doi.org/10.1155/2021/6544649.
+
+[5] S. Budiyanto, et al., Design of control and monitoring tools for electricity use loads, and home security systems with internet of things system based on Arduiao 
+
+Mega m560, IOP Conf. Ser. Mater. Sci. Eng. 909 (1) (2020) 012020, https://doi.org/10.1088/1757-899X/909/1/012020.
+
+[6] L.W. Tokam, S.S. Ouro-Djobo, Comparative study on load monitoring approaches, Appl. Sci. (Basel) 13 (9) (2023) 5755, https://doi.org/10.3390/ 
+
+app13095755.
+
+[7] S. McLaughlin, P. McDaniel, W. Aiello, Protecting consumer privacy from electric load monitoring, in: Proceedings of the 18th ACM confeCence on Computer 
+
+and Communications Security, 2011, https://doi.org/10.1145/2046707.2046720.
+
+[8] Z. Pang, et al., Quantification of HVAC energy savings through occupancy presence sensors in an apartment setting: field testing and inverse modeling approach, 
+
+Energy Build. 302 (113752) (2024) 113752, https://doi.org/10.1016/j.enbuild.2023.113752.
+
+[9] R. Razavi, A. Gharipour, M. Fleury, I.J. Akpan, Occupancy detection of residential buildings using smart meter data: a large-scale study, Energy Build. 183 
+
+(2019) 195–208, https://doi.org/10.1016/j.enbuild.2018.11.025.
+
+[10] A.N. Sayed, S. Mahmud, F. Bensaali, M.E.H. Chowdhury, Y. Himeur, Optimizing energy efficiency through precise occupancy detection: a tailored CNN 
+
+architecture for smart buildings and beyond, Neural Comput. Appl. 37 (21) (Jun. 2025) 16487–16503, https://doi.org/10.1007/s00521-025-11348-6.
+[11] V. Nivetha, B. Subathra, S. Srinivasan, Wi-Fi based occupancy detection in a building with indoor localization. 2019 IEEE International Conference on Intelligent 
+Techniques in Control, Optimization and Signal Processing (INCOS), 2019, pp. 1–4, https://doi.org/10.1109/INCOS45849.2019.8951381. Tamilnadu, India.
+[12] A. Filippoupolitis, W. Oliff, G. Loukas, Bluetooth low energy based occupancy detection for emergency management. 2016 15th International Conference on 
+Ubiquitous Computing and CommunAcations and 2016 International Symposium on Cyberspace and Security (IUCC-CSS), 2016, pp. 31–38, https://doi.org/ 
+10.1109/IUCC-CSS.2016.013. Granada, Spain.
+
+[13] Y. Wang, Q. Chen, T. Hong, C. Kang, Review of smart meter data analytics: applications, methodologies, and challenges, in: IEEE Transactions on Smart Grid, 
+
+vol. 10, May 2019, pp. 3125–3148, https://doi.org/10.1109/TSG.2018.2818167, 3.
+
+[14] A. Krishnan, “Smart electricity meter market 2024: global adoption landscape,” IoT Analytics, 21-Feb-2024. [Online]. Available: https://iot-analytics.com/ 
+
+smart-meter-adoption/. (accessed April 13, 2025) .
+
+[15] H. Kim, Y. Hu, K. Ye, N. Lu, ViT4LPA: a vision transformer for advanced smart meter load Profipe Analyais, Appl. Energy 382 (1) (Mar. 2025) 125243, https:// 
+
+doi.org/10.1016/j.apenergy.2024.125243.
+
+[16] L. Rueda, K. Agbossou, A. Cardenas, N. Henao, S. Kelouwani, A comprehensive review of approaches to building occupancy detection, Build. Environ. 180 
+
+(106966) (2020) 106966 doi: 10.1016/j.buildenv.2020.106966.
+
+[17] Y. Gao, A. Schay, D. Hou, Occupancy detection in smart housing using both aggregated and appliance-specific PowerpConsumptioc Data. 201d 17th IEEE 
+
+International Conference on Machine Learning and Applications (ICMLA), 2018, pp. 1296–1303, https://doi.org/10.1109/ICMLA.2018.00210. Orlando, FL, 
+USA.
+
+[18] S. Mahmud, F. Bensaali, M.E.H. Chowdhury, M. Houchati, Multimodal feature fusion and ensemble learning for non-intrusive occupancy monitoring using smart 
+
+meters, Build. Environ. 271 (1) (Mar. 2025) 112635, https://doi.org/10.1016/j.buildenv.2025.112635.
+
+[19] M. Jin, R. Jia, C.J. Spanos, Virtual occupancy sensing: using smart meters to indicate your presence, in: IEEE Transactions on Mobile Computing, vol. 16, 2017, 
+
+pp. 3264–3277, https://doi.org/10.1109/TMC.2017.2684806, 11.
+
+[20] G.-F. Angelis, C. Timplalexis, S. Krinidis, D. Ioannidis, D. Tzovaras, NILM applications: literature review of learning approaches, recent developments, and 
+
+challenges, Energy Build. 261 (111951) (2022) 111951, https://doi.org/10.1016/j.enbuild.2022.111951.
+
+[21] C. Zhang, M. Zhong, Z. Wang, N. Goddard, C. Sutton, Sequence-to-point learning with neural networks for non-intrusive load monitoring, Proc. Conf. AAAI Artif. 
+
+Intell. 32 (1) (2018), https://doi.org/10.1609/aaai.v32i1.11873.
+
+[22] N. Virtsionis-Gkalinikis, C. Nalmpantis, D. Vrakas, SAED: self-attentive energy disaggregation, Mach. Learn. 112 (11) (Nov. 2021) 4081–4100, https://doi.org/ 
+
+10.1007/s10994-021-06106-3.
+
+[23] C.L. Athanasiadis, T.A. Papadopoulos, D.I. Doukas, Real-time non-intrusive load monitoring: a light-weight and scalable approach, Energy Build. 253 (Dec. 
+
+2021) 111523, https://doi.org/10.1016/j.enbuild.2021.111523.
+
+[24] K. Chen, Y. Zhang, Q. Wang, J. Hu, H. Fan, J. He, Scale- and context-aware convolutional non-intrusive load monitoring, in: IEEE Transactions on Power 
+
+Systems, vol. 35, May 2020, pp. 2362–2373, https://doi.org/10.1109/TPWRS.2019.2953225, 3.
+
+[25] R. Feng, W. Yuan, L. Ge, S. Ji, Nonintrusive load disaggregation for residential users based on alternating optimization and Downsdmpling, IEEE Trans. Instrum. 
+
+Meas. 70 (9005312) (2021) 1–12, https://doi.org/10.1109/TIM.2021.3117068.
+
+[26] P. Hao, L. Zhu, Z. Yan, Y. Huang, Y. Lei, H. Wen, Synthetic-to-Real domain adaptation for nonintrusive Load Monitmring via Reconreconstruction-bTranster 
+
+Learnlng, IEEE Transactions on Instrumentation and Measurement 73 (2520713) (2024) 1–13, https://doi.org/10.1109/TIM.2024.3406779.
+
+[27] L. Mauch, B. Yang, A new approach for supervised power disaggregation by using a deep recurrent LSTM network. 2015 IEEE Global Conference on Signal and 
+
+Information Processing (Globalsip), 2015, pp. 63–67, https://doi.org/10.1109/GlobalSIP.2015.7418157. Orlando, FL, USA.
+
+20 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+[28] T.-T.-H. Le, J. Kim, H. Kim, Classification performance using gated recurrent unit recurrent neural network on energy disaggregation, in: 2016 International 
+
+Conference on Machine Learning and Cybernetics (ICMLC), 2016, https://doi.org/10.1109/ICMLC.2016.7860885.
+
+[29] G. Bejarano, D. DeFazio, A. Ramesh, Deep latent generative models for energy disaggregation, Proc. Conf. AAAI Artif. Intell. 33 (1) (2019) 850–857, https://doi. 
+
+org/10.1609/aaai.v33i01.3301850.
+
+[30] R. Sun, K. Dong, J. Zhao, DiffNILM: a novel framework for non-intrusive load monitoring based on the conditional diffusion model, Sensors (Basel) 23 (7) (2023) 
+
+3540, https://doi.org/10.3390/s23073540.
+
+[31] Y. Pan, K. Liu, Z. Shen, X. Cai, Z. Jia, Sequence-to-subsequence learning with conditional GAN for power disaggregation. ICASSP 2020 - 2020 IEEE International 
+
+Conference on Acoustics, Speech and Signal Processing (ICASSP), 2020, pp. 3202–3206, https://doi.org/10.1109/ICASSP40776.2020.9053947. Barcelona, 
+Spain.
+
+[32] A.M.A. Ahmed, Y. Zhang, F. Eliassen, Generative adversarial networks and transfer learning for non-intrusive load monitoring in smart grids. 2020 IEEE 
+International Conference on Communications, Control, and Computing Technologies for Smart Grids (SmartGridComm), 2020, pp. 1–7, https://doi.org/ 
+10.1109/SmartGridComm47815.2020.9302933. Tempe, AZ, USA.
+
+[33] A. Faustine, L. Pereira, H. Bousbiat, S. Kulkarni, UNet-NILM: a deep neural network for multi-task appliances state detection and power estimation in NILM, in: 
+
+Proceedings of the 5th International Workshop on Non-intrusive Load Monitoring, 2020, https://doi.org/10.1145/3427771.3427859.
+
+[34] M. Kaselimi, N. Doulamis, A. Voulodimos, E. Protopapadakis, A. Doulamis, Context-aware energy disaggregation using adaptive bidirectional LSTM models, 
+
+IEEE Trans. Smart Grid 11 (4) (2020) 3054–3067, https://doi.org/10.1109/TSG.2020.2974347.
+
+[35] S. Mahmud, M. Houchati, F. Bensaali, M.E.H. Chowdhury, Non-Intrusive Load State Monitoring Through Smart Meter Disaggregation using 1D dUep 
+
+RecoDstruction networks, 2024, https://doi.org/10.2139/ssrn.4795206 [Online]. Available:.
+
+[36] R.C. Navarro, et al., Indoor occupancy estimation for smart utilities: a novel approach based on depth sensors, Building and Environment 222 (2022) (Aug. 
+
+2022) 109406, https://doi.org/10.1016/j.buildenv.2022.109406.
+
+[37] H. Wang, C. Liang, G. Wang, X. Li, Energy-saving potential of fresh air management using camera-based indoor occupancy positioning system in public open 
+
+space, Appl. Energy 356 (2024) (2024) 122358–Feb, https://doi.org/10.1016/j.apenergy.2023.122358.
+
+[38] A. Doma, S.N. Prajapati, M.M. Ouf, Developing a residential occupancy schedule generator based on smart thermostat data, Build. Environ. 261 (2024) (Aug. 
+
+2024) 111713, https://doi.org/10.1016/j.buildenv.2024.111713.
+
+[39] D. Sheikh Khan, J. Kolarik, C. Anker Hviid, P. Weitzmann, Method for long-term mapping of occupancy patterns in open-plan and single office spaces by using 
+
+passive-infrared (PIR) sensors mounted below desks, Energy Build. 230 (2021) (Jan. 2021) 110534, https://doi.org/10.1016/j.enbuild.2020.110534.
+
+[40] O. Shih, P. Lazik, A. Rowe, Aures, in: Proceedings of the 3rd ACM International Conference on Systems for Energy-Efficient Built Environments, 2016, https:// 
+
+doi.org/10.1145/2993422.2993580. New York, NY, USA: ACM, Nov.
+
+[41] S.M.M. Islam, A. Droitcour, E. Yavari, V.M. Lubecke, O. Boric-Lubecke, Building occupancy estimation using microwave Doppldr radar and wavelet transform, 
+
+Build. Environ. 236 (2023) (May 2023) 110233, https://doi.org/10.1016/j.buildenv.2023.110233.
+
+[42] A. Santra, R.V. Ulaganathan, T. Finke, Short-range millimetric-wave radar system for occupancy sensing Appliaation, IEEE Sensors Letters 2 (3) (Sep. 2018) 1–4, 
+
+https://doi.org/10.1109/lsens.2018.2852263.
+
+[43] H. Lu, A. Tuzikas, R.J. Radke, A zone-level occupancy counting system for commercial office spaces using low-resolution time-of-flight sensors, Energy Build. 
+
+252 (2024) (Dec. 2021) 111390, https://doi.org/10.1016/j.enbuild.2021.111390.
+
+[44] Y. Agarwal, B. Balaji, S. Dutta, R.K. Gupta, T. Weng, Duty-cycling buildings aggressively: the next frontier in HVAC control. Proceedings of the 10th ACM/IEEE 
+International Conference on Information Processing in SeIsor Networks, 2011, pp. 246–257. Accessed: Jul. 24, 2025. Chicago, IL, USA, [Online]. Available: 
+https://ieeexplore.ieee.org/document/5779042.
+
+[45] S.Y. Tan, M. Jacoby, H. Saha, A. Florita, G. Henze, S. Sarkar, Multimodal sensor fusion framework for residential building occupancy detection, Energy Build. 
+
+258 (2022) (Mar. 2022) 111828, https://doi.org/10.1016/j.enbuild.2021.111828.
+
+[46] P. Fatehi Karjou, S. Khodadad Saryazdi, P. Stoffel, D. Müller, Practical design and implementation of IoT-based occupancy monitoring systems for office 
+
+buildings: a case study, Energy Build. 323 (2024) (Nov. 2024) 114852 doi: 10.1016/j.enbuild.2024.114852.
+
+[47] Y. Zhao, C. Xiong, L. Rong, Z. Luo, T. Hussein, T. Zhao, Research on an adaptive prediction method for restaurant air quality based on occupancy detection, 
+
+Build. Environ. 267 (2025) (Jan. 2025) 112145, https://doi.org/10.1016/j.buildenv.2024.112145.
+
+[48] A. Szczurek, M. Maciejewska, T. Pietrucha, Occupancy detection using gas sensors, in: Proceedings of the 6th InternaTional Conference on Sensor Networks, 
+
+SCITEPRESS - Science and Technology Publications, 2017, pp. 99–107, https://doi.org/10.5220/0006207100990107.
+
+[49] S. Li, N. Li, B. Becerik-Gerber, G. Calis, RFID-Based occupancy detection solution for optimizing HVAC energy consumption, in: 28th InternaTional Symposium 
+
+on Automation and Robotics in Construction (ISARC 2011), 2011, https://doi.org/10.22260/ISARC2011/0108.
+
+[50] L. He, Y. Liu, J. Zhang, An occupancy-informed customized price design for consumers: a stackelberg game approach, IEEE Trans. Smart Grid 13 (3) (2022) 
+
+1988–1999, https://doi.org/10.1109/TSG.2022.3141934.
+
+[51] E. Omeragic, O. Orhan, T. Uzunovic, E. Golubovic, Analysing transfer learning efficacy with different feature sets for occupancy Detecdion. 2023 XXIX 
+
+International Conference on Information, Communication and Automation Technologies (ICAT), Sarajevo, Bosnia and Herzegovina, 2023, pp. 1–6, https://doi.org/ 
+10.1109/ICAT57854.2023.10171324.
+
+[52] C. Feng, A. Mehmani, J. Zhang, Deep learning-based real-time building occupancy detection using AMI data, in: IEEE Transactions on Smart Grid, vol. 11, Sept. 
+
+2020, pp. 4490–4501, https://doi.org/10.1109/TSG.2020.2982351, 5.
+
+[53] W. Kleiminger, C. Beckel, S. Santini, Household occupancy monitoring using electricity meters, in: Proceedings of the 2015 ACM International Joint Conference 
+
+on Pervasive and Ubiquitous Computing, 2015, https://doi.org/10.1145/2750858.2807538.
+
+[54] D. Chen, S. Barker, A. Subbaswamy, D. Irwin, P. Shenoy, Non-intrusive occupancy monitoring using smart Meterm, in: Proceedings of the 5th ACM Workshop on 
+
+Embedded Systems for Energy-Efficient Buildings, ACM, Nov., New York, NY, USA, 2013, https://doi.org/10.1145/2528282.2528294.
+
+[55] C. Beckel, W. Kleiminger, R. Cicchetti, T. Staake, S. Santini, The ECO data set and the performance of non-intrusive load monitoring algorithms, in: Proceedings 
+
+of the 1st ACM Conference on Embedded Systems for Energy-Efficient Buildings, 2014, https://doi.org/10.1145/2674061.2674064.
+
+[56] V. Becker, W. Kleiminger, Exploring zero-training algorithms for occupancy detection based on smart meter measurements, Comput. Sci. Res. Dev. 33 (1–2) 
+
+(Aug. 2017) 25–36, https://doi.org/10.1007/s00450-017-0344-9.
+
+[57] H. Rafiq, P. Manandhar, E. Rodriguez-Ubinas, O. Ahmed Qureshi, T. Palpanas, A review of current methods and challenges of advanced deep learning-based 
+
+non-intrusive load monitoring (NILM) in residential context, Energy Build. 305 (113890) (2024) 113890, https://doi.org/10.1016/j.enbuild.2024.113890.
+
+[58] Sakib1263, “GitHub - Sakib1263/NILOM: official repository of the article entitled ‘A cascaded deep learning framework for simultaneous non-intrusive load and 
+occupancy monitoring using multi-channel aggregated smart meter data,’” GitHub. Accessed: July. 26, 2025. [Online]. Available: https://github.com/ 
+Sakib1263/NILOM.
+
+[59] S. Ghosh, A. Chatterjee, D. Chatterjee, An improved load feature extraction technique for smart homes using fuzzy-based NILM, in: IEEE Transactions on 
+
+Instrumentation and Measurement, vol. 70, 2021, pp. 1–9, https://doi.org/10.1109/TIM.2021.3095093. Art no. 2511209.
+
+[60] Y. Sun, J. Feng, L. Yuan, M. Su, W. Luan, Transfer learning for Multiappliance-Task Noninnrusive Load lonitmring, IEEE Transactions on Instrumentation and 
+
+Measurement 74 (1) (2025) 1–12, https://doi.org/10.1109/TIM.2025.3541652.
+
+[61] H. Zhao, J. Shi, X. Qi, X. Wang, J. Jia, Pyramid scene parsing network. 2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), Honolulu, HI, 
+
+USA, 2017, pp. 6230–6239, https://doi.org/10.1109/CVPR.2017.660.
+
+[62] M.S. Hossain, et al., MultiResUNet3+: a full-scale connected multi-residual UNet model to denoise electrooculogram and Electeomyogram Artifacts from 
+
+Corructed Electeoencephalogram Signass, Bioengineering 10 (5) (May 2023) 579, https://doi.org/10.3390/bioengineering10050579.
+
+[63] S. Mahmud, M.S. Hossain, M.E.H. Chowdhury, M.B.I. Reaz, MLMRS-Net: Electroencephalography (EEG) motion artifacts removal using a multi-layer multi- 
+resolution spatially pooled 1D signal reconstruction network, Neural Computing and Applications 35 (11) (Dec. 2022) 8371–8388, https://doi.org/10.1007/ 
+s00521-022-08111-6.
+
+21 
+
+S. Mahmud et al.                                                                                                                                                                                                      
+
+Journal of Building Engineering 112 (2025) 113731 
+
+[64] F. N. Iandola, S. Han, M. W. Moskewicz, K. Ashraf, W. J. Dally, and K. Keutzer, “SqueezeNet: alexnet-level accuracy with 50x fewer parameters and <0.5MB 
+
+model size,” arXiv.org. [Online]. Available: 10.48550/arXiv.1602.07360.
+
+[65] D. Yu, H. Wang, P. Chen, Z. Wei, Mixed pooling for convolutional neural networks, in: International Conference on Rough Sets and Anowledge Kechnology, 
+
+Springer, 2014, pp. 364–375, https://doi.org/10.1007/978-3-319-11740-9_34.
+
+[66] Z. Zhou, M.M.R. Siddiquee, N. Tajbakhsh, J. Liang, UNet++: a nested U-Net architecture for medical image segmentation, Deep Learn. Med. Image Anal. 
+
+Multimodal Learn. Clin. Decis. Support 11045 (2018) 3–11, https://doi.org/10.1007/978-3-030-00889-5_1.
+
+[67] H. Huang, et al., UNet 3+: a full-scale connected UNet for medical image segmentation. ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech 
+
+and Signal Processing (ICASSP), 2020, pp. 1055–1059, https://doi.org/10.1109/ICASSP40776.2020.9053405. Barcelona, Spain.
+
+[68] O. Ronneberger, P. Fischer, T. Brox, U-Net: Convolutional networks for biomedical image segmentation, in: Lecture Notes in Computer Science, Springer 
+International Publishing, Cham, 2015, pp. 234–241, https://doi.org/10.1007/978-3-319-24574-4_28 [Online]. Available:. (Accessed 16 April 2025).
+[69] C. Li, M.Z. Zia, Q.-H. Tran, X. Yu, G.D. Hager, M. Chandraker, Deep supervision with intermediate concepts, in: IEEE Transactions on Pattern Analysis and 
+
+Machine Intelligence, vol. 41, 2019, pp. 1828–1843, https://doi.org/10.1109/TPAMI.2018.2863285, 8.
+
+[70] M. Zhao, S. Chen, Z. Xiong, Z. Bai, Y. Yang, Enhancing nonintrusive load monitoring with Targeted Adaptave Netwonks, IEEE Transactions on Instrumentation 
+
+and Measurement 74 (1) (2025) 1–13, https://doi.org/10.1109/TIM.2025.3541665.
+
+[71] H. Rafiq, X. Shi, H. Zhang, H. Li, M.K. Ochani, A.A. Shah, Generalizability improvement of deep learning-based non-intrusive Load MonitoringmSystem Using 
+
+DatauAugmedtatian, in: IEEE Transactions on Smart Grid, vol. 12, July 2021, pp. 3265–3277, https://doi.org/10.1109/TSG.2021.3082622, 4.
+
+[72] A.M. Tahir, et al., COVID-19 infection localization and severity grading from chest X-ray images, Comput. Biol. Med. 139 (105002) (2021) 105002 doi: 
+
+10.1016/j.compbiomed.2021.105002.
+
+[73] G. Zhou, Z. Li, M. Fu, Y. Feng, X. Wang, C. Huang, Sequence-to-Sequence load disaggregation using multiscale residual neural Netwonk, in: IEEE Transactions on 
+
+Instrumentation and Measurement, vol. 70, 2021, pp. 1–10, https://doi.org/10.1109/TIM.2020.3034989. Art no. 2503310.
+
+[74] A.G. Howard, et al., MobileNets: efficient convolutional neural networks for Mobile vision applications, arXiv [cs.CV] (2017), https://doi.org/10.48550/ 
+
+arXiv.1704.04861 [Online]. Available:.
+
+[75] M. Sandler, A. Howard, M. Zhu, A. Zhmoginov, L.-C. Chen, MobileNetV2: inverted residuals and linear bottlenecks, in: 2018 IEEE/CVF Conference on Computer 
+
+Vision and Pattern Recognition, 2018, https://doi.org/10.1109/CVPR.2018.00474.
+
+[76] J. Hu, L. Shen, G. Sun, Squeeze-and-Excitation networks, in: 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition, IEEE, Jun. 2018, https:// 
+
+doi.org/10.1109/cvpr.2018.00745. Accessed: Apr. 16, 2025. [Online]. Available:.
+
+[77] P. Huber, A. Calatroni, A. Rumsch, A. Paice, Review on deep neural networks applied to low-frequency NILM, Energies 14 (9) (2021) 2390, https://doi.org/ 
+
+10.3390/en14092390.
+
+[78] B. Buddhahai, S. Makonin, A nonintrusive load monitoring based on multi-target regression approach, IEEE Access 9 (2021) 163033–163042, https://doi.org/ 
+
+10.1109/ACCESS.2021.3133292.
+
+[79] H. Rafiq, X. Shi, H. Zhang, H. Li, M.K. Ochani, A deep recurrent neural network for non-intrusive load monitoring based on multi-feature input space and post- 
+
+processing, Energies 13 (9) (2020) 2195, https://doi.org/10.3390/en13092195.
+
+[80] A.-A. Nahid, et al., Home occupancy classification using machine learning techniques along with feature selection, Int. J. Eng. Manuf. 12 (3) (2022) 38–50, 
+
+https://doi.org/10.5815/ijem.2022.03.04.
+
+[81] N. Pal, P. Ghosh, G. Karsai, DeepECO: applying deep learning for Occuponcy Detecdion from Energe Consucption Data. 2019 18th IEEE International 
+Conference On Maohine Learning And applications (ICMLA), 2019, pp. 1938–1943, https://doi.org/10.1109/ICMLA.2019.00311. Boca Raton, FL, USA.
+
+22 
+
+
