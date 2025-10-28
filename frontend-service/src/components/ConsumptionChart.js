@@ -256,7 +256,10 @@ const ConsumptionChart = () => {
         label: {
           display: true,
           content: `${detection.name} (${detection.avg_power?.toFixed(0)} W)`,
-          position: 'center',
+          position: {
+            x: 'center',
+            y: 'start'
+          },
           backgroundColor: 'rgba(255, 255, 255, 0.95)',
           color: colors.dark,
           borderColor: colors.solid,
@@ -267,6 +270,7 @@ const ConsumptionChart = () => {
             weight: 'bold',
           },
           padding: 6,
+          yAdjust: 0,
         },
       };
       
