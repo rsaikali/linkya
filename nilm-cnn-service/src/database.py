@@ -2,12 +2,15 @@
 Gestion de la base de données TimescaleDB pour nilm-cnn-service
 """
 import logging
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, text, Table, Column, Integer, String, Float, DateTime, Boolean, JSON, ForeignKey, MetaData, Index
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import (
+    create_engine, text, Table, Column, Integer, String, Float,
+    DateTime, Boolean, JSON, ForeignKey, MetaData, Index
+)
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import settings

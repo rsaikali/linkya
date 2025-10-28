@@ -715,13 +715,6 @@ def enrich_cnn_signatures() -> Dict[str, Any]:
     try:
         logger.info("🔍 Enrichissement des signatures avec cycles...")
         
-        if not USE_S2P:
-            return {
-                'status': 'skipped',
-                'message': 'Mode S2P non disponible',
-                'enriched_count': 0
-            }
-        
         # Charger les modèles actifs si pas déjà chargés
         if not nilm_manager.models:
             if not nilm_manager.load_active_models():

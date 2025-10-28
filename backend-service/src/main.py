@@ -1189,14 +1189,6 @@ async def export_signatures():
         )
 
 
-class SignatureImportResult(BaseModel):
-    """Modèle pour le résultat d'import de signatures."""
-    total_lines: int
-    success_count: int
-    error_count: int
-    errors: list[dict[str, str]]
-
-
 @app.post("/api/signatures/import")
 async def import_signatures(file: UploadFile):
     """
