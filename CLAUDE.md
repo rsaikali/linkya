@@ -96,7 +96,10 @@ make api-nilm-detect
 # List models with pagination
 make api-nilm-models
 
-# Delete model by ID
+# Create manual backup of current model
+curl -X POST http://localhost:8000/api/nilm/models/backup
+
+# Delete model by ID (auto-promotes backup if deleting current)
 make api-nilm-delete-model ID=14
 ```
 
@@ -142,6 +145,9 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Interactive range selection for signature creation
 - Appliance autocomplete with create-on-demand
 - Training management with paginated model history
+- **Model Status Display**: Badges for current (green), backup (orange), archived (gray)
+- **Flexible Model Deletion**: Delete any model with appropriate warnings (current deletion auto-promotes backup)
+- **Manual Backup Creation**: Button to save current model as backup before risky operations
 - SSE-based real-time updates (no polling)
 - CSV export/import for signatures (bulk operations)
 
@@ -194,30 +200,82 @@ CNN_MIN_DURATION_SECONDS=30
 **cnn_signatures**:
 - Stores training examples with `start_time`, `end_time` (timestamptz), `appliance_id`
 - Frontend creates these via range selection on consumption chart
+- **Negative signatures**: `is_negative` (boolean, default FALSE)
+  - `is_negative=FALSE`: Positive examples (what TO detect)
+  - `is_negative=TRUE`: Negative examples (what NOT to detect)
+  - Negative signatures are automatically created when user invalidates a detection with `confidence_score >= 0.6`
+  - Persist in database, allow cleaning detections table without losing learning
 
 **cnn_detections**:
 - Detection results: `appliance_id`, `start_time`, `end_time` (timestamptz), `avg_power`, `energy_consumed`, `confidence_score`
 - `created_at` (timestamptz)
+- **Validation fields**: `user_validated` (boolean), `is_correct` (boolean), `validated_at` (timestamptz)
+- Can be cleaned periodically (`make detections-clean`) - negative signatures are preserved
 
 **cnn_models**:
-- Metadata for trained models: `version`, `model_type`, `training_date` (timestamptz), `metrics` (JSON), `is_active`
+- Metadata for trained models: `version`, `model_type`, `training_date` (timestamptz), `metrics` (JSON)
+- **Model Status System** (`model_status` ENUM):
+  - `current`: Active model used for detection (only one at a time, enforced by unique index)
+  - `backup`: Previous model saved before last training (only one, for rollback)
+  - `archived`: Historical models no longer active
+- **Model Management**:
+  - All models can be deleted from the frontend (current/backup/archived)
+  - Deleting 'current' automatically promotes 'backup' → 'current' to ensure always-active model
+  - Manual backup: Button in frontend to save 'current' → 'backup' (archives old backup)
+  - Automatic backup: Training automatically saves current → backup before fine-tuning
 
 ## NILM Workflow
 
 1. **Data Collection**: Let system run 48h to gather baseline consumption
 2. **Signature Creation**: Use frontend to select time ranges on chart → creates `cnn_signatures`
-3. **Model Training**: Run `make nilm-train` or use frontend trigger
-   - S2P model trains on all appliance signatures
+3. **Model Training**: Run `make train` or use frontend trigger
+   - **Incremental Fine-Tuning**: System automatically detects if a `current` model exists
+     - If yes: Saves current → backup, loads model, fine-tunes with lower learning rate (0.0001 vs 0.001) and fewer epochs (max 15)
+     - If no: Trains from scratch
+   - **Feedback Learning**: Automatically uses negative signatures (persistent examples of what NOT to detect)
    - One multi-output model predicts all appliances simultaneously
    - TensorBoard logs saved to `models/tensorboard/`
-4. **Detection**: Automatic every 5 minutes (configurable) or manual via `make nilm-detect`
+   - Model always saved as version "current" (not timestamped)
+4. **Detection**: Automatic every 5 minutes (configurable) or manual via `make detect`
    - Sliding window over recent data
    - Predicts appliance power using S2P model
    - Clusters predicted power to detect states/cycles
    - Saves detections to `cnn_detections`
-5. **Validation**: Frontend displays detections; users can delete false positives
+5. **User Validation**: Frontend displays detections with validation controls
+   - ✓ Validate button: marks detection as correct (`is_correct=true`)
+   - ✗ Invalidate button: marks detection as incorrect + **creates a negative signature** (`is_negative=true`) if `confidence_score >= 0.6`
+   - Validated/invalidated detections highlighted with colored backgrounds
+   - **Negative signatures persist** in database, can clean detections without losing learning
+6. **Iterative Improvement**: Model improves with each training cycle
+   - View feedback statistics: `make feedback-stats`
+   - View signature statistics: `make signatures-stats` (positive + negative)
+   - Clean old detections: `make detections-clean` (negative signatures preserved)
+   - Compare current vs backup: `make model-compare`
+   - Rollback to previous model if needed: `make model-rollback`
+   - Check model status: `make model-status`
+   - More user validations → more negative signatures → better model accuracy
 
 ## Key Technical Details
+
+### Incremental Fine-Tuning System
+
+The system maintains only two active models:
+- **current**: Production model used for all detections
+- **backup**: Safety net for rollback if new training degrades performance
+
+**Training Workflow**:
+1. Check for existing `current` model
+2. If found:
+   - Archive old `backup` → `archived`
+   - Promote `current` → `backup`
+   - Load `current` model weights
+   - Fine-tune with reduced learning rate (10x lower) and max 15 epochs
+3. If not found: Train from scratch with standard parameters (learning rate 0.001, 30 epochs)
+4. Save new model as `current`
+
+**Rollback Workflow**:
+- `make model-rollback` atomically promotes `backup` → `current` and archives old `current`
+- Useful if fine-tuned model performs worse due to overfitting or bad feedback data
 
 ### S2P Multi-Output Model (`seq2point_nilm.py`)
 
@@ -300,6 +358,40 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
+- **Flexible Model Management System** (October 2025):
+  - Frontend now displays `model_status` (current/backup/archived) with color-coded badges
+  - All models can be deleted from frontend, including current and backup
+  - Deleting 'current' model automatically promotes 'backup' → 'current' for continuity
+  - New "Backup manuel" button to save current model before risky operations
+  - Backend endpoint `POST /api/nilm/models/backup` for manual backup creation
+  - Improved delete dialog with status-specific warnings (current/backup/archived)
+  - Model list sorted by status priority (current first, then backup, then archived by date)
+
+- **Incremental Fine-Tuning System**: Revolutionary continuous learning approach replacing version-based training
+  - Migrated from `is_active` (boolean) to `model_status` (ENUM: current/backup/archived)
+  - System now maintains only ONE active model ("current") instead of accumulating versions
+  - Automatic backup before training: current → backup (old backup → archived)
+  - Fine-tuning when current exists: loads weights, reduces learning rate to 0.0001, max 15 epochs
+  - From-scratch when no current: standard parameters (lr=0.001, 30 epochs)
+  - New commands: `make model-compare`, `make model-rollback`, `make model-status`
+  - Model improves incrementally with each training cycle instead of starting over
+  - Rollback capability if fine-tuned model underperforms
+
+- **Negative Signatures System**: Persistent learning from invalidated detections
+  - Added `is_negative` field to `cnn_signatures` table (boolean, default FALSE)
+  - When user invalidates a detection with `confidence_score >= 0.6`, a **negative signature** is automatically created
+  - Negative signatures persist in database (unlike ephemeral detections)
+  - Training uses negative signatures instead of querying `cnn_detections` table
+  - **Can now clean detections table** without losing learning: `make detections-clean`
+  - New command: `make signatures-stats` shows positive/negative signature counts by appliance
+  - Workflow: User invalidates → Negative signature created → Training uses it → Can clean old detections
+
+- **Feedback Learning (Phase 1)**: Implemented user-driven model improvement through detection validation
+  - Added validation fields to `cnn_detections` table (`user_validated`, `is_correct`, `validated_at`)
+  - Frontend validation UI with ✓/✗ buttons and visual feedback (colored row backgrounds)
+  - Backend API endpoints: `PATCH /api/detections/{id}/validate` and `/invalidate`
+  - Invalidate button creates persistent negative signatures (if confidence >= 0.6)
+  - New Makefile commands: `make feedback-stats`, `make signatures-stats`, `make detections-clean`
 - **Timezone fix**: Migrated all NILM tables to `timestamp with time zone` (timestamptz) for proper Europe/Paris timezone handling. Backend now returns ISO timestamps with timezone offset (e.g., `+02:00`) instead of forcing UTC conversion. Frontend displays correct local times.
 - Removed legacy `cnn_nilm.py`, replaced by `seq2point_nilm.py` S2P architecture
 - Fixed multi-output S2P scaler fitting (fit before normalization to avoid "preprocessor not fit" error)

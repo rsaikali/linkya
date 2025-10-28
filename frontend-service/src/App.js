@@ -6,9 +6,9 @@ import { ElectricBolt } from '@mui/icons-material';
 import theme from './theme';
 import LatestConsumption from './components/LatestConsumption';
 import ConsumptionChart from './components/ConsumptionChart';
-import AppliancesList from './components/AppliancesList';
 import NilmTraining from './components/NilmTraining';
 import DetectionsList from './components/DetectionsList';
+import SignaturesList from './components/SignaturesList';
 
 function App() {
   return (
@@ -29,7 +29,7 @@ function App() {
             <LatestConsumption />
             <ConsumptionChart />
             <DetectionsList />
-            <AppliancesList />
+            <SignaturesList />
             <NilmTraining />
           </Box>
         </Container>

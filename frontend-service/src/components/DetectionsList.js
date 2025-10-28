@@ -30,7 +30,7 @@ import {
   Button,
   Snackbar,
 } from '@mui/material';
-import { Timeline, Delete, Search as DetectIcon, InfoOutlined } from '@mui/icons-material';
+import { Timeline, Delete, Search as DetectIcon, CheckCircle, Cancel, DeleteSweep } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
 
 // Options de période disponibles
@@ -57,7 +57,8 @@ function DetectionsList() {
   const [detectionToDelete, setDetectionToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [detectLoading, setDetectLoading] = useState(false);
-  const [signatureLoading, setSignatureLoading] = useState(false);
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
 
   const fetchDetections = useCallback(async () => {
     try {
@@ -178,31 +179,73 @@ function DetectionsList() {
     }
   };
 
-  const handleCreateSignature = async (detection) => {
-    setSignatureLoading(true);
+  const handleValidate = async (detection) => {
     try {
-      await apiService.createSignature({
-        appliance_name: detection.name,
-        start_time: detection.start_time,
-        end_time: detection.end_time,
-        description: `Signature issue de la détection ${detection.id}`,
-      });
+      await apiService.validateDetection(detection.id);
       setSnackbar({
         open: true,
-        message: `Signature créée pour ${detection.name}`,
+        message: `Détection validée: ${detection.name}`,
         severity: 'success',
       });
+      fetchDetections();
     } catch (err) {
-      let msg = 'Erreur lors de la création de la signature';
-      if (err.response?.data?.detail) msg = err.response.data.detail;
       setSnackbar({
         open: true,
-        message: msg,
+        message: 'Erreur lors de la validation',
+        severity: 'error',
+      });
+    }
+  };
+
+  const handleInvalidate = async (detection) => {
+    try {
+      await apiService.invalidateDetection(detection.id);
+      setSnackbar({
+        open: true,
+        message: `Détection invalidée: ${detection.name}`,
+        severity: 'info',
+      });
+      fetchDetections();
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: 'Erreur lors de l\'invalidation',
+        severity: 'error',
+      });
+    }
+  };
+
+  const handleOpenDeleteAllDialog = () => {
+    setDeleteAllDialogOpen(true);
+  };
+
+  const handleCloseDeleteAllDialog = () => {
+    setDeleteAllDialogOpen(false);
+  };
+
+  const handleConfirmDeleteAll = async () => {
+    setDeleteAllLoading(true);
+    try {
+      const response = await api.delete('/api/detections');
+      setSnackbar({
+        open: true,
+        message: response.data.message || 'Toutes les détections ont été supprimées',
+        severity: 'success',
+      });
+      handleCloseDeleteAllDialog();
+      // Réinitialiser la pagination et rafraîchir
+      setPage(0);
+      setTimeout(() => fetchDetections(), 500);
+    } catch (error) {
+      console.error('Erreur lors de la suppression des détections:', error);
+      const errorMsg = error.response?.data?.detail || 'Erreur lors de la suppression des détections';
+      setSnackbar({
+        open: true,
+        message: errorMsg,
         severity: 'error',
       });
     } finally {
-      setSignatureLoading(false);
-      fetchDetections();
+      setDeleteAllLoading(false);
     }
   };
 
@@ -229,6 +272,17 @@ function DetectionsList() {
           avatar={<Timeline />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                startIcon={deleteAllLoading ? <CircularProgress size={16} /> : <DeleteSweep />}
+                onClick={handleOpenDeleteAllDialog}
+                disabled={deleteAllLoading || totalDetections === 0}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Tout supprimer
+              </Button>
               <Button
                 variant="contained"
                 color="secondary"
@@ -289,7 +343,8 @@ function DetectionsList() {
                         key={detection.id}
                         detection={detection}
                         onDelete={handleDeleteClick}
-                        onCreateSignature={handleCreateSignature}
+                        onValidate={handleValidate}
+                        onInvalidate={handleInvalidate}
                       />
                     ))}
                     {loading && (
@@ -346,6 +401,51 @@ function DetectionsList() {
         </DialogActions>
       </Dialog>
 
+      {/* Dialog de confirmation de suppression de toutes les détections */}
+      <Dialog
+        open={deleteAllDialogOpen}
+        onClose={handleCloseDeleteAllDialog}
+        aria-labelledby="delete-all-dialog-title"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="delete-all-dialog-title">
+          Confirmer la suppression de toutes les détections
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Êtes-vous sûr de vouloir supprimer <strong>toutes les {totalDetections} détection{totalDetections !== 1 ? 's' : ''}</strong> ?
+            <br />
+            <br />
+            ⚠️ <strong>Attention :</strong> Cette action supprimera définitivement toutes les détections de la base de données.
+            <br />
+            <br />
+            Les signatures négatives créées à partir de détections invalidées seront conservées.
+            <br />
+            <br />
+            <strong>Cette action est irréversible.</strong>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={handleCloseDeleteAllDialog} 
+            color="inherit"
+            disabled={deleteAllLoading}
+          >
+            Annuler
+          </Button>
+          <Button 
+            onClick={handleConfirmDeleteAll} 
+            color="error" 
+            variant="contained"
+            disabled={deleteAllLoading}
+            startIcon={deleteAllLoading ? <CircularProgress size={20} /> : <DeleteSweep />}
+          >
+            {deleteAllLoading ? 'Suppression...' : 'Tout supprimer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Snackbar pour les notifications */}
       <Snackbar
         open={snackbar.open}
@@ -369,10 +469,14 @@ function DetectionsList() {
 /**
  * Ligne de tableau pour une détection
  */
-function DetectionRow({ detection, onDelete, onCreateSignature }) {
+function DetectionRow({ detection, onDelete, onValidate, onInvalidate }) {
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
   const durationMinutes = Math.round((endTime - startTime) / 60000);
+
+  // Statut de validation
+  const isValidated = detection.user_validated === true && detection.is_correct === true;
+  const isInvalidated = detection.user_validated === true && detection.is_correct === false;
 
   const formatDateTime = (date) => {
     return date.toLocaleString('fr-FR', {
@@ -402,51 +506,23 @@ function DetectionRow({ detection, onDelete, onCreateSignature }) {
     return 'Faible';
   };
 
-  const buildSignatureTooltip = (det) => {
-    const matched = det.matched_signature || null;
-    const score = det?.features?.matching?.score ?? null;
-    const scorePct = score != null ? `${(score * 100).toFixed(0)}%` : null;
-    const sigId = det.signature_id;
-
-    if (!sigId && !scorePct) return '';
-
-    const sigRange = matched
-      ? `${new Date(matched.start_time).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-         → ${new Date(matched.end_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
-      : null;
-
-    return (
-      <Box sx={{ py: 0.5 }}>
-        {sigId && (
-          <Typography variant="caption" sx={{ display: 'block' }}>
-            Signature correspondante: <strong>#{sigId}</strong>
-          </Typography>
-        )}
-        {sigRange && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Période: {sigRange}
-          </Typography>
-        )}
-        {scorePct && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Score de correspondance: {scorePct}
-          </Typography>
-        )}
-      </Box>
-    );
-  };
-
-  const hasMatchInfo = Boolean(
-    detection?.signature_id || (detection?.features?.matching?.score != null)
-  );
-
   return (
-    <TableRow hover>
+    <TableRow
+      hover
+      sx={{
+        backgroundColor: isValidated ? 'rgba(76, 175, 80, 0.08)' : isInvalidated ? 'rgba(244, 67, 54, 0.08)' : 'inherit'
+      }}
+    >
       <TableCell sx={{ fontWeight: 500 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-          {hasMatchInfo && (
-            <Tooltip placement="top-start" arrow title={buildSignatureTooltip(detection)}>
-              <InfoOutlined fontSize="small" color="info" sx={{ cursor: 'help' }} />
+          {isValidated && (
+            <Tooltip title="Détection validée comme correcte">
+              <CheckCircle fontSize="small" color="success" />
+            </Tooltip>
+          )}
+          {isInvalidated && (
+            <Tooltip title="Détection marquée comme incorrecte">
+              <Cancel fontSize="small" color="error" />
             </Tooltip>
           )}
           <span>{detection.name || 'Inconnu'}</span>
@@ -476,28 +552,44 @@ function DetectionRow({ detection, onDelete, onCreateSignature }) {
         />
       </TableCell>
       <TableCell align="center">
-        <Tooltip title="Transformer en signature">
-          <span>
+        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+          <Tooltip title={isValidated ? "Déjà validée" : "Marquer comme correcte"}>
+            <span>
+              <IconButton
+                size="small"
+                color="success"
+                onClick={() => onValidate(detection)}
+                aria-label="valider"
+                disabled={isValidated}
+              >
+                <CheckCircle fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={isInvalidated ? "Déjà invalidée" : "Marquer comme incorrecte"}>
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                onClick={() => onInvalidate(detection)}
+                aria-label="invalider"
+                disabled={isInvalidated}
+              >
+                <Cancel fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Supprimer cette détection">
             <IconButton
               size="small"
-              color="primary"
-              onClick={() => onCreateSignature(detection)}
-              aria-label="signature"
+              color="error"
+              onClick={() => onDelete(detection)}
+              aria-label="supprimer"
             >
-              <Timeline fontSize="small" />
+              <Delete fontSize="small" />
             </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title="Supprimer cette détection">
-          <IconButton
-            size="small"
-            color="error"
-            onClick={() => onDelete(detection)}
-            aria-label="supprimer"
-          >
-            <Delete fontSize="small" />
-          </IconButton>
-        </Tooltip>
+          </Tooltip>
+        </Box>
       </TableCell>
     </TableRow>
   );

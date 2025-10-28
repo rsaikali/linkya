@@ -86,16 +86,149 @@ class Seq2PointMultiModel:
         logger.info(f"Modèle S2P-MULTI {self.model_type.upper()} construit ({self.num_appliances} appareils, séquence={self.sequence_length})")
         return model
 
-    def train(self, all_signatures: Dict[int, List[Dict[str, Any]]], version: str, epochs: int = 30, batch_size: int = 32, validation_split: float = 0.15) -> Dict[str, Any]:
+    def _load_negative_signatures(self) -> Dict[int, List[Dict[str, Any]]]:
         """
-        Entraîne le modèle multi-sorties sur toutes les signatures
+        Charge les signatures négatives (exemples de ce qu'il ne faut PAS détecter).
+
+        Ces signatures sont créées automatiquement quand l'utilisateur invalide une détection.
+        Elles persistent dans la base et permettent de vider les détections sans perdre l'apprentissage.
+
+        Returns:
+            Dict[appliance_id, List[negative_signature]] des signatures négatives
+        """
+        try:
+            with db_manager.engine.connect() as conn:
+                query = text("""
+                    SELECT
+                        id,
+                        appliance_id,
+                        start_time,
+                        end_time
+                    FROM cnn_signatures
+                    WHERE is_negative = TRUE
+                    ORDER BY created_at DESC
+                """)
+
+                result = conn.execute(query)
+
+                signatures_by_appliance = {}
+                for row in result:
+                    signature = {
+                        'id': row[0],
+                        'appliance_id': row[1],
+                        'start_time': row[2],
+                        'end_time': row[3]
+                    }
+
+                    appliance_id = signature['appliance_id']
+                    if appliance_id not in signatures_by_appliance:
+                        signatures_by_appliance[appliance_id] = []
+                    signatures_by_appliance[appliance_id].append(signature)
+
+                total = sum(len(sigs) for sigs in signatures_by_appliance.values())
+                logger.info(f"Récupéré {total} signatures négatives (exemples à ne PAS détecter)")
+
+                return signatures_by_appliance
+
+        except Exception as e:
+            logger.error(f"Erreur lors du chargement des signatures négatives: {e}")
+            return {}
+
+    def _add_negative_examples(self, X_all: List, y_all: List[List]) -> int:
+        """
+        Ajoute des exemples négatifs à partir des signatures négatives.
+
+        Les signatures négatives sont créées automatiquement quand l'utilisateur
+        invalide une détection. Elles persistent dans la base et peuvent être
+        réutilisées même après avoir vidé la table des détections.
+
+        Args:
+            X_all: Liste des séquences d'input (agrégat)
+            y_all: Liste par appareil des targets
+
+        Returns:
+            Nombre d'exemples négatifs ajoutés
+        """
+        negative_signatures = self._load_negative_signatures()
+        negative_count = 0
+
+        for idx, appliance_id in enumerate(self.appliance_ids):
+            signatures = negative_signatures.get(appliance_id, [])
+
+            for signature in signatures:
+                # Charger la consommation agrégée pour cette période
+                aggregate_power = self._load_aggregate_data(
+                    signature['start_time'],
+                    signature['end_time']
+                )
+
+                if aggregate_power is None or len(aggregate_power) < self.sequence_length:
+                    continue
+
+                # Créer des séquences avec target = 0 (appareil non actif)
+                zero_target = np.zeros(len(aggregate_power), dtype=np.float32)
+                X, y = self.preprocessor.create_sequences(aggregate_power, zero_target, stride=50)
+
+                if len(X) > 0:
+                    X_all.append(X)
+                    # Pour cet appareil (idx), la target est 0
+                    # Pour les autres appareils, on met aussi 0 car on ne sait pas
+                    y_all[idx].append(y)
+                    negative_count += len(X)
+
+        return negative_count
+
+    @staticmethod
+    def _load_aggregate_data(start_time: datetime, end_time: datetime) -> Optional[np.ndarray]:
+        """
+        Charge les données de consommation agrégée pour une période donnée.
+
+        Args:
+            start_time: Début de la période
+            end_time: Fin de la période
+
+        Returns:
+            Array numpy de la puissance agrégée ou None si erreur
+        """
+        try:
+            data = db_manager.get_consumption_data(
+                start_time=start_time,
+                end_time=end_time,
+                resample_seconds=1
+            )
+
+            if not data:
+                return None
+
+            values = np.array([row['papp'] for row in data], dtype=np.float32)
+            return values
+
+        except Exception as e:
+            logger.error(f"Erreur lors du chargement des données agrégées: {e}")
+            return None
+
+    def train(self, all_signatures: Dict[int, List[Dict[str, Any]]], version: str, epochs: int = 30, batch_size: int = 32, validation_split: float = 0.15, use_feedback: bool = True, fine_tune: bool = False) -> Dict[str, Any]:
+        """
+        Entraîne le modèle multi-sorties sur toutes les signatures + feedbacks utilisateur
         Args:
             all_signatures: Dict[appliance_id, List[signature]]
             version: Version du modèle
+            use_feedback: Si True, utilise les détections invalidées comme exemples négatifs
+            fine_tune: Si True, continue l'entraînement du modèle existant au lieu de from-scratch
         Returns:
             Dictionnaire de métriques
         """
-        # Préparer les données pour chaque appareil
+        is_fine_tuning = fine_tune and self.model is not None
+        if is_fine_tuning:
+            logger.info("🔄 Mode FINE-TUNING activé - Amélioration du modèle existant")
+            # Paramètres adaptés au fine-tuning
+            learning_rate = 0.0001  # 10x plus faible que from-scratch
+            epochs = min(epochs, 15)  # Maximum 15 epochs pour le fine-tuning
+        else:
+            logger.info("🆕 Mode FROM-SCRATCH - Création d'un nouveau modèle")
+            learning_rate = 0.001
+
+        # Préparer les données pour chaque appareil (exemples positifs)
         X_all, y_all = [], [[] for _ in range(self.num_appliances)]
         for idx, appliance_id in enumerate(self.appliance_ids):
             signatures = all_signatures.get(appliance_id, [])
@@ -107,21 +240,33 @@ class Seq2PointMultiModel:
                 if len(X) > 0:
                     X_all.append(X)
                     y_all[idx].append(y)
+
+        # Ajouter les exemples négatifs (hard negative mining)
+        if use_feedback:
+            negative_count = self._add_negative_examples(X_all, y_all)
+            if negative_count > 0:
+                logger.info(f"Ajout de {negative_count} exemples négatifs (hard negative mining)")
+
         # Concaténer toutes les séquences
         if not X_all or not any(y_list for y_list in y_all):
             logger.error("Aucune donnée valide pour l'entraînement multi-sorties")
             return {}
         X = np.concatenate(X_all, axis=0)
         y_targets = [np.concatenate(y_all[i], axis=0) if y_all[i] else np.zeros((len(X),)) for i in range(self.num_appliances)]
-        # Ajuster les scalers avant transformation
-        self.preprocessor.input_scaler.fit(X.reshape(-1, 1))
-        flat_targets_for_scaler = [
-            np.concatenate(y_list, axis=0) for y_list in y_all if y_list
-        ]
-        if flat_targets_for_scaler:
-            concatenated_targets = np.concatenate(flat_targets_for_scaler, axis=0)
-            self.preprocessor.target_scaler.fit(concatenated_targets.reshape(-1, 1))
-        self.preprocessor.fitted = True
+
+        # Ajuster les scalers UNIQUEMENT si pas de fine-tuning (from-scratch)
+        if not is_fine_tuning:
+            logger.info("Ajustement des scalers (from-scratch)")
+            self.preprocessor.input_scaler.fit(X.reshape(-1, 1))
+            flat_targets_for_scaler = [
+                np.concatenate(y_list, axis=0) for y_list in y_all if y_list
+            ]
+            if flat_targets_for_scaler:
+                concatenated_targets = np.concatenate(flat_targets_for_scaler, axis=0)
+                self.preprocessor.target_scaler.fit(concatenated_targets.reshape(-1, 1))
+            self.preprocessor.fitted = True
+        else:
+            logger.info("Réutilisation des scalers existants (fine-tuning)")
         # Préparer les détecteurs d'états pour chaque appareil
         for idx, appliance_id in enumerate(self.appliance_ids):
             if not y_all[idx]:
@@ -146,8 +291,16 @@ class Seq2PointMultiModel:
         X_train, X_val = train_test_split(X_scaled, test_size=validation_split, random_state=42)
         y_train = [train_test_split(y_scaled[i], test_size=validation_split, random_state=42)[0] for i in range(self.num_appliances)]
         y_val = [train_test_split(y_scaled[i], test_size=validation_split, random_state=42)[1] for i in range(self.num_appliances)]
-        # Construire le modèle
-        self.model = self.build_model()
+
+        # Construire ou réutiliser le modèle
+        if not is_fine_tuning:
+            # From-scratch: construire un nouveau modèle
+            self.model = self.build_model()
+        else:
+            # Fine-tuning: ajuster le learning rate du modèle existant
+            logger.info(f"Ajustement du learning rate: {learning_rate}")
+            self.model.optimizer.learning_rate.assign(learning_rate)
+
         # Callbacks
         callbacks_list = [
             callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1),
@@ -1623,14 +1776,54 @@ class Seq2PointNILMManager:
             min_duration=settings.cnn_min_duration_seconds
         )
         logger.info("Change Point Pattern Detector initialisé")
-    
-    def train_all_appliances(self, version: str) -> Dict[str, Any]:
+
+        # Attribut pour le modèle multi-sorties
+        self.multi_model: Optional[Seq2PointMultiModel] = None
+
+    def load_model(self, model_path: str):
+        """
+        Charge un modèle S2P multi-sorties existant pour fine-tuning
+
+        Args:
+            model_path: Chemin vers le modèle .keras à charger
+        """
+        try:
+            # Charger les métadonnées pour récupérer les appliance_ids et names
+            metadata_path = Path(model_path).with_suffix('.metadata.json')
+            if not metadata_path.exists():
+                raise ValueError(f"Métadonnées introuvables: {metadata_path}")
+
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+
+            appliance_ids = metadata.get('appliance_ids', [])
+            appliance_names = metadata.get('appliance_names', [])
+            sequence_length = metadata.get('sequence_length', settings.effective_sequence_length)
+
+            # Créer le modèle multi-sorties
+            self.multi_model = Seq2PointMultiModel(
+                appliance_ids=appliance_ids,
+                appliance_names=appliance_names,
+                sequence_length=sequence_length,
+                model_type=self.model_type
+            )
+
+            # Charger les poids et métadonnées
+            self.multi_model.load(model_path)
+            logger.info(f"✅ Modèle multi-sorties chargé: {model_path}")
+
+        except Exception as e:
+            logger.error(f"❌ Erreur lors du chargement du modèle: {e}")
+            raise
+
+    def train_all_appliances(self, version: str, fine_tune: bool = False) -> Dict[str, Any]:
         """
         Entraîne les modèles S2P (multi-sorties ou unitaire selon configuration)
-        
+
         Args:
             version: Version du modèle
-        
+            fine_tune: Si True, continue l'entraînement du modèle existant
+
         Returns:
             Dictionnaire global de métriques
         """
@@ -1691,13 +1884,25 @@ class Seq2PointNILMManager:
                 total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
                 logger.info(f"{len(self.change_point_detector.signature_profiles)} appareils, {total_profiles} profils chargés")
 
-                self.multi_model = Seq2PointMultiModel(
-                    appliance_ids,
-                    appliance_names,
-                    sequence_length=settings.effective_sequence_length,
-                    model_type=self.model_type
+                # Si fine-tuning et multi_model déjà chargé, réutiliser
+                if fine_tune and hasattr(self, 'multi_model') and self.multi_model is not None:
+                    logger.info("Réutilisation du modèle multi-sorties existant pour fine-tuning")
+                else:
+                    self.multi_model = Seq2PointMultiModel(
+                        appliance_ids,
+                        appliance_names,
+                        sequence_length=settings.effective_sequence_length,
+                        model_type=self.model_type
+                    )
+
+                metrics = self.multi_model.train(
+                    all_signatures,
+                    version,
+                    epochs=30,
+                    batch_size=32,
+                    use_feedback=True,
+                    fine_tune=fine_tune
                 )
-                metrics = self.multi_model.train(all_signatures, version, epochs=30, batch_size=32)
                 if not metrics:
                     logger.error("Entraînement multi-sorties impossible (données insuffisantes)")
                     return {'error': 'insufficient_training_data'}
@@ -1858,7 +2063,7 @@ class Seq2PointNILMManager:
                 query = (
                     "SELECT version, model_path, architecture "
                     "FROM cnn_models "
-                    "WHERE is_active = true AND model_type LIKE 'S2P%' "
+                    "WHERE model_status = 'current' AND model_type LIKE 'S2P%' "
                     "ORDER BY training_date DESC "
                     "LIMIT 1"
                 )

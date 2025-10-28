@@ -107,11 +107,11 @@ def init_cnn_database() -> Dict[str, Any]:
 @celery_app.task(name='train_cnn_model')
 def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
     """
-    Entraîne le modèle NILM (S2P ou CNN legacy) sur les signatures
-    
+    Entraîne le modèle NILM (S2P) avec système current/backup et fine-tuning automatique
+
     Args:
         min_signatures: Nombre minimum de signatures par appareil
-        
+
     Returns:
         Statut et métriques de l'entraînement
     """
@@ -119,14 +119,62 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         import time
         from sqlalchemy import text
         import json
-        
+        import shutil
+        from pathlib import Path
+
         start_time = time.time()
-        
-        logger.info("🚀 Entraînement Sequence-to-Point (désagrégation multi-sorties)")
-        # Créer une version basée sur le timestamp (timezone locale)
-        version = datetime.now(LOCAL_TIMEZONE).strftime('%Y%m%d_%H%M%S')
-        # Entraîner le modèle multi-sorties
-        metrics = nilm_manager.train_all_appliances(version)
+
+        # Étape 1: Vérifier s'il existe un modèle current
+        logger.info("🔍 Recherche d'un modèle current existant...")
+        current_model = None
+        with db_manager.get_session() as session:
+            query = text("""
+                SELECT id, version, model_path, metrics
+                FROM cnn_models
+                WHERE model_status = 'current'
+                LIMIT 1
+            """)
+            result = session.execute(query).fetchone()
+            if result:
+                current_model = {
+                    'id': result[0],
+                    'version': result[1],
+                    'model_path': result[2],
+                    'metrics': result[3]
+                }
+                logger.info(f"✅ Modèle current trouvé: {current_model['version']}")
+
+        # Étape 2: Si un modèle current existe, le promouvoir en backup
+        if current_model:
+            logger.info("💾 Sauvegarde du modèle current vers backup...")
+            with db_manager.get_session() as session:
+                # Archiver l'ancien backup
+                session.execute(
+                    text("UPDATE cnn_models SET model_status = 'archived' WHERE model_status = 'backup'")
+                )
+                # Promouvoir current → backup
+                session.execute(
+                    text("UPDATE cnn_models SET model_status = 'backup' WHERE model_status = 'current'")
+                )
+                session.commit()
+            logger.info("✅ Ancien modèle sauvegardé en backup")
+
+            # Charger le modèle current pour fine-tuning
+            model_path = current_model['model_path']
+            if Path(model_path).exists():
+                logger.info(f"📂 Chargement du modèle {model_path} pour fine-tuning...")
+                try:
+                    nilm_manager.load_model(model_path)
+                    logger.info("✅ Modèle chargé avec succès")
+                except Exception as e:
+                    logger.warning(f"⚠️  Impossible de charger le modèle: {e}. Entraînement from-scratch.")
+        else:
+            logger.info("ℹ️  Aucun modèle current - Entraînement from-scratch")
+
+        # Étape 3: Entraîner le modèle (fine-tuning si modèle chargé, sinon from-scratch)
+        logger.info("🚀 Début de l'entraînement Sequence-to-Point...")
+        version = "current"  # On utilise toujours "current" comme version
+        metrics = nilm_manager.train_all_appliances(version, fine_tune=(current_model is not None))
         if 'error' in metrics:
             return {
                 'status': 'error',
@@ -150,23 +198,25 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         
         # Calculer la durée
         training_duration = int(time.time() - start_time)
-        
-        # Sauvegarder en base
+
+        # Sauvegarder en base comme "current"
         completed_at = datetime.now(LOCAL_TIMEZONE)
+        training_mode = "fine-tuning" if current_model else "from-scratch"
+
         with db_manager.get_session() as session:
             query = text("""
                 INSERT INTO cnn_models
                 (version, model_type, architecture, training_date,
                  num_signatures, num_classes, metrics, model_path,
-                 is_active, training_duration_seconds)
+                 model_status, training_duration_seconds)
                 VALUES
                 (:version, :model_type, cast(:architecture as jsonb),
                  :training_date, :num_signatures, :num_classes,
-                 cast(:metrics as jsonb), :model_path, :is_active,
+                 cast(:metrics as jsonb), :model_path, :model_status,
                  :training_duration_seconds)
                 RETURNING id
             """)
-            
+
             result = session.execute(
                 query,
                 {
@@ -177,30 +227,25 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
                     'num_signatures': total_signatures,
                     'num_classes': num_appliances,
                     'metrics': json.dumps(metrics, default=str),
-                    'model_path': metrics.get('model_path', f"{settings.cnn_model_path}/{version}"),
-                    'is_active': True,
+                    'model_path': metrics.get('model_path', f"{settings.cnn_model_path}/{version}.keras"),
+                    'model_status': 'current',
                     'training_duration_seconds': training_duration
                 }
             )
-            
+
             model_id = result.scalar()
-            
-            # Désactiver les anciens modèles
-            session.execute(
-                text("UPDATE cnn_models SET is_active = FALSE "
-                     "WHERE id != :id"),
-                {'id': model_id}
-            )
+            session.commit()
         
         logger.info(
-            f"✅ Modèle {version} entraîné en {training_duration}s - "
+            f"✅ Modèle {version} entraîné en {training_duration}s ({training_mode}) - "
             f"{num_appliances} appareils, {total_signatures} signatures"
         )
-        
+
         return {
             'status': 'success',
             'version': version,
             'model_type': model_type_str,
+            'training_mode': training_mode,
             'num_signatures': total_signatures,
             'num_appliances': num_appliances,
             'metrics': metrics,
@@ -242,7 +287,7 @@ def detect_cnn_appliances(
         with db_manager.engine.connect() as conn:
             result = conn.execute(
                 text("SELECT version, model_type FROM cnn_models "
-                     "WHERE is_active = TRUE "
+                     "WHERE model_status = 'current' "
                      "ORDER BY training_date DESC LIMIT 1")
             )
             row = result.first()
@@ -349,7 +394,6 @@ def detect_cnn_appliances(
                                 energy_consumed = :energy_consumed,
                                 confidence_score = :confidence_score,
                                 prediction_class = :prediction_class,
-                                signature_id = :signature_id,
                                 features = :features,
                                 created_at = NOW()
                             WHERE id = :detection_id
@@ -373,7 +417,6 @@ def detect_cnn_appliances(
                                 ),
                                 'confidence_score': event['confidence_score'],
                                 'prediction_class': event.get('prediction_class'),
-                                'signature_id': event.get('signature_id'),
                                 'features': json.dumps(features_data)
                             }
                         )
@@ -398,11 +441,11 @@ def detect_cnn_appliances(
                     
                     insert_query = text("""
                         INSERT INTO cnn_detections
-                        (appliance_id, signature_id, start_time, end_time,
+                        (appliance_id, start_time, end_time,
                          avg_power, energy_consumed, confidence_score,
                          prediction_class, features, created_at)
                         VALUES
-                        (:appliance_id, :signature_id, :start_time, :end_time,
+                        (:appliance_id, :start_time, :end_time,
                          :avg_power, :energy_consumed, :confidence_score,
                          :prediction_class, :features, NOW())
                     """)
@@ -411,7 +454,6 @@ def detect_cnn_appliances(
                         insert_query,
                         {
                             'appliance_id': appliance_id,
-                            'signature_id': event.get('signature_id'),
                             'start_time': event['start_time'],
                             'end_time': event['end_time'],
                             'avg_power': event['avg_power'],
@@ -459,7 +501,8 @@ def add_cnn_signature(
     appliance_name: str,
     start_time_str: str,
     end_time_str: str,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    is_negative: bool = False
 ) -> Dict[str, Any]:
     """
     Ajoute une signature manuelle soumise par l'utilisateur
@@ -468,7 +511,8 @@ def add_cnn_signature(
         appliance_name: Nom de l'appareil
         start_time_str: Timestamp de début (ISO format)
         end_time_str: Timestamp de fin (ISO format)
-        description: Description (optionnel)
+        description: Description (ignoré, conservé pour compatibilité)
+        is_negative: True si c'est une signature négative (faux positif)
 
     Returns:
         Statut et ID de la signature créée
@@ -521,7 +565,8 @@ def add_cnn_signature(
             signature_id = db_manager.add_signature(
                 appliance_id=appliance_id,
                 start_time=start_time,
-                end_time=end_time
+                end_time=end_time,
+                is_negative=is_negative
             )
         except ValueError as ve:
             # Erreur de validation (chevauchement, etc.)
@@ -594,7 +639,7 @@ def get_cnn_stats() -> Dict[str, Any]:
             
             # Modèle actif
             result = conn.execute(
-                text("SELECT version, num_classes, metrics FROM cnn_models WHERE is_active = TRUE LIMIT 1")
+                text("SELECT version, num_classes, metrics FROM cnn_models WHERE model_status = 'current' LIMIT 1")
             )
             row = result.first()
             if row:

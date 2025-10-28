@@ -27,7 +27,6 @@ class SignatureCreate(BaseModel):
     appliance_name: str
     start_time: str  # Format ISO
     end_time: str    # Format ISO
-    description: Optional[str] = None
 
 # Création de l'application FastAPI
 app = FastAPI(
@@ -176,6 +175,74 @@ async def get_appliance_signatures(appliance_id: int):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+@app.get("/api/signatures")
+async def get_all_signatures(
+    page: int = Query(default=1, ge=1, description="Numéro de page"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Signatures par page"),
+):
+    """
+    Récupère toutes les signatures avec pagination.
+
+    Args:
+        page: Numéro de page (commence à 1)
+        per_page: Nombre de signatures par page (1-100)
+
+    Returns:
+        Liste paginée des signatures avec informations de l'appareil
+    """
+    try:
+        # Utiliser la fonction existante qui retourne toutes les signatures
+        all_signatures = db_manager.get_all_signatures_with_appliance()
+        
+        # Calculer la pagination
+        total = len(all_signatures)
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        
+        # Extraire la page demandée
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        signatures_page = all_signatures[start_idx:end_idx]
+        
+        return {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "signatures": signatures_page,
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des signatures: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
+@app.delete("/api/signatures/{signature_id}")
+async def delete_signature(signature_id: int):
+    """
+    Supprime une signature spécifique.
+
+    Args:
+        signature_id: ID de la signature à supprimer
+
+    Returns:
+        Message de confirmation
+    """
+    try:
+        result = db_manager.delete_signature(signature_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Signature non trouvée")
+
+        return {
+            "status": "success",
+            "message": f"Signature supprimée: {result['appliance_name']}",
+            "signature": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
 class ApplianceUpdate(BaseModel):
     """Modèle pour mettre à jour un appareil."""
     name: Optional[str] = None
@@ -280,6 +347,27 @@ async def delete_appliance(appliance_id: int):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+@app.delete("/api/detections")
+async def delete_all_detections():
+    """
+    Supprime toutes les détections de la base de données.
+
+    Returns:
+        Message de confirmation avec le nombre de détections supprimées
+    """
+    try:
+        result = db_manager.delete_all_detections()
+
+        return {
+            "status": "success",
+            "message": f"{result['deleted_count']} détection(s) supprimée(s)",
+            "deleted_count": result['deleted_count']
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression des détections: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
 @app.delete("/api/detections/{detection_id}")
 async def delete_detection(detection_id: int):
     """
@@ -295,7 +383,7 @@ async def delete_detection(detection_id: int):
         result = db_manager.delete_detection(detection_id)
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
-        
+
         return {
             "status": "success",
             "message": f"Détection supprimée: {result['appliance_name']}",
@@ -305,6 +393,62 @@ async def delete_detection(detection_id: int):
         raise
     except Exception as e:
         logger.error(f"Erreur lors de la suppression de la détection {detection_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
+@app.patch("/api/detections/{detection_id}/validate")
+async def validate_detection(detection_id: int):
+    """
+    Marque une détection comme correcte pour l'apprentissage par feedback.
+
+    Args:
+        detection_id: ID de la détection à valider
+
+    Returns:
+        Message de confirmation avec informations de la détection validée
+    """
+    try:
+        result = db_manager.validate_detection(detection_id, is_correct=True)
+        if not result:
+            raise HTTPException(status_code=404, detail="Détection non trouvée")
+
+        return {
+            "status": "success",
+            "message": f"Détection validée comme correcte: {result['appliance_name']}",
+            "detection": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la validation de la détection {detection_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
+@app.patch("/api/detections/{detection_id}/invalidate")
+async def invalidate_detection(detection_id: int):
+    """
+    Marque une détection comme incorrecte pour l'apprentissage par feedback.
+
+    Args:
+        detection_id: ID de la détection à invalider
+
+    Returns:
+        Message de confirmation avec informations de la détection invalidée
+    """
+    try:
+        result = db_manager.validate_detection(detection_id, is_correct=False)
+        if not result:
+            raise HTTPException(status_code=404, detail="Détection non trouvée")
+
+        return {
+            "status": "success",
+            "message": f"Détection marquée comme incorrecte: {result['appliance_name']}",
+            "detection": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -388,7 +532,7 @@ async def create_signature(signature: SignatureCreate):
     la signature et ajouter les données d'entraînement.
     
     Args:
-        signature: Données de la signature (appliance_name, start_time, end_time, description)
+        signature: Données de la signature (appliance_name, start_time, end_time)
     
     Returns:
         Status de la tâche Celery
@@ -439,7 +583,7 @@ async def create_signature(signature: SignatureCreate):
                 signature.appliance_name,
                 signature.start_time,
                 signature.end_time,
-                signature.description or ""
+                ""
             ),
             queue='nilm_cnn',
             routing_key='nilm_cnn.add_cnn_signature'
@@ -587,6 +731,120 @@ async def trigger_signature_enrichment():
         )
 
 
+@app.post("/api/nilm/models/backup")
+async def create_model_backup():
+    """
+    Crée une sauvegarde manuelle du modèle 'current' en le copiant vers 'backup'.
+
+    L'ancien modèle 'backup' est archivé. Cette opération permet de créer
+    un point de restauration avant d'effectuer des modifications importantes.
+
+    Returns:
+        Confirmation de la création du backup
+
+    Raises:
+        HTTPException 404: Aucun modèle 'current' trouvé
+        HTTPException 500: Erreur serveur
+    """
+    import os
+    import shutil
+    from sqlalchemy import text
+
+    try:
+        with db_manager.get_session() as session:
+            # Vérifier qu'un modèle 'current' existe
+            current_query = text("""
+                SELECT id, version, model_path
+                FROM cnn_models
+                WHERE model_status = 'current'
+                LIMIT 1
+            """)
+            current_result = session.execute(current_query).fetchone()
+
+            if not current_result:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Aucun modèle 'current' à sauvegarder"
+                )
+
+            current_id, current_version, current_path = current_result
+
+            # Archiver l'ancien backup
+            session.execute(text("""
+                UPDATE cnn_models
+                SET model_status = 'archived'
+                WHERE model_status = 'backup'
+            """))
+
+            # Dupliquer le modèle current en backup
+            duplicate_query = text("""
+                INSERT INTO cnn_models
+                (version, model_type, architecture, training_date,
+                 num_signatures, num_classes, metrics, model_path,
+                 model_status, training_duration_seconds)
+                SELECT
+                    version || '_backup_' || TO_CHAR(NOW(), 'YYYYMMDD_HH24MISS'),
+                    model_type,
+                    architecture,
+                    training_date,
+                    num_signatures,
+                    num_classes,
+                    metrics,
+                    REPLACE(model_path, 'current', 'backup_' || TO_CHAR(NOW(), 'YYYYMMDD_HH24MISS')),
+                    'backup',
+                    training_duration_seconds
+                FROM cnn_models
+                WHERE id = :current_id
+                RETURNING id, version, model_path
+            """)
+
+            result = session.execute(
+                duplicate_query,
+                {"current_id": current_id}
+            ).fetchone()
+
+            backup_id, backup_version, backup_path = result
+
+            # Copier les fichiers physiques
+            if os.path.exists(current_path):
+                # Copier le fichier .keras
+                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+                shutil.copy2(current_path, backup_path)
+
+                # Copier le fichier metadata
+                current_metadata = current_path.replace('.keras', '.metadata.json')
+                backup_metadata = backup_path.replace('.keras', '.metadata.json')
+                if os.path.exists(current_metadata):
+                    shutil.copy2(current_metadata, backup_metadata)
+
+            session.commit()
+
+            logger.info(
+                f"✅ Backup manuel créé: {current_version} → {backup_version}"
+            )
+
+            return {
+                "status": "success",
+                "message": "Backup créé avec succès",
+                "current_id": current_id,
+                "current_version": current_version,
+                "backup_id": backup_id,
+                "backup_version": backup_version,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Erreur lors de la création du backup: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
 @app.get("/api/nilm/models")
 async def get_nilm_models(
     page: int = Query(default=1, ge=1, description="Numéro de page"),
@@ -625,22 +883,22 @@ async def get_nilm_models(
 async def delete_nilm_model(model_id: int):
     """
     Supprime un modèle NILM-CNN de la base de données et du filesystem.
-    
-    Le modèle actif (is_active=true) ne peut pas être supprimé.
-    
+
+    Si le modèle 'current' est supprimé, le modèle 'backup' est automatiquement
+    promu en 'current' pour garantir qu'il y a toujours un modèle actif.
+
     Args:
         model_id: ID du modèle à supprimer
-    
+
     Returns:
         Confirmation de suppression avec détails
-        
+
     Raises:
         HTTPException 404: Modèle non trouvé
-        HTTPException 400: Tentative de suppression du modèle actif
         HTTPException 500: Erreur serveur
     """
     import os
-    
+
     try:
         # Supprimer de la base de données
         result = db_manager.delete_cnn_model(model_id)
@@ -896,7 +1154,8 @@ async def export_signatures():
             "appliance_name",
             "appliance_description",
             "start_time",
-            "end_time"
+            "end_time",
+            "is_negative"
         ])
 
         # Données
@@ -905,7 +1164,8 @@ async def export_signatures():
                 sig["appliance_name"],
                 sig["appliance_description"],
                 sig["start_time"],
-                sig["end_time"]
+                sig["end_time"],
+                sig.get("is_negative", False)
             ])
 
         csv_content = output.getvalue()
@@ -995,6 +1255,10 @@ async def import_signatures(file: UploadFile):
                 appliance_description = row["appliance_description"].strip()
                 start_time = row["start_time"].strip()
                 end_time = row["end_time"].strip()
+                
+                # is_negative est optionnel (par défaut False)
+                is_negative_str = row.get("is_negative", "False").strip()
+                is_negative = is_negative_str.lower() in ('true', '1', 'yes', 'oui')
 
                 if not appliance_name:
                     raise ValueError("Le nom de l'appareil ne peut pas être vide")
@@ -1017,6 +1281,7 @@ async def import_signatures(file: UploadFile):
                         end_time,
                         appliance_description or ""
                     ),
+                    kwargs={'is_negative': is_negative},
                     queue='nilm_cnn',
                     routing_key='nilm_cnn.add_cnn_signature'
                 )

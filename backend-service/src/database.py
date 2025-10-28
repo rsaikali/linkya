@@ -2,12 +2,15 @@
 
 from datetime import datetime
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def format_datetime(dt: datetime | None) -> str | None:
@@ -31,7 +34,6 @@ class DatabaseManager:
         appliance_name: str,
         start_time: datetime,
         end_time: datetime,
-        description: str | None = None
     ) -> dict[str, Any]:
         """
         Crée une signature pour un appareil si aucune période n'overlap.
@@ -39,7 +41,6 @@ class DatabaseManager:
             appliance_name: nom de l'appareil
             start_time: début de la signature
             end_time: fin de la signature
-            description: description optionnelle
         Returns:
             dict avec la signature créée ou une erreur
         """
@@ -70,15 +71,14 @@ class DatabaseManager:
 
             # Insérer la signature
             insert_query = text("""
-                INSERT INTO cnn_signatures (appliance_id, start_time, end_time, description, created_at)
-                VALUES (:appliance_id, :start_time, :end_time, :description, NOW())
-                RETURNING id, appliance_id, start_time, end_time, description, created_at
+                INSERT INTO cnn_signatures (appliance_id, start_time, end_time, created_at)
+                VALUES (:appliance_id, :start_time, :end_time, NOW())
+                RETURNING id, appliance_id, start_time, end_time, created_at
             """)
             result = conn.execute(insert_query, {
                 "appliance_id": appliance_id,
                 "start_time": start_time,
                 "end_time": end_time,
-                "description": description
             })
             conn.commit()
             row = result.fetchone()
@@ -87,8 +87,7 @@ class DatabaseManager:
                 "appliance_id": row[1],
                 "start_time": format_datetime(row[2]),
                 "end_time": format_datetime(row[3]),
-                "description": row[4],
-                "created_at": format_datetime(row[5]),
+                "created_at": format_datetime(row[4]),
             }
     """Gestionnaire de connexion à TimescaleDB."""
 
@@ -221,14 +220,13 @@ class DatabaseManager:
                 cd.energy_consumed,
                 cd.confidence_score,
                 cd.prediction_class,
-                cd.signature_id,
                 cd.features,
                 cd.created_at AS detection_created_at,
-                cs.start_time AS signature_start,
-                cs.end_time AS signature_end
+                cd.user_validated,
+                cd.is_correct,
+                cd.validated_at
             FROM cnn_detections cd
             JOIN cnn_appliances ca ON cd.appliance_id = ca.id
-            LEFT JOIN cnn_signatures cs ON cs.id = cd.signature_id
             WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
               AND (:end_time IS NULL OR cd.end_time <= :end_time)
             ORDER BY cd.start_time DESC
@@ -252,10 +250,12 @@ class DatabaseManager:
                     "energy_consumed": float(m["energy_consumed"]) if m["energy_consumed"] is not None else None,
                     "confidence_score": float(m["confidence_score"]) if m["confidence_score"] is not None else None,
                     "prediction_class": int(m["prediction_class"]) if m["prediction_class"] is not None else None,
-                    "signature_id": int(m["signature_id"]) if m["signature_id"] is not None else None,
                     "created_at": format_datetime(m["detection_created_at"]),
+                    "user_validated": m["user_validated"],
+                    "is_correct": m["is_correct"],
+                    "validated_at": format_datetime(m["validated_at"]),
                 }
-                # Exposer les features JSON (peut contenir matched_signature_id, matching.score)
+                # Exposer les features JSON
                 if "features" in m and m["features"] is not None:
                     feat = m["features"]
                     if isinstance(feat, str):
@@ -264,13 +264,6 @@ class DatabaseManager:
                         except Exception:
                             pass
                     det["features"] = feat
-                # Ajouter les bornes de la signature correspondante si disponibles
-                if m["signature_start"] is not None and m["signature_end"] is not None:
-                    det["matched_signature"] = {
-                        "id": det["signature_id"],
-                        "start_time": format_datetime(m["signature_start"]),
-                        "end_time": format_datetime(m["signature_end"]),
-                    }
                 detections.append(det)
 
             return detections
@@ -560,10 +553,16 @@ class DatabaseManager:
                 num_classes,
                 metrics,
                 model_path,
-                is_active,
+                model_status,
                 training_duration_seconds
             FROM cnn_models
-            ORDER BY training_date DESC
+            ORDER BY 
+                CASE model_status 
+                    WHEN 'current' THEN 1 
+                    WHEN 'backup' THEN 2 
+                    ELSE 3 
+                END,
+                training_date DESC
             LIMIT :limit OFFSET :offset
         """)
 
@@ -594,7 +593,7 @@ class DatabaseManager:
                     "num_classes": row[6],
                     "metrics": row[7],
                     "model_path": row[8],
-                    "is_active": row[9],
+                    "model_status": row[9],
                     "training_duration_seconds": row[10],
                 })
 
@@ -608,6 +607,9 @@ class DatabaseManager:
         """
         Supprime un modèle CNN de la base de données et du filesystem.
 
+        Si le modèle 'current' est supprimé, le modèle 'backup' est automatiquement
+        promu en 'current' pour garantir qu'il y a toujours un modèle actif.
+
         Args:
             model_id: ID du modèle à supprimer
 
@@ -615,11 +617,11 @@ class DatabaseManager:
             Dictionnaire avec le statut de suppression
 
         Raises:
-            ValueError: Si le modèle est actif ou n'existe pas
+            ValueError: Si le modèle n'existe pas
         """
-        # Vérifier que le modèle existe et n'est pas actif
+        # Vérifier que le modèle existe
         check_query = text("""
-            SELECT id, version, is_active, model_path
+            SELECT id, version, model_status, model_path
             FROM cnn_models
             WHERE id = :model_id
         """)
@@ -628,30 +630,49 @@ class DatabaseManager:
             result = conn.execute(
                 check_query, {"model_id": model_id}
             ).fetchone()
-            
+
             if not result:
                 raise ValueError(f"Modèle {model_id} non trouvé")
-            
-            model_id_db, version, is_active, model_path = result
-            
-            if is_active:
-                raise ValueError(
-                    f"Impossible de supprimer le modèle actif "
-                    f"(version {version})"
-                )
-            
-            # Supprimer de la base de données
+
+            model_id_db, version, model_status, model_path = result
+
+            # Supprimer d'abord le modèle de la base de données
             delete_query = text("""
                 DELETE FROM cnn_models
                 WHERE id = :model_id
             """)
-            
+
             conn.execute(delete_query, {"model_id": model_id})
+
+            # Si on vient de supprimer le modèle 'current', promouvoir 'backup' → 'current'
+            if model_status == 'current':
+                # Vérifier s'il existe un backup
+                backup_query = text("""
+                    SELECT id FROM cnn_models
+                    WHERE model_status = 'backup'
+                    LIMIT 1
+                """)
+                backup_result = conn.execute(backup_query).fetchone()
+
+                if backup_result:
+                    # Promouvoir backup → current
+                    promote_query = text("""
+                        UPDATE cnn_models
+                        SET model_status = 'current'
+                        WHERE model_status = 'backup'
+                    """)
+                    conn.execute(promote_query)
+                    logger.info(
+                        "✅ Modèle backup promu en current après "
+                        "suppression du modèle actif"
+                    )
+
             conn.commit()
-            
+
             return {
                 "id": model_id_db,
                 "version": version,
+                "model_status": model_status,
                 "model_path": model_path,
                 "deleted": True,
             }
@@ -708,6 +729,216 @@ class DatabaseManager:
 
             return detection_info
 
+    def delete_all_detections(self) -> dict[str, Any]:
+        """
+        Supprime toutes les détections de la base de données.
+
+        Returns:
+            Dictionnaire avec le nombre de détections supprimées
+        """
+        with self.engine.connect() as conn:
+            # Compter d'abord le nombre de détections
+            count_query = text("""
+                SELECT COUNT(*) FROM cnn_detections
+            """)
+            count = conn.execute(count_query).scalar() or 0
+
+            # Supprimer toutes les détections
+            delete_query = text("""
+                DELETE FROM cnn_detections
+            """)
+            conn.execute(delete_query)
+            conn.commit()
+
+            logger.info(f"🗑️  {count} détection(s) supprimée(s)")
+
+            return {
+                "deleted_count": count,
+                "status": "success",
+            }
+
+    def validate_detection(
+        self, detection_id: int, is_correct: bool
+    ) -> dict[str, Any] | None:
+        """
+        Marque une détection comme validée par l'utilisateur.
+
+        Args:
+            detection_id: ID de la détection à valider
+            is_correct: True si correcte, False si incorrecte
+
+        Returns:
+            Dictionnaire avec les informations de la détection validée
+            ou None si la détection n'existe pas
+        """
+        # Vérifier que la détection existe et récupérer ses informations
+        check_query = text("""
+            SELECT
+                cd.id,
+                cd.appliance_id,
+                ca.name,
+                cd.start_time,
+                cd.end_time,
+                cd.confidence_score,
+                cd.avg_power,
+                cd.energy_consumed
+            FROM cnn_detections cd
+            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            WHERE cd.id = :detection_id
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                check_query,
+                {"detection_id": detection_id}
+            ).fetchone()
+
+            if not result:
+                return None
+
+            detection_info = {
+                "id": result[0],
+                "appliance_id": result[1],
+                "appliance_name": result[2],
+                "start_time": format_datetime(result[3]),
+                "end_time": format_datetime(result[4]),
+                "confidence_score": (
+                    float(result[5]) if result[5] is not None else None
+                ),
+                "avg_power": float(result[6]) if result[6] is not None else None,
+                "energy_consumed": (
+                    float(result[7]) if result[7] is not None else None
+                ),
+                "user_validated": True,
+                "is_correct": is_correct,
+            }
+
+            # Si la détection est correcte, la marquer comme validée
+            if is_correct:
+                # Créer une signature positive à partir de la détection validée
+                # Vérifier qu'une signature similaire n'existe pas déjà
+                check_signature_query = text("""
+                    SELECT COUNT(*) FROM cnn_signatures
+                    WHERE appliance_id = :appliance_id
+                      AND start_time = :start_time
+                      AND end_time = :end_time
+                      AND is_negative = FALSE
+                """)
+
+                existing = conn.execute(
+                    check_signature_query,
+                    {
+                        "appliance_id": result[1],
+                        "start_time": result[3],
+                        "end_time": result[4]
+                    }
+                ).scalar()
+
+                if existing == 0:
+                    # Créer la signature positive avec les données de la détection
+                    create_signature_query = text("""
+                        INSERT INTO cnn_signatures
+                        (appliance_id, start_time, end_time, is_negative,
+                         avg_power, energy_consumed, created_at)
+                        VALUES
+                        (:appliance_id, :start_time, :end_time, FALSE,
+                         :avg_power, :energy_consumed, NOW())
+                    """)
+
+                    conn.execute(
+                        create_signature_query,
+                        {
+                            "appliance_id": result[1],
+                            "start_time": result[3],
+                            "end_time": result[4],
+                            "avg_power": result[6],
+                            "energy_consumed": result[7]
+                        }
+                    )
+                    logger.info(
+                        f"Signature positive créée pour {result[2]} "
+                        f"(détection {detection_id})"
+                    )
+
+                # Mettre à jour la détection avec les champs de validation
+                update_query = text("""
+                    UPDATE cnn_detections
+                    SET user_validated = :user_validated,
+                        is_correct = :is_correct,
+                        validated_at = NOW()
+                    WHERE id = :detection_id
+                """)
+
+                conn.execute(
+                    update_query,
+                    {
+                        "detection_id": detection_id,
+                        "user_validated": True,
+                        "is_correct": True,
+                    }
+                )
+            else:
+                # Si la détection est incorrecte, créer une signature négative
+                # puis supprimer la détection
+                if result[5] is not None and result[5] >= 0.6:
+                    # Vérifier qu'une signature négative similaire n'existe pas déjà
+                    check_negative_query = text("""
+                        SELECT COUNT(*) FROM cnn_signatures
+                        WHERE appliance_id = :appliance_id
+                          AND is_negative = TRUE
+                          AND start_time = :start_time
+                          AND end_time = :end_time
+                    """)
+
+                    existing = conn.execute(
+                        check_negative_query,
+                        {
+                            "appliance_id": result[1],
+                            "start_time": result[3],
+                            "end_time": result[4]
+                        }
+                    ).scalar()
+
+                    if existing == 0:
+                        # Créer la signature négative avec les données de la détection
+                        create_negative_query = text("""
+                            INSERT INTO cnn_signatures
+                            (appliance_id, start_time, end_time, is_negative,
+                             avg_power, energy_consumed, created_at)
+                            VALUES
+                            (:appliance_id, :start_time, :end_time, TRUE,
+                             :avg_power, :energy_consumed, NOW())
+                        """)
+
+                        conn.execute(
+                            create_negative_query,
+                            {
+                                "appliance_id": result[1],
+                                "start_time": result[3],
+                                "end_time": result[4],
+                                "avg_power": result[6],
+                                "energy_consumed": result[7]
+                            }
+                        )
+                        logger.info(
+                            f"Signature négative créée pour {result[2]} "
+                            f"(détection {detection_id})"
+                        )
+
+                # Supprimer la détection incorrecte
+                delete_query = text("""
+                    DELETE FROM cnn_detections
+                    WHERE id = :detection_id
+                """)
+                conn.execute(delete_query, {"detection_id": detection_id})
+                logger.info(f"Détection incorrecte supprimée: {detection_id}")
+
+                detection_info["deleted"] = True
+
+            conn.commit()
+
+            return detection_info
+
     def delete_all_signatures(self) -> dict[str, int]:
         """
         Supprime toutes les signatures de tous les appareils.
@@ -735,12 +966,71 @@ class DatabaseManager:
                 "signatures_deleted": signatures_count
             }
 
+    def delete_signature(self, signature_id: int) -> dict[str, Any] | None:
+        """
+        Supprime une signature spécifique.
+
+        Args:
+            signature_id: ID de la signature à supprimer
+
+        Returns:
+            Informations de la signature supprimée ou None si non trouvée
+        """
+        # Récupérer les informations avant suppression
+        get_query = text("""
+            SELECT
+                s.id,
+                s.appliance_id,
+                a.name as appliance_name,
+                s.start_time,
+                s.end_time,
+                s.avg_power,
+                s.is_negative,
+                s.created_at
+            FROM cnn_signatures s
+            JOIN cnn_appliances a ON s.appliance_id = a.id
+            WHERE s.id = :signature_id
+        """)
+
+        delete_query = text("""
+            DELETE FROM cnn_signatures
+            WHERE id = :signature_id
+        """)
+
+        with self.engine.connect() as conn:
+            # Récupérer les infos de la signature
+            result = conn.execute(
+                get_query,
+                {"signature_id": signature_id}
+            ).fetchone()
+
+            if not result:
+                return None
+
+            # Convertir en dict
+            signature_info = {
+                "id": result[0],
+                "appliance_id": result[1],
+                "appliance_name": result[2],
+                "start_time": format_datetime(result[3]),
+                "end_time": format_datetime(result[4]),
+                "avg_power": float(result[5]) if result[5] else None,
+                "is_negative": result[6],
+                "created_at": format_datetime(result[7]),
+            }
+
+            # Supprimer la signature
+            conn.execute(delete_query, {"signature_id": signature_id})
+            conn.commit()
+
+            return signature_info
+
     def get_all_signatures_with_appliance(self) -> list[dict[str, Any]]:
         """
         Récupère toutes les signatures avec les informations de l'appareil associé.
 
         Returns:
-            Liste des signatures avec appliance_name, appliance_description, start_time, end_time
+            Liste des signatures avec appliance_name, appliance_description, start_time, end_time, is_negative
         """
         query = text("""
             SELECT
@@ -752,7 +1042,8 @@ class DatabaseManager:
                 cs.end_time,
                 cs.avg_power,
                 cs.energy_consumed,
-                EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) as duration_seconds
+                EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) as duration_seconds,
+                cs.is_negative
             FROM cnn_signatures cs
             JOIN cnn_appliances ca ON cs.appliance_id = ca.id
             ORDER BY cs.start_time DESC
@@ -771,6 +1062,7 @@ class DatabaseManager:
                     "avg_power": float(row[6]) if row[6] is not None else None,
                     "energy_consumed": float(row[7]) if row[7] is not None else None,
                     "duration_seconds": float(row[8]) if row[8] is not None else None,
+                    "is_negative": row[9] if row[9] is not None else False,
                 }
                 for row in result
             ]

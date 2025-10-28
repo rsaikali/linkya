@@ -134,6 +134,28 @@ export const apiService = {
     }
   },
 
+  // Valider une détection (marquer comme correcte)
+  validateDetection: async (detectionId) => {
+    try {
+      const response = await api.patch(`/api/detections/${detectionId}/validate`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la validation de la détection:', error);
+      throw error;
+    }
+  },
+
+  // Invalider une détection (marquer comme incorrecte)
+  invalidateDetection: async (detectionId) => {
+    try {
+      const response = await api.patch(`/api/detections/${detectionId}/invalidate`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de l\'invalidation de la détection:', error);
+      throw error;
+    }
+  },
+
   // Exporter toutes les signatures en CSV
   exportSignatures: async () => {
     try {

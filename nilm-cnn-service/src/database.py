@@ -79,8 +79,13 @@ class DatabaseManager:
             Column('prediction_class', Integer),  # Classe prédite par CNN
             Column('features', JSON),  # Features de la détection
             Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
+            # Champs de validation utilisateur pour apprentissage par feedback
+            Column('user_validated', Boolean, default=None, nullable=True),  # NULL = pas encore validée
+            Column('is_correct', Boolean, default=None, nullable=True),  # True = correcte, False = incorrecte
+            Column('validated_at', DateTime(timezone=True), nullable=True),  # Timestamp de validation
             Index('idx_cnn_detections_appliance', 'appliance_id'),
-            Index('idx_cnn_detections_time', 'start_time', 'end_time')
+            Index('idx_cnn_detections_time', 'start_time', 'end_time'),
+            Index('idx_cnn_detections_validation', 'user_validated', 'is_correct')
         )
         
         # Table des modèles CNN versionnés
@@ -204,7 +209,8 @@ class DatabaseManager:
         self,
         appliance_id: int,
         start_time: datetime,
-        end_time: datetime
+        end_time: datetime,
+        is_negative: bool = False
     ) -> Optional[int]:
         """
         Ajoute une signature de courbe soumise par l'utilisateur
@@ -213,6 +219,7 @@ class DatabaseManager:
             appliance_id: ID de l'appareil
             start_time: Début de la signature
             end_time: Fin de la signature
+            is_negative: True si c'est une signature négative (faux positif)
             
         Returns:
             ID de la signature créée ou None si erreur
@@ -276,9 +283,10 @@ class DatabaseManager:
                 query = text("""
                     INSERT INTO cnn_signatures
                     (appliance_id, start_time, end_time, avg_power,
-                     power_std, energy_consumed, created_at)
+                     power_std, energy_consumed, is_negative, created_at)
                     VALUES (:appliance_id, :start_time, :end_time,
-                            :avg_power, :power_std, :energy_consumed, NOW())
+                            :avg_power, :power_std, :energy_consumed,
+                            :is_negative, NOW())
                     RETURNING id
                 """)
 
@@ -291,6 +299,7 @@ class DatabaseManager:
                         'avg_power': avg_power,
                         'power_std': power_std,
                         'energy_consumed': energy_consumed,
+                        'is_negative': is_negative,
                     }
                 )
                 

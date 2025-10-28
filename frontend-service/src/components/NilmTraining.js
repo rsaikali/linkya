@@ -30,6 +30,7 @@ import {
   CheckCircle as SuccessIcon,
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
+  Save as BackupIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
 
@@ -42,12 +43,14 @@ const NilmTraining = () => {
   const [loading, setLoading] = useState(true);
   const [trainLoading, setTrainLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
   
   // Dialog de confirmation de suppression
   const [deleteDialog, setDeleteDialog] = useState({
     open: false,
     modelId: null,
     modelVersion: '',
+    modelStatus: '',
   });
   
   // Snackbar pour les notifications
@@ -119,11 +122,12 @@ const NilmTraining = () => {
   };
 
   // Ouvrir le dialog de confirmation de suppression
-  const handleOpenDeleteDialog = (modelId, modelVersion) => {
+  const handleOpenDeleteDialog = (modelId, modelVersion, modelStatus) => {
     setDeleteDialog({
       open: true,
       modelId,
       modelVersion,
+      modelStatus,
     });
   };
 
@@ -133,6 +137,7 @@ const NilmTraining = () => {
       open: false,
       modelId: null,
       modelVersion: '',
+      modelStatus: '',
     });
   };
 
@@ -156,6 +161,26 @@ const NilmTraining = () => {
       showSnackbar(errorMsg, 'error');
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  // Créer un backup manuel
+  const handleCreateBackup = async () => {
+    setBackupLoading(true);
+    try {
+      const response = await api.post('/api/nilm/models/backup');
+      showSnackbar(
+        `Backup créé: ${response.data.backup_version}`,
+        'success'
+      );
+      // Recharger la liste après 2 secondes
+      setTimeout(() => loadModels(), 2000);
+    } catch (error) {
+      console.error('Erreur lors de la création du backup:', error);
+      const errorMsg = error.response?.data?.detail || 'Erreur lors de la création du backup';
+      showSnackbar(errorMsg, 'error');
+    } finally {
+      setBackupLoading(false);
     }
   };
 
@@ -303,6 +328,66 @@ const NilmTraining = () => {
     return { score: score.toFixed(1), color, label, unit: '%' };
   };
 
+  // Obtenir le badge de statut du modèle
+  const getStatusBadge = (modelStatus) => {
+    switch (modelStatus) {
+      case 'current':
+        return (
+          <Chip
+            icon={<SuccessIcon />}
+            label="Actif"
+            color="success"
+            size="small"
+          />
+        );
+      case 'backup':
+        return (
+          <Chip
+            label="Backup"
+            color="warning"
+            size="small"
+          />
+        );
+      case 'archived':
+        return (
+          <Chip
+            label="Archivé"
+            color="default"
+            size="small"
+            variant="outlined"
+          />
+        );
+      default:
+        return (
+          <Chip
+            label={modelStatus || 'Inconnu'}
+            size="small"
+            variant="outlined"
+          />
+        );
+    }
+  };
+
+  // Message d'avertissement pour la suppression
+  const getDeleteWarning = (modelStatus) => {
+    if (modelStatus === 'current') {
+      return (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          ⚠️ <strong>Attention :</strong> Vous supprimez le modèle actif.
+          Le modèle 'backup' sera automatiquement promu en 'current'.
+        </Alert>
+      );
+    } else if (modelStatus === 'backup') {
+      return (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          ℹ️ Vous supprimez le modèle de sauvegarde.
+          Vous ne pourrez plus revenir en arrière en cas de problème.
+        </Alert>
+      );
+    }
+    return null;
+  };
+
   return (
     <>
       <Card>
@@ -312,6 +397,17 @@ const NilmTraining = () => {
           avatar={<TrainIcon />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                startIcon={backupLoading ? <CircularProgress size={16} /> : <BackupIcon />}
+                onClick={handleCreateBackup}
+                disabled={backupLoading || trainLoading}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                {backupLoading ? 'Sauvegarde...' : 'Backup manuel'}
+              </Button>
               <Button
                 variant="contained"
                 color="primary"
@@ -360,20 +456,7 @@ const NilmTraining = () => {
                     return (
                       <TableRow key={model.id} hover>
                         <TableCell>
-                            {model.is_active ? (
-                              <Chip
-                                icon={<SuccessIcon />}
-                                label="Actif"
-                                color="success"
-                                size="small"
-                              />
-                            ) : (
-                              <Chip
-                                label="Inactif"
-                                size="small"
-                                variant="outlined"
-                              />
-                            )}
+                          {getStatusBadge(model.model_status)}
                         </TableCell>
                         <TableCell>
                             {quality ? (
@@ -420,19 +503,17 @@ const NilmTraining = () => {
                             {formatMetrics(model)}
                           </TableCell>
                           <TableCell align="center">
-                            <Tooltip 
-                              title={
-                                model.is_active 
-                                  ? "Impossible de supprimer le modèle actif" 
-                                  : "Supprimer ce modèle"
-                              }
-                            >
+                            <Tooltip title="Supprimer ce modèle">
                               <span>
                                 <IconButton
                                   size="small"
                                   color="error"
-                                  onClick={() => handleOpenDeleteDialog(model.id, model.version)}
-                                  disabled={model.is_active || deleteLoading}
+                                  onClick={() => handleOpenDeleteDialog(
+                                    model.id, 
+                                    model.version,
+                                    model.model_status
+                                  )}
+                                  disabled={deleteLoading}
                                 >
                                   <DeleteIcon />
                                 </IconButton>
@@ -487,6 +568,8 @@ const NilmTraining = () => {
             <br />
             <strong>Cette action est irréversible.</strong>
           </DialogContentText>
+          
+          {getDeleteWarning(deleteDialog.modelStatus)}
         </DialogContent>
         <DialogActions>
           <Button 
