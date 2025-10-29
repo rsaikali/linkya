@@ -172,63 +172,53 @@ const ConsumptionChart = () => {
 
   // Appliquer le zoom (initial ou restauré) après chargement des données
   useEffect(() => {
-    if (!history || !history.data || history.data.length === 0 || !chartRef.current) {
-      return;
-    }
+    if (!history || !history.data || history.data.length === 0) return;
 
-    // Utiliser un petit délai pour s'assurer que le chart est complètement rendu
-    setTimeout(() => {
+    // Petit délai pour s'assurer que le chart est rendu
+    const timer = setTimeout(() => {
       if (!chartRef.current) return;
 
       let finalMinIndex, finalMaxIndex;
 
-      // Si on a un zoom à restaurer (après rechargement pendant zoom/pan)
+      // Restaurer le zoom après rechargement pendant zoom/pan
       if (pendingZoomRef.current) {
         const { minTime, maxTime } = pendingZoomRef.current;
         
-        console.log('🔍 Restoring zoom:', { 
-          minTime: new Date(minTime).toISOString(), 
-          maxTime: new Date(maxTime).toISOString(),
-          dataLength: history.data.length 
-        });
+        // Recherche optimisée des index
+        finalMinIndex = history.data.findIndex(d => new Date(d.time).getTime() >= minTime);
+        finalMaxIndex = history.data.findIndex(d => new Date(d.time).getTime() >= maxTime);
         
-        // Trouver les index correspondant aux timestamps sauvegardés
-        const minIndex = history.data.findIndex(d => new Date(d.time).getTime() >= minTime);
-        const maxIndex = history.data.findIndex(d => new Date(d.time).getTime() >= maxTime);
+        // Fallback si pas trouvé
+        if (finalMinIndex === -1) finalMinIndex = 0;
+        if (finalMaxIndex === -1) finalMaxIndex = history.data.length - 1;
         
-        finalMinIndex = minIndex !== -1 ? minIndex : 0;
-        finalMaxIndex = maxIndex !== -1 ? maxIndex : history.data.length - 1;
-        
-        console.log('🔍 Computed indexes:', { finalMinIndex, finalMaxIndex });
+        console.log(`✅ Zoom restored: [${finalMinIndex}, ${finalMaxIndex}]`);
         pendingZoomRef.current = null;
       } 
-      // Sinon, si c'est le premier chargement, appliquer le zoom initial de 48h
+      // Zoom initial de 48h au premier chargement
       else if (isInitialLoadRef.current) {
         const now = new Date();
         const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-        const startIndex = history.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
+        finalMinIndex = history.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
         
-        finalMinIndex = startIndex !== -1 ? startIndex : 0;
+        if (finalMinIndex === -1) finalMinIndex = 0;
         finalMaxIndex = history.data.length - 1;
         
-        console.log('🔍 Applying initial 48h zoom:', { finalMinIndex, finalMaxIndex });
+        console.log(`✅ Initial 48h zoom: [${finalMinIndex}, ${finalMaxIndex}]`);
         isInitialLoadRef.current = false;
       } else {
-        // Pas de zoom à appliquer
-        return;
+        return; // Pas de zoom à appliquer
       }
 
-      // Appliquer le zoom
-      if (chartRef.current.zoomScale) {
-        chartRef.current.zoomScale('x', { min: finalMinIndex, max: finalMaxIndex }, 'none');
-        console.log('✅ Zoom applied via zoomScale');
-      } else if (chartRef.current.scales && chartRef.current.scales.x) {
+      // Appliquer le zoom via l'API Chart.js
+      if (chartRef.current.scales?.x) {
         chartRef.current.scales.x.min = finalMinIndex;
         chartRef.current.scales.x.max = finalMaxIndex;
         chartRef.current.update('none');
-        console.log('✅ Zoom applied via scales');
       }
-    }, 100);
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [history]);
 
   // Fonction pour réinitialiser le zoom
@@ -244,56 +234,82 @@ const ConsumptionChart = () => {
     fetchHistory(sevenDaysAgo.toISOString(), now.toISOString(), optimalIntervalFor48h);
   }, [getOptimalInterval, fetchHistory]);
 
+  // Calculer la plage de chargement intelligente basée sur la plage visible
+  const getSmartLoadingRange = useCallback((visibleHours, centerTime) => {
+    // Déterminer la plage de chargement selon le niveau de zoom
+    let loadHours;
+    if (visibleHours <= 6) {
+      loadHours = 48; // Vue détaillée : charger 48h (permet dézoom vers 24h)
+    } else if (visibleHours <= 24) {
+      loadHours = 72; // Vue moyenne : charger 72h (permet dézoom)
+    } else {
+      loadHours = 168; // Vue large : charger 7 jours complets
+    }
+    
+    // Calculer les bornes centrées sur la plage visible
+    const halfRange = (loadHours * 60 * 60 * 1000) / 2;
+    const startTime = new Date(centerTime - halfRange);
+    const endTime = new Date(centerTime + halfRange);
+    
+    // S'assurer qu'on ne dépasse pas "maintenant"
+    const now = new Date();
+    if (endTime > now) {
+      endTime.setTime(now.getTime());
+      startTime.setTime(now.getTime() - loadHours * 60 * 60 * 1000);
+    }
+    
+    return {
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      loadHours
+    };
+  }, []);
+
   // Callback appelé après un zoom ou pan
-  const handleZoomPanComplete = ({ chart }) => {
+  const handleZoomPanComplete = useCallback(({ chart }) => {
     // Annuler le timeout précédent pour éviter les requêtes multiples
     if (zoomTimeoutRef.current) {
       clearTimeout(zoomTimeoutRef.current);
     }
 
-    // Debounce de 1500ms (1.5s) avant de recharger les données
-    // Laisse le temps à l'utilisateur de finir ses manipulations
+    // Debounce de 1s avant d'analyser si un rechargement est nécessaire
     zoomTimeoutRef.current = setTimeout(() => {
       if (!history || !history.data || history.data.length === 0) return;
 
       const xScale = chart.scales.x;
-      const visibleMin = Math.floor(xScale.min);
-      const visibleMax = Math.ceil(xScale.max);
+      const visibleMin = Math.max(0, Math.floor(xScale.min));
+      const visibleMax = Math.min(history.data.length - 1, Math.ceil(xScale.max));
 
       // Calculer la plage de temps visible
-      const minIndex = Math.max(0, visibleMin);
-      const maxIndex = Math.min(history.data.length - 1, visibleMax);
-      const minTimeStr = history.data[minIndex]?.time;
-      const maxTimeStr = history.data[maxIndex]?.time;
+      const minTimeStr = history.data[visibleMin]?.time;
+      const maxTimeStr = history.data[visibleMax]?.time;
       
-      // Vérifier que les timestamps sont valides
       if (!minTimeStr || !maxTimeStr) {
-        console.warn('Invalid timestamps in visible range');
+        console.warn('⚠️ Invalid timestamps in visible range');
         return;
       }
       
       const minTime = new Date(minTimeStr);
       const maxTime = new Date(maxTimeStr);
       
-      // Vérifier que les dates sont valides
       if (isNaN(minTime.getTime()) || isNaN(maxTime.getTime())) {
-        console.warn('Invalid date objects');
+        console.warn('⚠️ Invalid date objects');
         return;
       }
       
       const visibleHours = (maxTime - minTime) / (1000 * 60 * 60);
+      const centerTime = (minTime.getTime() + maxTime.getTime()) / 2;
 
-      console.log(`🔍 Visible range: ${visibleHours.toFixed(2)}h (${minTime.toLocaleTimeString()} → ${maxTime.toLocaleTimeString()})`);
+      console.log(`🔍 Visible: ${visibleHours.toFixed(1)}h | Interval: ${history.interval}`);
 
-      // Recharger les données avec l'intervalle optimal
-      const newInterval = getOptimalInterval(visibleHours);
-      const currentInterval = history.interval;
+      // Déterminer l'intervalle optimal pour cette plage
+      const optimalInterval = getOptimalInterval(visibleHours);
 
-      // Ne recharger que si l'intervalle a changé
-      if (newInterval !== currentInterval) {
-        console.log(`🔄 Reloading with new interval: ${currentInterval} → ${newInterval}`);
+      // Ne recharger que si l'intervalle doit changer
+      if (optimalInterval !== history.interval) {
+        console.log(`🔄 Interval change needed: ${history.interval} → ${optimalInterval}`);
         
-        // Sauvegarder la plage visible actuelle (en timestamp) pour la restaurer après rechargement
+        // Sauvegarder la plage visible pour restauration
         pendingZoomRef.current = {
           minTime: minTime.getTime(),
           maxTime: maxTime.getTime(),
@@ -301,18 +317,14 @@ const ConsumptionChart = () => {
         
         setIsReloading(true);
         
-        // Toujours charger les 7 derniers jours complets pour permettre le dézoom
-        // Cela évite le problème où on ne peut plus dézoomer après avoir zoomé sur une courte période
-        const now = new Date();
-        const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
-        const startTime = sevenDaysAgo.toISOString();
-        const endTime = now.toISOString();
+        // Calculer la plage de chargement intelligente
+        const { startTime, endTime, loadHours } = getSmartLoadingRange(visibleHours, centerTime);
         
-        console.log(`📊 Loading full 7-day range with ${newInterval} interval`);
-        fetchHistory(startTime, endTime, newInterval);
+        console.log(`📊 Loading ${loadHours}h with ${optimalInterval} interval`);
+        fetchHistory(startTime, endTime, optimalInterval);
       }
-    }, 1500);
-  };
+    }, 1000);
+  }, [history, getOptimalInterval, getSmartLoadingRange, fetchHistory]);
 
   if (loading && !history) {
     return (
