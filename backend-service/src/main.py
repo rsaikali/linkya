@@ -3,10 +3,11 @@
 import asyncio
 import json
 import logging
+import redis.asyncio as aioredis
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Set
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi import FastAPI, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -1310,3 +1311,106 @@ async def import_signatures(file: UploadFile):
             status_code=500,
             detail=f"Erreur serveur lors de l'import: {str(e)}"
         )
+
+
+# --- WebSocket Manager for Training Logs ---
+class TrainingLogsManager:
+    """Manages WebSocket connections for real-time training logs."""
+    
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self.redis_client = None
+        self.pubsub = None
+        self.listener_task = None
+    
+    async def connect(self, websocket: WebSocket):
+        """Accept new WebSocket connection."""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"WebSocket connected. Total: {len(self.active_connections)}")
+        
+        # Start Redis listener if not already running
+        if not self.listener_task:
+            await self.start_redis_listener()
+    
+    def disconnect(self, websocket: WebSocket):
+        """Remove WebSocket connection."""
+        self.active_connections.discard(websocket)
+        logger.info(f"WebSocket disconnected. Total: {len(self.active_connections)}")
+    
+    async def start_redis_listener(self):
+        """Start listening to Redis Pub/Sub channel."""
+        try:
+            redis_url = settings.celery_broker_url.replace('redis://', '')
+            host_port = redis_url.split('/')[0]
+            
+            self.redis_client = await aioredis.from_url(
+                f"redis://{host_port}",
+                decode_responses=True
+            )
+            self.pubsub = self.redis_client.pubsub()
+            await self.pubsub.subscribe("training:logs")
+            
+            logger.info("✅ Started Redis listener for training:logs")
+            
+            # Start background task
+            self.listener_task = asyncio.create_task(self._listen_redis())
+            
+        except Exception as e:
+            logger.error(f"Failed to start Redis listener: {e}")
+    
+    async def _listen_redis(self):
+        """Background task that listens to Redis and broadcasts to WebSockets."""
+        try:
+            async for message in self.pubsub.listen():
+                if message['type'] == 'message':
+                    data = message['data']
+                    await self.broadcast(data)
+        except Exception as e:
+            logger.error(f"Error in Redis listener: {e}")
+        finally:
+            if self.pubsub:
+                await self.pubsub.unsubscribe("training:logs")
+                await self.pubsub.close()
+            if self.redis_client:
+                await self.redis_client.close()
+    
+    async def broadcast(self, message: str):
+        """Broadcast message to all connected WebSocket clients."""
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.warning(f"Failed to send to WebSocket: {e}")
+                disconnected.add(connection)
+        
+        # Remove disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+training_logs_manager = TrainingLogsManager()
+
+
+@app.websocket("/ws/training")
+async def websocket_training_logs(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time training logs.
+    
+    Clients connect to this endpoint to receive live updates during model training.
+    Events include: training_start, epoch_start, epoch_end, batch_update, training_complete.
+    """
+    await training_logs_manager.connect(websocket)
+    try:
+        # Keep connection alive and wait for messages
+        while True:
+            # Wait for any client message (heartbeat, commands, etc.)
+            data = await websocket.receive_text()
+            # Echo back for now (can add commands later)
+            logger.debug(f"Received from client: {data}")
+    except WebSocketDisconnect:
+        training_logs_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        training_logs_manager.disconnect(websocket)

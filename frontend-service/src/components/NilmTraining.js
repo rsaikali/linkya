@@ -33,6 +33,7 @@ import {
   Save as BackupIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
+import TrainingLogsViewer from './TrainingLogsViewer';
 
 const NilmTraining = () => {
   // État
@@ -605,6 +606,9 @@ const NilmTraining = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Training Logs Viewer */}
+      <TrainingLogsViewer />
     </>
   );
 };
