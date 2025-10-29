@@ -37,7 +37,7 @@ Nilmia is a real-time electrical consumption analysis platform that:
 - Auto-reconnection and broadcast to multiple clients
 
 **Storage Model**:
-- TimescaleDB `linky_realtime` hypertable stores 48h rolling window of raw Linky data (PAPP, HCHP, HCHC, temperature)
+- TimescaleDB `linky_realtime` hypertable stores all raw Linky data (PAPP, HCHP, HCHC, temperature) - no automatic retention policy
 - NILM tables (`cnn_appliances`, `cnn_signatures`, `cnn_detections`, `cnn_models`) store training data and results
 - TensorFlow models persisted in `./models` volume with versioned checkpoints
 
@@ -142,7 +142,8 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 ### sync-service (Python 3.13 + uv)
 - Polls remote MySQL `linky_realtime` every 5 seconds
 - Bulk inserts into TimescaleDB with automatic hypertable partitioning
-- Enforces 48h retention policy
+- No automatic data deletion (all data persisted)
+- `SYNC_RETENTION_HOURS=48` only limits initial sync, not ongoing storage
 - Publishes new consumption data to Redis `consumption:updates` channel for real-time WebSocket streaming
 - Celery tasks: `init_database`, `full_sync`, `incremental_sync`, `get_stats`
 
@@ -396,6 +397,18 @@ ORDER BY total_wh DESC;
 - Update `documentation.md` periodically with architecture changes (not detailed implementation)
 
 ## Recent Changes
+
+- **Interactive Chart Zoom** (October 2025):
+  - **Added chartjs-plugin-zoom** to enable zoom/pan navigation on consumption chart
+  - **Zoom**: Mouse wheel to zoom in/out on time axis
+  - **Pan**: Click and drag to navigate through time
+  - **Reset button**: Added "Réinitialiser" button with ZoomOutMap icon to restore original view
+  - **Removed double-click signature creation**: Legacy selection via two clicks removed (SignatureModal preserved for future reintegration)
+  - **Removed time range selector**: Chart now loads all available data (max 168h = 7 days) and displays last 48h by default
+  - Users can zoom out to see all available data from linky_realtime table
+  - Updated UI with clear instructions: "Utilisez la molette pour zoomer et glisser-déposer pour naviguer"
+  - Configuration: zoom/pan restricted to X-axis only, with limits set to original data bounds
+  - Initial zoom automatically set to last 48h window on chart load
 
 - **Time Series Cross-Validation** (October 2025) ✅ **IN PRODUCTION**:
   - **Replaced random train/val split** with temporal cross-validation

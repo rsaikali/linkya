@@ -7,12 +7,9 @@ import {
   Box,
   CircularProgress,
   Alert,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   FormControlLabel,
   Switch,
+  Button,
 } from '@mui/material';
 import {
   Chart as ChartJS,
@@ -26,8 +23,9 @@ import {
   Filler,
 } from 'chart.js';
 import annotationPlugin from 'chartjs-plugin-annotation';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { Line } from 'react-chartjs-2';
-import { ShowChart } from '@mui/icons-material';
+import { ShowChart, ZoomOutMap } from '@mui/icons-material';
 import { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import SignatureModal from './SignatureModal';
@@ -41,7 +39,8 @@ ChartJS.register(
   Tooltip,
   Legend,
   Filler,
-  annotationPlugin
+  annotationPlugin,
+  zoomPlugin
 );
 
 const ConsumptionChart = () => {
@@ -49,34 +48,15 @@ const ConsumptionChart = () => {
   const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeRange, setTimeRange] = useState(24);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const chartRef = useRef(null);
-  const selectionStartRef = useRef(null);
-
-  // Déterminer l'intervalle d'agrégation selon la période
-  const getIntervalForTimeRange = (range) => {
-    if (range <= 6) {
-      // 1 hour ou moins: pas d'agrégation (données brutes)
-      return 'raw';
-    } else if (range <= 24) {
-      // Jusqu'à 24 heures: agrégation à 15 minutes
-      return '1 minutes';
-    } else if (range <= 48) {
-      // Jusqu'à 48 heures: agrégation à 30 minutes
-      return '1 minutes';
-    } else {
-      // Plus de 48 heures: agrégation à 1 heure
-      return '5 minutes';
-    }
-  };
 
   const fetchHistory = async () => {
     try {
-      const interval = getIntervalForTimeRange(timeRange);
-      const result = await apiService.getConsumptionHistory(timeRange, interval);
+      // Charger toutes les données disponibles (max 168h = 7 jours)
+      const result = await apiService.getConsumptionHistory(168, '1 minutes');
       setHistory(result);
       setError(null);
     } catch (err) {
@@ -92,10 +72,10 @@ const ConsumptionChart = () => {
     // Fetch initial data
     fetchHistory();
     
-    // Fetch initial detections
+    // Fetch initial detections (toutes les détections disponibles)
     const fetchDetections = async () => {
       try {
-        const result = await apiService.getDetections(timeRange);
+        const result = await apiService.getDetections(168);
         setDetections(result.detections || []);
       } catch (err) {
         console.error('Failed to fetch detections:', err);
@@ -116,7 +96,7 @@ const ConsumptionChart = () => {
       console.log('✅ Detection job completed:', data);
       // Refresh the entire detection list when job is complete
       try {
-        const result = await apiService.getDetections(timeRange);
+        const result = await apiService.getDetections(168);
         setDetections(result.detections || []);
       } catch (err) {
         console.error('Failed to refresh detections after job completion:', err);
@@ -150,7 +130,7 @@ const ConsumptionChart = () => {
     // Connect to WebSocket
     detectionsWS.connect();
 
-    // Cleanup on unmount or timeRange change
+    // Cleanup on unmount
     return () => {
       detectionsWS.off('new_detection', handleNewDetection);
       detectionsWS.off('detection_start', handleDetectionStart);
@@ -159,30 +139,12 @@ const ConsumptionChart = () => {
       detectionsWS.off('detections_cleared', handleDetectionsCleared);
       detectionsWS.off('error', handleError);
     };
-  }, [timeRange]);
+  }, []);
 
-  // Gestion du clic sur le graphique pour sélectionner une plage
-  const handleChartClick = (dataIndex) => {
-    if (selectionStartRef.current === null) {
-      // Premier clic - début de la sélection
-      selectionStartRef.current = dataIndex;
-    } else {
-      // Deuxième clic - fin de la sélection
-      const startIndex = Math.min(selectionStartRef.current, dataIndex);
-      const endIndex = Math.max(selectionStartRef.current, dataIndex);
-      
-      const startTime = new Date(history.data[startIndex].time);
-      const endTime = new Date(history.data[endIndex].time);
-      
-      setSelectedRange({
-        startIndex,
-        endIndex,
-        startTime,
-        endTime,
-      });
-      
-      setShowSignatureModal(true);
-      selectionStartRef.current = null;
+  // Fonction pour réinitialiser le zoom
+  const handleResetZoom = () => {
+    if (chartRef.current) {
+      chartRef.current.resetZoom();
     }
   };
 
@@ -229,6 +191,12 @@ const ConsumptionChart = () => {
   });
 
   const powerData = history.data.map(d => d.avg_papp);
+
+  // Calculer l'index de départ pour les dernières 48h (vue initiale)
+  const now = new Date();
+  const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+  const startIndex = history.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
+  const initialMinIndex = startIndex !== -1 ? startIndex : 0;
 
   // Créer une palette de couleurs par appareil
   const getApplianceColor = (applianceName) => {
@@ -412,12 +380,6 @@ const ConsumptionChart = () => {
         top: topPadding,
       },
     },
-    onClick: (event, elements) => {
-      // Extraire l'index du point cliqué
-      if (elements.length > 0) {
-        handleChartClick(elements[0].index);
-      }
-    },
     interaction: {
       mode: 'index',
       intersect: false,
@@ -440,6 +402,28 @@ const ConsumptionChart = () => {
           },
         },
       },
+      zoom: {
+        zoom: {
+          wheel: {
+            enabled: true,
+            speed: 0.1,
+          },
+          pinch: {
+            enabled: true,
+          },
+          mode: 'x',
+        },
+        pan: {
+          enabled: true,
+          mode: 'x',
+        },
+        limits: {
+          x: {
+            min: 0,
+            max: history.data.length - 1,
+          },
+        },
+      },
     },
     scales: {
       y: {
@@ -450,6 +434,8 @@ const ConsumptionChart = () => {
         },
       },
       x: {
+        min: initialMinIndex,
+        max: history.data.length - 1,
         title: {
           display: false,
           text: 'Temps',
@@ -467,14 +453,19 @@ const ConsumptionChart = () => {
       <Card>
         <CardHeader
           title="Historique de consommation"
-          subheader={
-            selectionStartRef.current !== null
-              ? "💡 Cliquez sur un deuxième point pour finaliser la sélection"
-              : "Cliquez sur deux points du graphique pour créer une signature"
-          }
+          subheader="Utilisez la molette pour zoomer et glisser-déposer pour naviguer"
           avatar={<ShowChart />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ZoomOutMap />}
+                onClick={handleResetZoom}
+                sx={{ textTransform: 'none' }}
+              >
+                Réinitialiser
+              </Button>
               <FormControlLabel
                 control={
                   <Switch
@@ -491,33 +482,13 @@ const ConsumptionChart = () => {
                 }
                 sx={{ ml: 1 }}
               />
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel>Période</InputLabel>
-                <Select
-                  value={timeRange}
-                  label="Période"
-                  onChange={(e) => setTimeRange(e.target.value)}
-                >
-                  <MenuItem value={1/60}>1 minute</MenuItem>
-                  <MenuItem value={15/60}>15 minutes</MenuItem>
-                  <MenuItem value={30/60}>30 minutes</MenuItem>
-                  <MenuItem value={1}>1 heure</MenuItem>
-                  <MenuItem value={2}>2 heures</MenuItem>
-                  <MenuItem value={4}>4 heures</MenuItem>
-                  <MenuItem value={6}>6 heures</MenuItem>
-                  <MenuItem value={12}>12 heures</MenuItem>
-                  <MenuItem value={24}>24 heures</MenuItem>
-                  <MenuItem value={48}>48 heures</MenuItem>
-                  <MenuItem value={168}>7 jours</MenuItem>
-                </Select>
-              </FormControl>
               
               {loading && <CircularProgress size={24} />}
             </Box>
           }
         />
         <CardContent>
-          <Box sx={{ height: 400, mb: 3, cursor: 'crosshair' }}>
+          <Box sx={{ height: 400, mb: 3 }}>
             <Line ref={chartRef} data={chartData} options={options} />
           </Box>
 
