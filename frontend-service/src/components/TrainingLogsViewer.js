@@ -8,10 +8,10 @@ import {
   LinearProgress,
   Chip,
   Divider,
-  Grid,
   Paper,
   IconButton,
   Collapse,
+  Alert,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -206,61 +206,103 @@ const TrainingLogsViewer = () => {
       <Collapse in={expanded}>
         <CardContent>
           {isTraining && (
-            <Box mb={2}>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <Paper sx={{ p: 2 }}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Progress
-                    </Typography>
-                    <Box display="flex" alignItems="center" gap={1} mb={1}>
-                      <LinearProgress
-                        variant="determinate"
-                        value={trainingData.progress}
-                        sx={{ flex: 1, height: 8, borderRadius: 4 }}
+            <Box mb={3}>
+              <Typography variant="subtitle2" gutterBottom>
+                Progress
+              </Typography>
+              <Box display="flex" alignItems="center" gap={1} mb={2}>
+                <LinearProgress
+                  variant="determinate"
+                  value={trainingData.progress}
+                  sx={{ flex: 1, height: 8, borderRadius: 4 }}
+                />
+                <Typography variant="body2" fontWeight="bold" sx={{ minWidth: '50px' }}>
+                  {trainingData.progress.toFixed(1)}%
+                </Typography>
+              </Box>
+              
+              <Box display="flex" gap={3} mb={2}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Epoch
+                  </Typography>
+                  <Typography variant="body1" fontWeight="medium">
+                    {trainingData.currentEpoch} / {trainingData.totalEpochs}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Elapsed
+                  </Typography>
+                  <Typography variant="body1" fontWeight="medium">
+                    {formatDuration(trainingData.elapsedSeconds)}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    ETA
+                  </Typography>
+                  <Typography variant="body1" fontWeight="medium">
+                    {formatDuration(trainingData.etaSeconds)}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {Object.keys(trainingData.metrics).length > 0 && (
+                <Box mt={2}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Current Metrics
+                  </Typography>
+                  <Box display="flex" flexWrap="wrap" gap={1}>
+                    {Object.entries(trainingData.metrics).map(([key, value]) => (
+                      <Chip
+                        key={key}
+                        label={`${key}: ${typeof value === 'number' ? value.toFixed(4) : value}`}
+                        size="small"
+                        sx={{ fontFamily: 'monospace' }}
                       />
-                      <Typography variant="body2" fontWeight="bold">
-                        {trainingData.progress.toFixed(1)}%
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2">
-                      Epoch {trainingData.currentEpoch} / {trainingData.totalEpochs}
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Paper sx={{ p: 2 }}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Timing
-                    </Typography>
-                    <Typography variant="body2">
-                      Elapsed: {formatDuration(trainingData.elapsedSeconds)}
-                    </Typography>
-                    <Typography variant="body2">
-                      ETA: {formatDuration(trainingData.etaSeconds)}
-                    </Typography>
-                  </Paper>
-                </Grid>
-                {Object.keys(trainingData.metrics).length > 0 && (
-                  <Grid item xs={12}>
-                    <Paper sx={{ p: 2 }}>
-                      <Typography variant="body2" color="text.secondary" gutterBottom>
-                        Current Metrics
-                      </Typography>
-                      <Grid container spacing={1}>
-                        {Object.entries(trainingData.metrics).map(([key, value]) => (
-                          <Grid item xs={6} sm={4} md={3} key={key}>
-                            <Typography variant="body2">
-                              <strong>{key}:</strong> {typeof value === 'number' ? value.toFixed(4) : value}
-                            </Typography>
-                          </Grid>
-                        ))}
-                      </Grid>
-                    </Paper>
-                  </Grid>
-                )}
-              </Grid>
+                    ))}
+                  </Box>
+                </Box>
+              )}
             </Box>
+          )}
+
+          {/* Training completed summary */}
+          {!isTraining && Object.keys(trainingData.metrics).length > 0 && trainingData.progress === 100 && (
+            <Alert severity="success" sx={{ mb: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Training Complete
+              </Typography>
+              <Box display="flex" gap={3} mb={1}>
+                <Typography variant="body2">
+                  <strong>Epochs:</strong> {trainingData.totalEpochs}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Duration:</strong> {formatDuration(trainingData.elapsedSeconds)}
+                </Typography>
+                {trainingData.version && (
+                  <Typography variant="body2">
+                    <strong>Version:</strong> {trainingData.version}
+                  </Typography>
+                )}
+              </Box>
+              <Typography variant="caption" color="text.secondary" gutterBottom>
+                Final Metrics
+              </Typography>
+              <Box display="flex" flexWrap="wrap" gap={1} mt={1}>
+                {Object.entries(trainingData.metrics).map(([key, value]) => (
+                  <Chip
+                    key={key}
+                    label={`${key}: ${typeof value === 'number' ? value.toFixed(4) : value}`}
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                    sx={{ fontFamily: 'monospace' }}
+                  />
+                ))}
+              </Box>
+            </Alert>
           )}
 
           <Divider sx={{ my: 2 }} />
