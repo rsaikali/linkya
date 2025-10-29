@@ -23,18 +23,13 @@ export const apiService = {
   },
 
   // Récupérer l'historique de consommation
-  getConsumptionHistory: async (timeRange = 24, interval = '5 minutes') => {
+  getConsumptionHistory: async (startTime, endTime, interval = '5 minutes') => {
     try {
-      const params = {};
-      
-      // Convertir les courtes périodes en minutes
-      if (timeRange < 1) {
-        // Utiliser Math.ceil pour éviter les problèmes d'arrondi
-        params.minutes = Math.ceil(timeRange * 60);
-      } else {
-        params.hours = Math.ceil(timeRange);
-      }
-      params.interval = interval;
+      const params = {
+        start_time: startTime,
+        end_time: endTime,
+        interval: interval
+      };
       
       const response = await api.get('/api/consumption/history', { params });
       return response.data;

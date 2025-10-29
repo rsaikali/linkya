@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -51,12 +51,29 @@ const ConsumptionChart = () => {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
+  const [isReloading, setIsReloading] = useState(false);
   const chartRef = useRef(null);
+  const zoomTimeoutRef = useRef(null);
 
-  const fetchHistory = async () => {
+  // Calculer l'intervalle d'agrégation selon la plage de temps visible
+  const getOptimalInterval = useCallback((visibleHours) => {
+    if (visibleHours <= 1) return 'raw';           // < 1h : données brutes
+    if (visibleHours <= 6) return '1 minutes';     // < 6h : 1 minute
+    if (visibleHours <= 24) return '5 minutes';    // < 24h : 5 minutes
+    if (visibleHours <= 72) return '15 minutes';   // < 3 jours : 15 minutes
+    return '1 hour';                                // > 3 jours : 1 heure
+  }, []);
+
+  const fetchHistory = useCallback(async (startTime, endTime, customInterval = null) => {
     try {
-      // Charger toutes les données disponibles (max 168h = 7 jours)
-      const result = await apiService.getConsumptionHistory(168, '1 minutes');
+      // Calculer la durée en heures pour déterminer l'intervalle optimal
+      const durationMs = new Date(endTime) - new Date(startTime);
+      const durationHours = durationMs / (1000 * 60 * 60);
+      
+      const interval = customInterval || getOptimalInterval(durationHours);
+      
+      console.log(`📊 Loading from ${startTime} to ${endTime} with ${interval} interval (${durationHours.toFixed(1)}h)`);
+      const result = await apiService.getConsumptionHistory(startTime, endTime, interval);
       setHistory(result);
       setError(null);
     } catch (err) {
@@ -64,13 +81,16 @@ const ConsumptionChart = () => {
       console.error(err);
     } finally {
       setLoading(false);
+      setIsReloading(false);
     }
-  };
+  }, [getOptimalInterval]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    // Fetch initial data
-    fetchHistory();
+    // Fetch initial data - 168h (7 days) ending now
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
+    fetchHistory(sevenDaysAgo.toISOString(), now.toISOString());
     
     // Fetch initial detections (toutes les détections disponibles)
     const fetchDetections = async () => {
@@ -138,14 +158,61 @@ const ConsumptionChart = () => {
       detectionsWS.off('detection_deleted', handleDetectionDeleted);
       detectionsWS.off('detections_cleared', handleDetectionsCleared);
       detectionsWS.off('error', handleError);
+      
+      // Clear zoom timeout
+      if (zoomTimeoutRef.current) {
+        clearTimeout(zoomTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [fetchHistory]);
 
   // Fonction pour réinitialiser le zoom
   const handleResetZoom = () => {
     if (chartRef.current) {
       chartRef.current.resetZoom();
     }
+  };
+
+  // Callback appelé après un zoom ou pan
+  const handleZoomPanComplete = ({ chart }) => {
+    // Annuler le timeout précédent pour éviter les requêtes multiples
+    if (zoomTimeoutRef.current) {
+      clearTimeout(zoomTimeoutRef.current);
+    }
+
+    // Debounce de 500ms avant de recharger les données
+    zoomTimeoutRef.current = setTimeout(() => {
+      if (!history || !history.data || history.data.length === 0) return;
+
+      const xScale = chart.scales.x;
+      const visibleMin = Math.floor(xScale.min);
+      const visibleMax = Math.ceil(xScale.max);
+
+      // Calculer la plage de temps visible
+      const minTime = new Date(history.data[Math.max(0, visibleMin)]?.time);
+      const maxTime = new Date(history.data[Math.min(history.data.length - 1, visibleMax)]?.time);
+      const visibleHours = (maxTime - minTime) / (1000 * 60 * 60);
+
+      console.log(`🔍 Visible range: ${visibleHours.toFixed(2)}h (${minTime.toLocaleTimeString()} → ${maxTime.toLocaleTimeString()})`);
+
+      // Recharger les données avec l'intervalle optimal
+      const newInterval = getOptimalInterval(visibleHours);
+      const currentInterval = history.interval;
+
+      // Ne recharger que si l'intervalle a changé
+      if (newInterval !== currentInterval) {
+        console.log(`🔄 Reloading with new interval: ${currentInterval} → ${newInterval}`);
+        setIsReloading(true);
+        
+        // Calculer la plage avec une marge de 20% de chaque côté pour permettre le pan
+        const timeRange = maxTime - minTime;
+        const margin = timeRange * 0.2;
+        const startTime = new Date(minTime.getTime() - margin).toISOString();
+        const endTime = new Date(maxTime.getTime() + margin).toISOString();
+        
+        fetchHistory(startTime, endTime, newInterval);
+      }
+    }, 500);
   };
 
   if (loading && !history) {
@@ -412,10 +479,12 @@ const ConsumptionChart = () => {
             enabled: true,
           },
           mode: 'x',
+          onZoomComplete: handleZoomPanComplete,
         },
         pan: {
           enabled: true,
           mode: 'x',
+          onPanComplete: handleZoomPanComplete,
         },
         limits: {
           x: {
@@ -483,12 +552,34 @@ const ConsumptionChart = () => {
                 sx={{ ml: 1 }}
               />
               
-              {loading && <CircularProgress size={24} />}
+              {(loading || isReloading) && <CircularProgress size={24} />}
             </Box>
           }
         />
         <CardContent>
-          <Box sx={{ height: 400, mb: 3 }}>
+          <Box sx={{ height: 400, mb: 3, position: 'relative' }}>
+            {isReloading && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  zIndex: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  padding: '4px 12px',
+                  borderRadius: 1,
+                  boxShadow: 1,
+                }}
+              >
+                <CircularProgress size={16} />
+                <Typography variant="caption" color="text.secondary">
+                  Rechargement...
+                </Typography>
+              </Box>
+            )}
             <Line ref={chartRef} data={chartData} options={options} />
           </Box>
 
@@ -547,7 +638,10 @@ const ConsumptionChart = () => {
             setShowSignatureModal(false);
             setSelectedRange(null);
             // Optionnellement, refetch les data pour voir les changements
-            fetchHistory();
+            // Recharger les 7 derniers jours
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
+            fetchHistory(sevenDaysAgo.toISOString(), now.toISOString());
           }}
         />
       )}

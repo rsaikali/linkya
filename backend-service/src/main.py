@@ -101,44 +101,45 @@ async def get_latest_consumption():
 
 @app.get("/api/consumption/history")
 async def get_consumption_history(
-    hours: int = Query(default=None, description="Number of history hours (for long periods)"),
-    minutes: int = Query(default=None, description="Number of history minutes (for short periods)"),
-    interval: str = Query(default="5 minutes", description="Aggregation interval (e.g., '5 minutes', '1 hour')"),
+    start_time: str = Query(description="Start time (ISO format)"),
+    end_time: str = Query(description="End time (ISO format)"),
+    interval: str = Query(
+        default="5 minutes",
+        description="Aggregation interval"
+    ),
 ):
     """
     Retrieves consumption history over a given period.
 
     Args:
-        hours: Number of hours of history to retrieve (for periods >= 1 hour)
-        minutes: Number of minutes of history to retrieve (for periods < 1 hour)
+        start_time: Absolute start time (ISO format, required)
+        end_time: Absolute end time (ISO format, required)
         interval: Data aggregation interval
 
     Returns:
         List of consumption points aggregated by interval
     """
     try:
-        # Déterminer la période à récupérer
-        if minutes is not None and minutes > 0:
-            delta = timedelta(minutes=minutes)
-        elif hours is not None and hours > 0:
-            # Valider les heures (1-168)
-            if hours < 1 or hours > 168:
-                raise HTTPException(status_code=422, detail="hours doit être entre 1 et 168")
-            delta = timedelta(hours=hours)
-        else:
-            # Valeur par défaut: 24 heures
-            delta = timedelta(hours=24)
+        # Parse dates absolues
+        start_time_dt = datetime.fromisoformat(
+            start_time.replace('Z', '+00:00')
+        )
+        end_time_dt = datetime.fromisoformat(
+            end_time.replace('Z', '+00:00')
+        )
 
-        end_time = datetime.now()
-        start_time = end_time - delta
-
-        data = db_manager.get_consumption_history(start_time, end_time, interval)
+        data = db_manager.get_consumption_history(
+            start_time_dt, end_time_dt, interval
+        )
         if not data:
-            raise HTTPException(status_code=404, detail="Aucune donnée disponible pour cette période")
+            raise HTTPException(
+                status_code=404,
+                detail="Aucune donnée disponible pour cette période"
+            )
 
         return {
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
+            "start_time": start_time_dt.isoformat(),
+            "end_time": end_time_dt.isoformat(),
             "interval": interval,
             "data_points": len(data),
             "data": data,

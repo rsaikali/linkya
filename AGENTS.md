@@ -163,7 +163,7 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Routes Celery tasks to appropriate queues (`nilm_cnn` for NILM operations)
 - **Redis Pub/Sub Integration**: Subscribes to Redis channels and broadcasts via WebSocket
 - Key endpoints:
-  - `GET /api/consumption/history` - aggregated time-series data
+  - `GET /api/consumption/history` - aggregated time-series data (supports both relative duration and absolute start/end times)
   - `POST /api/signatures` - create appliance signatures
   - `POST /api/nilm/train` - trigger training
   - `WS /ws/training` - WebSocket for real-time training logs
@@ -398,11 +398,25 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
-- **Interactive Chart Zoom** (October 2025):
+- **Interactive Chart Zoom with Dynamic Data Loading** (October 2025):
   - **Added chartjs-plugin-zoom** to enable zoom/pan navigation on consumption chart
   - **Zoom**: Mouse wheel to zoom in/out on time axis
   - **Pan**: Click and drag to navigate through time
-  - **Reset button**: Added "Réinitialiser" button with ZoomOutMap icon to restore original view
+  - **Dynamic data reloading**: Automatically adjusts data granularity based on zoom level
+    - < 1h visible: raw data (no aggregation)
+    - 1-6h: 1 minute intervals
+    - 6-24h: 5 minutes intervals
+    - 24-72h: 15 minutes intervals
+    - > 72h: 1 hour intervals
+  - **Absolute-only API** (October 2025): Simplified API by removing relative time parameters
+    - `/api/consumption/history` requires `start_time` and `end_time` (ISO format)
+    - Removed old `hours`/`minutes` parameters (caused unpredictable zoom behavior)
+    - Frontend always calculates absolute timestamps for all requests
+    - More stable and predictable zoom/pan behavior
+  - **Stable zoom behavior**: Uses absolute timestamps to reload data for visible range with 20% margin on each side
+  - **Smart debouncing**: 500ms delay before reloading to avoid excessive API calls
+  - **Visual feedback**: Loading indicator when data is being refreshed
+  - **Reset button**: "Réinitialiser" button with ZoomOutMap icon to restore initial view
   - **Removed double-click signature creation**: Legacy selection via two clicks removed (SignatureModal preserved for future reintegration)
   - **Removed time range selector**: Chart now loads all available data (max 168h = 7 days) and displays last 48h by default
   - Users can zoom out to see all available data from linky_realtime table
