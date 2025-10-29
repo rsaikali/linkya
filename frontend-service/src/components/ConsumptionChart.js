@@ -197,8 +197,26 @@ const ConsumptionChart = () => {
       const visibleMax = Math.ceil(xScale.max);
 
       // Calculer la plage de temps visible
-      const minTime = new Date(history.data[Math.max(0, visibleMin)]?.time);
-      const maxTime = new Date(history.data[Math.min(history.data.length - 1, visibleMax)]?.time);
+      const minIndex = Math.max(0, visibleMin);
+      const maxIndex = Math.min(history.data.length - 1, visibleMax);
+      const minTimeStr = history.data[minIndex]?.time;
+      const maxTimeStr = history.data[maxIndex]?.time;
+      
+      // Vérifier que les timestamps sont valides
+      if (!minTimeStr || !maxTimeStr) {
+        console.warn('Invalid timestamps in visible range');
+        return;
+      }
+      
+      const minTime = new Date(minTimeStr);
+      const maxTime = new Date(maxTimeStr);
+      
+      // Vérifier que les dates sont valides
+      if (isNaN(minTime.getTime()) || isNaN(maxTime.getTime())) {
+        console.warn('Invalid date objects');
+        return;
+      }
+      
       const visibleHours = (maxTime - minTime) / (1000 * 60 * 60);
 
       console.log(`🔍 Visible range: ${visibleHours.toFixed(2)}h (${minTime.toLocaleTimeString()} → ${maxTime.toLocaleTimeString()})`);
