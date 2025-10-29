@@ -398,26 +398,26 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
-- **Interactive Chart Zoom with Dynamic Data Loading** (October 2025):
-  - **Added chartjs-plugin-zoom** to enable zoom/pan navigation on consumption chart
-  - **Zoom**: Mouse wheel to zoom in/out on time axis
-  - **Pan**: Click and drag to navigate through time
-  - **Dynamic data reloading**: Automatically adjusts data granularity based on zoom level
-    - < 1h visible: raw data (no aggregation)
+- **Interactive Chart Zoom with Optimized Data Loading** (October 2025):
+  - **chartjs-plugin-zoom**: Mouse wheel zoom, drag to pan on time axis
+  - **Smart loading strategy** (rewritten Oct 29, 2025):
+    - Zoom < 6h: load 48h centered range with optimal interval
+    - Zoom 6-24h: load 72h centered range
+    - Zoom > 24h: load full 168h (7 days)
+    - Only reload when interval change is needed (not on every zoom)
+    - Debounce: 1s delay before analyzing if reload needed
+  - **Dynamic data granularity** based on visible range:
+    - < 1h: raw data (no aggregation)
     - 1-6h: 1 minute intervals
     - 6-24h: 5 minutes intervals
     - 24-72h: 15 minutes intervals
     - > 72h: 1 hour intervals
-  - **Absolute-only API** (October 2025): Simplified API by removing relative time parameters
-    - `/api/consumption/history` requires `start_time` and `end_time` (ISO format)
-    - Removed old `hours`/`minutes` parameters (caused unpredictable zoom behavior)
-    - Frontend always calculates absolute timestamps for all requests
-    - More stable and predictable zoom/pan behavior
-  - **Stable zoom behavior**: Uses absolute timestamps to reload data for visible range with 20% margin on each side
-  - **Smart debouncing**: 500ms delay before reloading to avoid excessive API calls
-  - **Visual feedback**: Loading indicator when data is being refreshed
-  - **Reset button**: "Réinitialiser" button with ZoomOutMap icon to restore initial view
-  - **Removed double-click signature creation**: Legacy selection via two clicks removed (SignatureModal preserved for future reintegration)
+  - **Absolute-only API**: `/api/consumption/history` requires `start_time` and `end_time` (ISO format)
+  - **Zoom preservation**: Automatically restores zoom position after data reload
+  - **Performance**: Faster responses (load proportional data), reduced backend load
+  - **Reset button**: Restore initial 48h view on 7-day data
+  - **Visual feedback**: Loading indicator during data refresh
+  - **No animations**: Disabled Chart.js animations for instant visual updates
   - **Removed time range selector**: Chart now loads all available data (max 168h = 7 days) and displays last 48h by default
   - Users can zoom out to see all available data from linky_realtime table
   - Updated UI with clear instructions: "Utilisez la molette pour zoomer et glisser-déposer pour naviguer"
