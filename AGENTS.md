@@ -391,6 +391,19 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
+- **Time Series Cross-Validation** (October 2025):
+  - **Branch**: `feature/time-series-cross-validation`
+  - **Implemented TimeSeriesSplit** for robust temporal validation
+  - Uses sklearn's `TimeSeriesSplit` with 5 folds and sliding window
+  - Final model trained on last fold (80% oldest → 20% most recent)
+  - More robust than simple split, tests multiple temporal windows
+  - Modified `seq2point_nilm.py`:
+    - Track timestamps from signatures during data preparation
+    - Sort data by timestamp and apply TimeSeriesSplit
+    - Use last fold for final train/val split
+    - Updated `_add_negative_examples_film()` to track timestamps
+  - Production-ready cross-validation for time series ML
+
 - **Complete WebSocket Implementation** (October 2025):
   - **Removed SSE**: Deleted `sse.js`, removed all SSE endpoints (`/api/stream/*`)
   - **Backend**: Added WebSocket managers for consumption and detections (similar to training)

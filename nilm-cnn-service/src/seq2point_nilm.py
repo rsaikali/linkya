@@ -21,7 +21,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models, callbacks
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.cluster import KMeans
 from sqlalchemy import text
 
@@ -516,6 +516,7 @@ class Seq2PointFiLMModel:
         X_aggregate = []
         X_appliance_ids = []
         y_power = []
+        timestamps = []  # Pour Time Series Cross-Validation
         
         for appliance_id, signatures in all_signatures.items():
             if appliance_id not in self.appliance_id_to_idx:
@@ -542,11 +543,19 @@ class Seq2PointFiLMModel:
                     X_appliance_ids.append(
                         np.tile(appliance_one_hot, (len(X), 1))
                     )
+                    # Timestamp de début de signature pour CV temporelle
+                    sig_start = sig['start_time']
+                    sig_timestamp = (
+                        sig_start.timestamp()
+                        if hasattr(sig_start, 'timestamp')
+                        else sig_start
+                    )
+                    timestamps.extend([sig_timestamp] * len(X))
         
         # Ajouter exemples négatifs si demandé
         if use_feedback:
             negative_count = self._add_negative_examples_film(
-                X_aggregate, X_appliance_ids, y_power
+                X_aggregate, X_appliance_ids, y_power, timestamps
             )
             if negative_count > 0:
                 logger.info(
@@ -578,10 +587,32 @@ class Seq2PointFiLMModel:
             y.reshape(-1, 1)
         ).flatten()
         
-        # Split train/val
-        indices = np.arange(len(X_scaled))
-        idx_train, idx_val = train_test_split(
-            indices, test_size=validation_split, random_state=42
+        # Time Series Cross-Validation
+        # Trier les données par timestamp
+        timestamps_array = np.array(timestamps)
+        sorted_indices = np.argsort(timestamps_array)
+        
+        # Utiliser TimeSeriesSplit pour validation croisée temporelle
+        # n_splits=5 : 5 folds avec fenêtre glissante
+        tscv = TimeSeriesSplit(n_splits=5)
+        
+        logger.info(
+            "🔄 Time Series Cross-Validation (5 folds) avec "
+            "fenêtre glissante"
+        )
+        
+        # Pour la validation finale, on prend le dernier fold
+        # (train sur 80% ancien, val sur 20% récent)
+        all_splits = list(tscv.split(sorted_indices))
+        train_idx, val_idx = all_splits[-1]  # Dernier fold
+        
+        idx_train = sorted_indices[train_idx]
+        idx_val = sorted_indices[val_idx]
+        
+        logger.info(
+            f"📅 Dernier fold utilisé: {len(idx_train)} train / "
+            f"{len(idx_val)} val "
+            f"({100*len(idx_val)/len(sorted_indices):.1f}% récent)"
         )
         
         X_agg_train = X_scaled[idx_train]
@@ -748,11 +779,15 @@ class Seq2PointFiLMModel:
         self,
         X_aggregate: List,
         X_appliance_ids: List,
-        y_power: List
+        y_power: List,
+        timestamps: List = None
     ) -> int:
         """
         Ajoute exemples négatifs pour FiLM.
         Similaire à la version multi-output mais adapté pour FiLM.
+        
+        Args:
+            timestamps: Liste pour collecter les timestamps (pour CV)
         """
         negative_count = 0
         negative_sigs = self._load_negative_signatures()
@@ -780,6 +815,14 @@ class Seq2PointFiLMModel:
                 )
                 
                 if len(X) > 0:
+                    # Timestamp pour CV temporelle
+                    sig_start = sig['start_time']
+                    sig_timestamp = (
+                        sig_start.timestamp()
+                        if hasattr(sig_start, 'timestamp')
+                        else sig_start
+                    )
+                    
                     # Répéter 2x pour augmenter poids négatifs
                     for _ in range(2):
                         X_aggregate.append(X)
@@ -787,6 +830,8 @@ class Seq2PointFiLMModel:
                             np.tile(appliance_one_hot, (len(X), 1))
                         )
                         y_power.append(y)
+                        if timestamps is not None:
+                            timestamps.extend([sig_timestamp] * len(X))
                     negative_count += len(X) * 2
         
         return negative_count
