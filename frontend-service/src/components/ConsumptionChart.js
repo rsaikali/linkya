@@ -88,9 +88,11 @@ const ConsumptionChart = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     // Fetch initial data - 168h (7 days) ending now
+    // Mais avec intervalle optimal pour vue initiale de 48h
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
-    fetchHistory(sevenDaysAgo.toISOString(), now.toISOString());
+    const optimalIntervalFor48h = getOptimalInterval(48); // Intervalle pour 48h visible
+    fetchHistory(sevenDaysAgo.toISOString(), now.toISOString(), optimalIntervalFor48h);
     
     // Fetch initial detections (toutes les détections disponibles)
     const fetchDetections = async () => {
@@ -167,11 +169,17 @@ const ConsumptionChart = () => {
   }, [fetchHistory]);
 
   // Fonction pour réinitialiser le zoom
-  const handleResetZoom = () => {
+  const handleResetZoom = useCallback(() => {
     if (chartRef.current) {
       chartRef.current.resetZoom();
     }
-  };
+    // Recharger les données initiales (7 jours avec intervalle optimal pour 48h)
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
+    const optimalIntervalFor48h = getOptimalInterval(48); // Intervalle pour 48h visible
+    setIsReloading(true);
+    fetchHistory(sevenDaysAgo.toISOString(), now.toISOString(), optimalIntervalFor48h);
+  }, [getOptimalInterval, fetchHistory]);
 
   // Callback appelé après un zoom ou pan
   const handleZoomPanComplete = ({ chart }) => {
