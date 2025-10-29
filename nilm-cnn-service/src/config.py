@@ -44,16 +44,6 @@ class Settings(BaseSettings):
     nilm_model_type: str = "gru"  # "lstm", "gru", "attention"
     nilm_detect_states: bool = True  # Activer détection d'états/cycles
     
-    # Augmentation de données (legacy CNN)
-    cnn_augmentation_enabled: bool = True
-    cnn_noise_factor: float = 0.02
-    cnn_shift_range: int = 30  # Décalage temporel max (secondes)
-    
-    # Feature engineering (legacy CNN)
-    cnn_fft_enabled: bool = True  # Extraction de features FFT
-    cnn_gradient_enabled: bool = True  # Calcul des gradients
-    cnn_statistics_enabled: bool = True  # Stats fenêtres glissantes
-    
     @property
     def database_url(self) -> str:
         """URL de connexion à la base de données locale"""

@@ -326,15 +326,17 @@ def detect_cnn_appliances(
             start_time = end_time - timedelta(hours=hours)
             logger.info(f"Détection sur les {hours} dernières heures...")
         
-        # Désagrégation S2P multi-sorties
-        logger.info(f"🔍 Désagrégation S2P multi-sorties: {start_time} -> {end_time}")
-        # Charger le modèle actif
-        if not nilm_manager.models:
-            if not nilm_manager.load_active_models():
-                return {
-                    'status': 'error',
-                    'message': 'Échec chargement modèle S2P multi-sorties'
-                }
+        # Désagrégation FiLM
+        logger.info(f"🔍 Désagrégation FiLM: {start_time} -> {end_time}")
+        
+        # Vérifier qu'un modèle FiLM est chargé
+        if nilm_manager.film_model is None:
+            logger.error("Aucun modèle FiLM chargé")
+            return {
+                'status': 'error',
+                'message': 'Aucun modèle FiLM disponible. Veuillez entraîner un modèle.'
+            }
+        
         # Désagrégation
         events = nilm_manager.disaggregate(start_time, end_time)
         
@@ -710,24 +712,17 @@ def enrich_cnn_signatures() -> Dict[str, Any]:
     try:
         logger.info("🔍 Enrichissement des signatures avec cycles...")
         
-        # Charger les modèles actifs si pas déjà chargés
-        if not nilm_manager.models:
-            if not nilm_manager.load_active_models():
-                return {
-                    'status': 'error',
-                    'message': 'Impossible de charger les modèles S2P',
-                    'enriched_count': 0
-                }
-        
-        # Enrichir toutes les signatures
-        enriched_count = nilm_manager.enrich_all_signatures()
-        
-        logger.info(f"✅ {enriched_count} signatures enrichies avec cycles")
+        # NOTE: Fonctionnalité désactivée avec architecture FiLM
+        # L'enrichissement par cycles n'est plus nécessaire car FiLM
+        # apprend directement les patterns temporels
+        logger.warning(
+            "Enrichissement des signatures désactivé avec architecture FiLM"
+        )
         
         return {
             'status': 'success',
-            'enriched_count': enriched_count,
-            'num_appliances': len(nilm_manager.models),
+            'enriched_count': 0,
+            'message': 'Enrichissement désactivé (architecture FiLM)',
             'timestamp': datetime.utcnow().isoformat()
         }
         

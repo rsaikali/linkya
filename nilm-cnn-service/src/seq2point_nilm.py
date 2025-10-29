@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import json
 import os
@@ -22,8 +22,6 @@ from tensorflow.keras import layers, models, callbacks
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
-from scipy import signal
-from scipy.stats import zscore
 from sqlalchemy import text
 
 from .config import settings
@@ -819,708 +817,6 @@ class Seq2PointFiLMModel:
 
 
 # --- S2P Multi-sorties : un seul modèle pour tous les appareils ---
-class Seq2PointMultiModel:
-    """Modèle Sequence-to-Point multi-sorties pour tous les appareils"""
-    def __init__(self, appliance_ids: List[int], appliance_names: List[str], sequence_length: int = 299, model_type: str = "gru"):
-        self.appliance_ids = appliance_ids
-        self.appliance_names = appliance_names
-        self.sequence_length = sequence_length if sequence_length % 2 == 1 else sequence_length - 1
-        self.model_type = model_type
-        self.num_appliances = len(appliance_ids)
-        self.model: Optional[keras.Model] = None
-        self.preprocessor = Seq2PointPreprocessor(self.sequence_length)
-        self.state_detectors: Dict[int, ApplianceStateDetector] = {}
-        self.history = None
-        self.use_gpu = self._configure_device()
-
-    def _configure_device(self) -> bool:
-        gpus = tf.config.list_physical_devices('GPU')
-        if gpus:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logger.info(f"Device: GPU ({len(gpus)} disponible(s))")
-            return True
-        logger.info("Device: CPU")
-        return False
-
-    def build_model(self) -> keras.Model:
-        inputs = layers.Input(shape=(self.sequence_length, 1), name='aggregate_input')
-        if self.model_type == "gru":
-            x = layers.GRU(128, return_sequences=True, name='gru_1')(inputs)
-            x = layers.Dropout(0.2)(x)
-            x = layers.GRU(64, return_sequences=False, name='gru_2')(x)
-            x = layers.Dropout(0.2)(x)
-        elif self.model_type == "lstm":
-            x = layers.LSTM(128, return_sequences=True, name='lstm_1')(inputs)
-            x = layers.Dropout(0.2)(x)
-            x = layers.LSTM(64, return_sequences=False, name='lstm_2')(x)
-            x = layers.Dropout(0.2)(x)
-        else:
-            raise ValueError(f"Type de modèle inconnu: {self.model_type}")
-        x = layers.Dense(64, activation='relu', name='dense_1')(x)
-        x = layers.Dropout(0.1)(x)
-        x = layers.Dense(32, activation='relu', name='dense_2')(x)
-        # Multi-sorties : une sortie par appareil
-        outputs = [
-            layers.Dense(1, activation='linear', name=f'power_{i}')(x)
-            for i in range(self.num_appliances)
-        ]
-        model = models.Model(
-            inputs=inputs,
-            outputs=outputs,
-            name=f's2p_multi_{self.model_type}'
-        )
-        
-        # Utiliser la loss asymétrique qui pénalise les faux positifs
-        loss_fn = asymmetric_loss(false_positive_penalty=2.5)
-        
-        metrics = {
-            f'power_{i}': ['mae', 'mse']
-            for i in range(self.num_appliances)
-        }
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
-            loss=loss_fn,  # Loss asymétrique au lieu de 'mae'
-            metrics=metrics
-        )
-        logger.info(
-            f"Modèle S2P-MULTI {self.model_type.upper()} construit "
-            f"({self.num_appliances} appareils, "
-            f"séquence={self.sequence_length}, loss=asymmetric)"
-        )
-        return model
-
-    def _load_negative_signatures(self) -> Dict[int, List[Dict[str, Any]]]:
-        """
-        Charge les signatures négatives (exemples de ce qu'il ne faut PAS détecter).
-
-        Ces signatures sont créées automatiquement quand l'utilisateur invalide une détection.
-        Elles persistent dans la base et permettent de vider les détections sans perdre l'apprentissage.
-
-        Returns:
-            Dict[appliance_id, List[negative_signature]] des signatures négatives
-        """
-        try:
-            with db_manager.engine.connect() as conn:
-                query = text("""
-                    SELECT
-                        id,
-                        appliance_id,
-                        start_time,
-                        end_time
-                    FROM cnn_signatures
-                    WHERE is_negative = TRUE
-                    ORDER BY created_at DESC
-                """)
-
-                result = conn.execute(query)
-
-                signatures_by_appliance = {}
-                for row in result:
-                    signature = {
-                        'id': row[0],
-                        'appliance_id': row[1],
-                        'start_time': row[2],
-                        'end_time': row[3]
-                    }
-
-                    appliance_id = signature['appliance_id']
-                    if appliance_id not in signatures_by_appliance:
-                        signatures_by_appliance[appliance_id] = []
-                    signatures_by_appliance[appliance_id].append(signature)
-
-                total = sum(len(sigs) for sigs in signatures_by_appliance.values())
-                logger.info(f"Récupéré {total} signatures négatives (exemples à ne PAS détecter)")
-
-                return signatures_by_appliance
-
-        except Exception as e:
-            logger.error(f"Erreur lors du chargement des signatures négatives: {e}")
-            return {}
-
-    def _add_negative_examples(
-        self,
-        X_all: List,
-        y_all: List[List]
-    ) -> int:
-        """
-        Ajoute des exemples négatifs avec augmentation de données.
-
-        Les signatures négatives sont créées automatiquement quand
-        l'utilisateur invalide une détection. Elles persistent dans
-        la base et peuvent être réutilisées même après avoir vidé
-        la table des détections.
-        
-        Amélioration: Génère des variations des signatures négatives
-        pour augmenter la robustesse du modèle.
-
-        Args:
-            X_all: Liste des séquences d'input (agrégat)
-            y_all: Liste par appareil des targets
-
-        Returns:
-            Nombre d'exemples négatifs ajoutés
-        """
-        negative_signatures = self._load_negative_signatures()
-        negative_count = 0
-
-        for idx, appliance_id in enumerate(self.appliance_ids):
-            signatures = negative_signatures.get(appliance_id, [])
-
-            for signature in signatures:
-                # Charger la consommation agrégée pour cette période
-                aggregate_power = self._load_aggregate_data(
-                    signature['start_time'],
-                    signature['end_time']
-                )
-
-                if (aggregate_power is None or
-                        len(aggregate_power) < self.sequence_length):
-                    continue
-
-                # Générer des variations pour augmentation de données
-                # Cela rend le modèle plus robuste aux faux positifs
-                augmented_powers = [aggregate_power]
-                
-                # Variation 1: Ajouter du bruit gaussien (±5%)
-                noise_level = np.std(aggregate_power) * 0.05
-                noisy = aggregate_power + np.random.normal(
-                    0, noise_level, len(aggregate_power)
-                )
-                augmented_powers.append(noisy.astype(np.float32))
-                
-                # Variation 2: Scaling (±10%)
-                for scale in [0.9, 1.1]:
-                    scaled = aggregate_power * scale
-                    augmented_powers.append(scaled.astype(np.float32))
-
-                # Créer des séquences pour chaque variation
-                for aug_power in augmented_powers:
-                    # Target = 0 (appareil non actif / faux positif)
-                    zero_target = np.zeros(len(aug_power), dtype=np.float32)
-                    X, y = self.preprocessor.create_sequences(
-                        aug_power,
-                        zero_target,
-                        stride=50
-                    )
-
-                    if len(X) > 0:
-                        # Ajouter avec répétition pour augmenter le poids
-                        # (2x plus d'exemples négatifs dans le dataset)
-                        for _ in range(2):
-                            X_all.append(X)
-                            y_all[idx].append(y)
-                        negative_count += len(X) * 2
-
-        logger.info(
-            f"Ajout de {negative_count} exemples négatifs "
-            f"(avec augmentation de données)"
-        )
-        return negative_count
-
-    @staticmethod
-    def _load_aggregate_data(start_time: datetime, end_time: datetime) -> Optional[np.ndarray]:
-        """
-        Charge les données de consommation agrégée pour une période donnée.
-
-        Args:
-            start_time: Début de la période
-            end_time: Fin de la période
-
-        Returns:
-            Array numpy de la puissance agrégée ou None si erreur
-        """
-        try:
-            data = db_manager.get_consumption_data(
-                start_time=start_time,
-                end_time=end_time,
-                resample_seconds=1
-            )
-
-            if not data:
-                return None
-
-            values = np.array([row['papp'] for row in data], dtype=np.float32)
-            return values
-
-        except Exception as e:
-            logger.error(f"Erreur lors du chargement des données agrégées: {e}")
-            return None
-
-    def train(self, all_signatures: Dict[int, List[Dict[str, Any]]], version: str, epochs: int = 30, batch_size: int = 32, validation_split: float = 0.15, use_feedback: bool = True, fine_tune: bool = False) -> Dict[str, Any]:
-        """
-        Entraîne le modèle multi-sorties sur toutes les signatures + feedbacks utilisateur
-        Args:
-            all_signatures: Dict[appliance_id, List[signature]]
-            version: Version du modèle
-            use_feedback: Si True, utilise les détections invalidées comme exemples négatifs
-            fine_tune: Si True, continue l'entraînement du modèle existant au lieu de from-scratch
-        Returns:
-            Dictionnaire de métriques
-        """
-        is_fine_tuning = fine_tune and self.model is not None
-        if is_fine_tuning:
-            logger.info("🔄 Mode FINE-TUNING activé - Amélioration du modèle existant")
-            # Paramètres adaptés au fine-tuning
-            learning_rate = 0.0001  # 10x plus faible que from-scratch
-            epochs = min(epochs, 15)  # Maximum 15 epochs pour le fine-tuning
-        else:
-            logger.info("🆕 Mode FROM-SCRATCH - Création d'un nouveau modèle")
-            learning_rate = 0.001
-
-        # Préparer les données pour chaque appareil (exemples positifs)
-        X_all, y_all = [], [[] for _ in range(self.num_appliances)]
-        for idx, appliance_id in enumerate(self.appliance_ids):
-            signatures = all_signatures.get(appliance_id, [])
-            for sig in signatures:
-                aggregate_power, appliance_power = self._load_signature_data_static(sig)
-                if aggregate_power is None or len(aggregate_power) < self.sequence_length:
-                    continue
-                X, y = self.preprocessor.create_sequences(aggregate_power, appliance_power, stride=30)
-                if len(X) > 0:
-                    X_all.append(X)
-                    y_all[idx].append(y)
-
-        # Ajouter les exemples négatifs (hard negative mining)
-        if use_feedback:
-            negative_count = self._add_negative_examples(X_all, y_all)
-            if negative_count > 0:
-                logger.info(f"Ajout de {negative_count} exemples négatifs (hard negative mining)")
-
-        # Concaténer toutes les séquences
-        if not X_all or not any(y_list for y_list in y_all):
-            logger.error("Aucune donnée valide pour l'entraînement multi-sorties")
-            return {}
-        X = np.concatenate(X_all, axis=0)
-        y_targets = [np.concatenate(y_all[i], axis=0) if y_all[i] else np.zeros((len(X),)) for i in range(self.num_appliances)]
-
-        # Ajuster les scalers UNIQUEMENT si pas de fine-tuning (from-scratch)
-        if not is_fine_tuning:
-            logger.info("Ajustement des scalers (from-scratch)")
-            self.preprocessor.input_scaler.fit(X.reshape(-1, 1))
-            flat_targets_for_scaler = [
-                np.concatenate(y_list, axis=0) for y_list in y_all if y_list
-            ]
-            if flat_targets_for_scaler:
-                concatenated_targets = np.concatenate(flat_targets_for_scaler, axis=0)
-                self.preprocessor.target_scaler.fit(concatenated_targets.reshape(-1, 1))
-            self.preprocessor.fitted = True
-        else:
-            logger.info("Réutilisation des scalers existants (fine-tuning)")
-        # Préparer les détecteurs d'états pour chaque appareil
-        for idx, appliance_id in enumerate(self.appliance_ids):
-            if not y_all[idx]:
-                continue
-            try:
-                power_values = np.concatenate(y_all[idx], axis=0)
-                # Utiliser 2 états (ON/OFF) pour éviter la sur-fragmentation
-                detector = ApplianceStateDetector(n_states=2)
-                detector.fit(power_values)
-                self.state_detectors[appliance_id] = detector
-            except Exception as e:
-                logger.warning(f"Impossible de calibrer le détecteur d'états pour l'appareil {appliance_id}: {e}")
-        # Normaliser X
-        X_scaled, _ = self.preprocessor.transform(X)
-        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-        # Normaliser y
-        y_scaled = [
-            self.preprocessor.target_scaler.transform(y_targets[i].reshape(-1, 1)).flatten()
-            for i in range(self.num_appliances)
-        ]
-        # Split train/val
-        X_train, X_val = train_test_split(X_scaled, test_size=validation_split, random_state=42)
-        y_train = [train_test_split(y_scaled[i], test_size=validation_split, random_state=42)[0] for i in range(self.num_appliances)]
-        y_val = [train_test_split(y_scaled[i], test_size=validation_split, random_state=42)[1] for i in range(self.num_appliances)]
-
-        # Construire ou réutiliser le modèle
-        if not is_fine_tuning:
-            # From-scratch: construire un nouveau modèle
-            self.model = self.build_model()
-        else:
-            # Fine-tuning: ajuster le learning rate du modèle existant
-            logger.info(f"Ajustement du learning rate: {learning_rate}")
-            self.model.optimizer.learning_rate.assign(learning_rate)
-
-        # Callbacks
-        callbacks_list = [
-            callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1),
-            callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6, verbose=1)
-        ]
-        tensorboard_root = Path(settings.cnn_model_path) / "tensorboard"
-        run_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        log_dir = tensorboard_root / f"multi_{self.model_type}" / version / run_id
-        log_dir.mkdir(parents=True, exist_ok=True)
-        callbacks_list.append(
-            callbacks.TensorBoard(
-                log_dir=str(log_dir),
-                histogram_freq=0,
-                write_graph=False,
-                profile_batch=0
-            )
-        )
-        logger.info(f"TensorBoard (multi) → {log_dir}")
-        # Entraînement
-        self.history = self.model.fit(
-            X_train,
-            [y_train[i] for i in range(self.num_appliances)],
-            validation_data=(X_val, [y_val[i] for i in range(self.num_appliances)]),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks_list,
-            verbose=1
-        )
-        logger.info(f"Entraînement multi-sorties terminé")
-
-        # Afficher les clés disponibles pour debug
-        logger.info(f"Clés disponibles dans l'historique: {list(self.history.history.keys())}")
-
-        # Métriques
-        metrics = {}
-        for i, name in enumerate(self.appliance_names):
-            # Construire les métriques pour cet appareil
-            appliance_metrics = {
-                'epochs_trained': len(self.history.history['loss'])
-            }
-
-            # Chercher les métriques avec différents formats de noms possibles
-            # Keras peut nommer les métriques différemment selon le nombre de sorties:
-            # - Si une seule sortie: 'mae', 'val_mae', 'mse', 'val_mse'
-            # - Si plusieurs sorties: 'power_0_mae', 'val_power_0_mae', etc.
-            if self.num_appliances == 1:
-                # Cas spécial: une seule sortie, pas de préfixe
-                possible_mae_keys = ['mae']
-                possible_val_mae_keys = ['val_mae']
-                possible_mse_keys = ['mse']
-                possible_val_mse_keys = ['val_mse']
-            else:
-                # Plusieurs sorties: préfixe avec le nom de la sortie
-                possible_mae_keys = [
-                    f'power_{i}_mae',
-                    f'power_{i}_mean_absolute_error',
-                ]
-                possible_val_mae_keys = [
-                    f'val_power_{i}_mae',
-                    f'val_power_{i}_mean_absolute_error',
-                ]
-                possible_mse_keys = [
-                    f'power_{i}_mse',
-                    f'power_{i}_mean_squared_error',
-                ]
-                possible_val_mse_keys = [
-                    f'val_power_{i}_mse',
-                    f'val_power_{i}_mean_squared_error',
-                ]
-
-            # Trouver train_mae
-            for key in possible_mae_keys:
-                if key in self.history.history:
-                    appliance_metrics['train_mae'] = float(self.history.history[key][-1])
-                    break
-
-            # Trouver val_mae
-            for key in possible_val_mae_keys:
-                if key in self.history.history:
-                    appliance_metrics['val_mae'] = float(self.history.history[key][-1])
-                    break
-
-            # Trouver train_mse
-            for key in possible_mse_keys:
-                if key in self.history.history:
-                    appliance_metrics['train_mse'] = float(self.history.history[key][-1])
-                    break
-
-            # Trouver val_mse
-            for key in possible_val_mse_keys:
-                if key in self.history.history:
-                    appliance_metrics['val_mse'] = float(self.history.history[key][-1])
-                    break
-
-            # Log si des métriques sont manquantes
-            if 'train_mae' not in appliance_metrics or 'val_mae' not in appliance_metrics:
-                logger.warning(f"Métriques partiellement manquantes pour '{name}' (sortie {i})")
-            else:
-                logger.info(f"Métriques '{name}': train_mae={appliance_metrics['train_mae']:.2f}W, val_mae={appliance_metrics['val_mae']:.2f}W")
-
-            metrics[name] = appliance_metrics
-
-        return metrics
-
-    def predict_all(
-        self,
-        aggregate_power: np.ndarray,
-        stride: int = 1
-    ) -> Tuple[Dict[int, np.ndarray], Dict[int, Dict[str, Any]]]:
-        """
-        Prédit la consommation pour tous les appareils simultanément.
-
-        Args:
-            aggregate_power: Série de puissance agrégée (1Hz).
-            stride: Pas de déplacement de la fenêtre (par défaut 1 pour couvrir toute la série).
-
-        Returns:
-            Tuple contenant:
-                - Dictionnaire {appliance_id: prédictions}
-                - Dictionnaire {appliance_id: métadonnées}
-        """
-        if self.model is None:
-            raise ValueError("Le modèle multi-sorties doit être entraîné/chargé avant prédiction")
-        if not self.preprocessor.fitted:
-            raise ValueError("Le préprocesseur multi-sorties n'est pas initialisé (fit manquant)")
-
-        dummy_target = np.zeros_like(aggregate_power)
-        X, _ = self.preprocessor.create_sequences(
-            aggregate_power,
-            dummy_target,
-            stride=stride
-        )
-        if len(X) == 0:
-            logger.warning("Aucune séquence générée pour la prédiction multi-sorties")
-            return {}, {}
-
-        X_scaled, _ = self.preprocessor.transform(X)
-        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-
-        with tf.device('/GPU:0' if self.use_gpu else '/CPU:0'):
-            predictions_scaled = self.model.predict(X_scaled, batch_size=64, verbose=0)
-
-        if not isinstance(predictions_scaled, list):
-            predictions_scaled = [predictions_scaled]
-
-        predictions_dict: Dict[int, np.ndarray] = {}
-        metadata_dict: Dict[int, Dict[str, Any]] = {}
-
-        for idx, appliance_id in enumerate(self.appliance_ids):
-            if idx >= len(predictions_scaled):
-                logger.warning(f"Pas de prédiction pour l'appareil index {idx} (ID={appliance_id})")
-                continue
-            scaled_output = predictions_scaled[idx].flatten()
-            y_pred = self.preprocessor.inverse_transform_target(scaled_output)
-            y_pred = np.maximum(y_pred, 0)
-
-            predictions_dict[appliance_id] = y_pred
-
-            appliance_name = self.appliance_names[idx] if idx < len(self.appliance_names) else f"appliance_{appliance_id}"
-            metadata: Dict[str, Any] = {
-                'appliance_id': appliance_id,
-                'appliance_name': appliance_name,
-                'num_predictions': int(len(y_pred)),
-                'avg_power': float(np.mean(y_pred)) if len(y_pred) > 0 else 0.0,
-                'max_power': float(np.max(y_pred)) if len(y_pred) > 0 else 0.0,
-                'energy_wh': float(np.sum(y_pred) / 3600) if len(y_pred) > 0 else 0.0,
-            }
-
-            detector = self.state_detectors.get(appliance_id)
-            if detector is not None and getattr(detector, 'kmeans', None) is not None and len(y_pred) > 0:
-                try:
-                    # Assurer que y_pred est en float32 (type TensorFlow natif)
-                    y_pred_float32 = y_pred.astype(np.float32)
-                    # Log des stats de prédiction pour diagnostic
-                    logger.info(f"Prédictions {appliance_name}: min={np.min(y_pred_float32):.1f}W, "
-                               f"max={np.max(y_pred_float32):.1f}W, "
-                               f"mean={np.mean(y_pred_float32):.1f}W, "
-                               f">500W: {np.sum(y_pred_float32 > 500)}/{len(y_pred_float32)} points")
-                    states, cycles = detector.predict_states(y_pred_float32)
-                    metadata['states'] = states.tolist()
-                    metadata['cycles'] = cycles
-                    metadata['num_cycles'] = len(cycles)
-                except Exception as e:
-                    logger.warning(f"Erreur détection d'états pour l'appareil {appliance_id}: {e}")
-
-            metadata_dict[appliance_id] = metadata
-
-        return predictions_dict, metadata_dict
-
-    def save(self, filepath: str):
-        """Sauvegarde le modèle multi-sorties et ses métadonnées associées."""
-        if self.model is None:
-            raise ValueError("Aucun modèle à sauvegarder (multi-sorties)")
-
-        self.model.save(filepath)
-
-        metadata = {
-            'appliance_ids': self.appliance_ids,
-            'appliance_names': self.appliance_names,
-            'sequence_length': self.sequence_length,
-            'model_type': self.model_type,
-            'use_gpu': self.use_gpu,
-            'input_scaler_mean': self.preprocessor.input_scaler.mean_.tolist() if self.preprocessor.fitted else None,
-            'input_scaler_scale': self.preprocessor.input_scaler.scale_.tolist() if self.preprocessor.fitted else None,
-            'target_scaler_min': self.preprocessor.target_scaler.data_min_.tolist() if self.preprocessor.fitted else None,
-            'target_scaler_max': self.preprocessor.target_scaler.data_max_.tolist() if self.preprocessor.fitted else None,
-            'target_scaler_range': self.preprocessor.target_scaler.data_range_.tolist() if self.preprocessor.fitted else None,
-            'target_scaler_scale': self.preprocessor.target_scaler.scale_.tolist() if self.preprocessor.fitted else None,
-        }
-
-        if self.state_detectors:
-            metadata['state_detectors'] = {
-                str(app_id): {
-                    'n_states': detector.n_states,
-                    'has_kmeans': detector.kmeans is not None,
-                    'state_thresholds': [
-                        float(x) for x in detector.state_thresholds
-                    ] if detector.state_thresholds is not None else None
-                }
-                for app_id, detector in self.state_detectors.items()
-            }
-
-        metadata_path = Path(filepath).with_suffix('.metadata.json')
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-
-        logger.info(f"Modèle multi-sorties sauvegardé: {filepath}")
-
-    def load(self, filepath: str):
-        """Charge le modèle multi-sorties avec les custom losses."""
-        # Charger le modèle avec les custom objects
-        custom_objects = {
-            'asymmetric_loss': asymmetric_loss,
-            'focal_loss_fixed': focal_loss_fixed,
-            'loss_fn': asymmetric_loss,  # Pour les anciens modèles
-        }
-        try:
-            self.model = keras.models.load_model(
-                filepath,
-                custom_objects=custom_objects
-            )
-        except Exception as e:
-            logger.warning(f"Erreur chargement avec custom_objects: {e}")
-            # Essayer sans compile si problème avec loss
-            self.model = keras.models.load_model(
-                filepath,
-                compile=False
-            )
-            # Recompiler avec la nouvelle loss
-            self.model.compile(
-                optimizer=keras.optimizers.Adam(learning_rate=0.001),
-                loss=asymmetric_loss(false_positive_penalty=2.5),
-                metrics=['mae', 'mse']
-            )
-            logger.info("Modèle rechargé et recompilé avec nouvelle loss")
-
-        metadata_path = Path(filepath).with_suffix('.metadata.json')
-        if not metadata_path.exists():
-            logger.warning(f"Métadonnées multi-sorties introuvables pour {filepath}")
-            return
-
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
-
-        self.appliance_ids = metadata.get('appliance_ids', self.appliance_ids)
-        self.appliance_names = metadata.get('appliance_names', self.appliance_names)
-        self.sequence_length = metadata.get('sequence_length', self.sequence_length)
-        self.model_type = metadata.get('model_type', self.model_type)
-        self.use_gpu = metadata.get('use_gpu', self.use_gpu)
-
-        input_mean = metadata.get('input_scaler_mean')
-        input_scale = metadata.get('input_scaler_scale')
-        target_min = metadata.get('target_scaler_min')
-        target_max = metadata.get('target_scaler_max')
-        target_range = metadata.get('target_scaler_range')
-        target_scale = metadata.get('target_scaler_scale')
-
-        if all(v is not None for v in (input_mean, input_scale, target_min, target_max, target_range, target_scale)):
-            self.preprocessor.input_scaler.mean_ = np.array(input_mean)
-            self.preprocessor.input_scaler.scale_ = np.array(input_scale)
-            self.preprocessor.target_scaler.data_min_ = np.array(target_min)
-            self.preprocessor.target_scaler.data_max_ = np.array(target_max)
-            self.preprocessor.target_scaler.data_range_ = np.array(target_range)
-            self.preprocessor.target_scaler.scale_ = np.array(target_scale)
-            # Restaurer min_ requis pour inverse_transform (pour feature_range=(0, 1))
-            self.preprocessor.target_scaler.min_ = -self.preprocessor.target_scaler.data_min_ / self.preprocessor.target_scaler.data_range_
-            # Marquer n_features_in_ pour sklearn
-            self.preprocessor.target_scaler.n_features_in_ = 1
-            self.preprocessor.fitted = True
-            logger.info("Scalers multi-sorties restaurés depuis les métadonnées")
-        else:
-            logger.warning("Scalers multi-sorties non trouvés dans les métadonnées; préprocesseur à réinitialiser si nécessaire")
-
-        state_detectors_meta = metadata.get('state_detectors', {})
-        self.state_detectors = {}
-        if state_detectors_meta:
-            for app_id_str, detector_meta in state_detectors_meta.items():
-                try:
-                    app_id = int(app_id_str)
-                except ValueError:
-                    continue
-                detector = ApplianceStateDetector(n_states=detector_meta.get('n_states', 5))
-                state_thresholds = detector_meta.get('state_thresholds')
-                detector.state_thresholds = state_thresholds
-
-                # Reconstruire un KMeans factice depuis les seuils sauvegardés
-                if state_thresholds:
-                    detector.kmeans = KMeans(n_clusters=detector.n_states, random_state=42, n_init=10)
-                    # Créer des cluster_centers_ factices (float32 pour correspondre aux prédictions TensorFlow)
-                    detector.kmeans.cluster_centers_ = np.array(state_thresholds, dtype=np.float32).reshape(-1, 1)
-                    # Marquer comme "fit"
-                    detector.kmeans._n_threads = 1
-                    logger.info(f"KMeans restauré avec {len(state_thresholds)} centres pour appareil {app_id}")
-
-                self.state_detectors[app_id] = detector
-
-        logger.info(f"Métadonnées multi-sorties chargées depuis {metadata_path}")
-
-    @staticmethod
-    def _load_signature_data_static(signature: Dict[str, Any]) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """
-        Charge les données de consommation pour une signature et les ré-échantillonne à 1Hz.
-        """
-        try:
-            data = db_manager.get_consumption_data(
-                start_time=signature['start_time'],
-                end_time=signature['end_time'],
-                resample_seconds=1
-            )
-
-            if not data:
-                logger.warning(
-                    f"Signature {signature.get('id')} sans données dans linky_realtime "
-                    f"({signature['start_time']} - {signature['end_time']})"
-                )
-                return None, None
-
-            timestamps = np.array(
-                [row['time'].timestamp() for row in data],
-                dtype=np.float64
-            )
-            values = np.array(
-                [row['papp'] for row in data],
-                dtype=np.float32
-            )
-
-            if len(timestamps) < 2:
-                logger.warning(
-                    f"Signature {signature.get('id')} trop courte ({len(timestamps)} points)"
-                )
-                return None, None
-
-            start_ts = signature['start_time'].timestamp()
-            end_ts = signature['end_time'].timestamp()
-
-            full_timestamps = np.arange(
-                start_ts,
-                end_ts + 1,
-                1.0,
-                dtype=np.float64
-            )
-
-            unique_ts, unique_indices = np.unique(timestamps, return_index=True)
-            unique_values = values[unique_indices]
-
-            interpolated_values = np.interp(
-                full_timestamps,
-                unique_ts,
-                unique_values
-            ).astype(np.float32)
-
-            aggregate_power = interpolated_values
-            appliance_power = aggregate_power.copy()
-            return aggregate_power, appliance_power
-        except Exception as e:
-            logger.error(f"Erreur chargement signature {signature.get('id')}: {e}")
-            return None, None
-
-
-
 def normalize_name_for_tensorflow(name: str) -> str:
     """
     Normalise un nom pour être compatible avec TensorFlow/Keras.
@@ -2048,591 +1344,11 @@ class Seq2PointPreprocessor:
         return self.target_scaler.inverse_transform(y_scaled.reshape(-1, 1)).flatten()
 
 
-class Seq2PointModel:
-    """Modèle Sequence-to-Point pour un appareil"""
-    
-    def __init__(
-        self,
-        appliance_id: int,
-        appliance_name: str,
-        sequence_length: int = 599,
-        model_type: str = "lstm"  # "lstm", "gru", "attention"
-    ):
-        """
-        Args:
-            appliance_id: ID de l'appareil dans la base
-            appliance_name: Nom de l'appareil
-            sequence_length: Longueur de la fenêtre d'entrée
-            model_type: Type de modèle ("lstm", "gru", "attention")
-        """
-        self.appliance_id = appliance_id
-        self.appliance_name = appliance_name
-        self.sequence_length = sequence_length if sequence_length % 2 == 1 else sequence_length - 1
-        self.model_type = model_type
-        
-        # Normaliser le nom pour TensorFlow
-        self.normalized_name = normalize_name_for_tensorflow(appliance_name)
-        
-        self.model: Optional[keras.Model] = None
-        self.preprocessor = Seq2PointPreprocessor(self.sequence_length)
-        self.state_detector: Optional[ApplianceStateDetector] = None
-        self.history = None
-        
-        # Déterminer le device (CPU/GPU)
-        self.use_gpu = self._configure_device()
-    
-    def _configure_device(self) -> bool:
-        """
-        Configure le device (CPU/GPU) selon la variable d'environnement
-        
-        Returns:
-            True si GPU est utilisé, False sinon
-        """
-        use_gpu_env = os.getenv('USE_GPU', 'auto').lower()
-        
-        if use_gpu_env == 'false':
-            # Forcer CPU
-            tf.config.set_visible_devices([], 'GPU')
-            logger.info("Device forcé: CPU")
-            return False
-        
-        # Vérifier disponibilité GPU
-        gpus = tf.config.list_physical_devices('GPU')
-        
-        if use_gpu_env == 'true' and not gpus:
-            logger.warning("GPU demandé mais non disponible, utilisation du CPU")
-            return False
-        
-        if gpus:
-            try:
-                # Configuration GPU
-                for gpu in gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
-                logger.info(f"Device: GPU ({len(gpus)} disponible(s))")
-                return True
-            except RuntimeError as e:
-                logger.warning(f"Erreur config GPU: {e}, utilisation du CPU")
-                return False
-        
-        logger.info("Device: CPU")
-        return False
-    
-    def build_model(self) -> keras.Model:
-        """
-        Construit l'architecture Sequence-to-Point
-        
-        Returns:
-            Modèle Keras compilé
-        """
-        inputs = layers.Input(shape=(self.sequence_length, 1), name='aggregate_input')
-        
-        if self.model_type == "lstm":
-            # Architecture LSTM
-            x = layers.LSTM(128, return_sequences=True, name='lstm_1')(inputs)
-            x = layers.Dropout(0.2)(x)
-            x = layers.LSTM(64, return_sequences=False, name='lstm_2')(x)
-            x = layers.Dropout(0.2)(x)
-            
-        elif self.model_type == "gru":
-            # Architecture GRU (plus rapide que LSTM)
-            x = layers.GRU(128, return_sequences=True, name='gru_1')(inputs)
-            x = layers.Dropout(0.2)(x)
-            x = layers.GRU(64, return_sequences=False, name='gru_2')(x)
-            x = layers.Dropout(0.2)(x)
-            
-        elif self.model_type == "attention":
-            # Architecture avec attention
-            x = layers.LSTM(128, return_sequences=True, name='lstm_encoder')(inputs)
-            x = layers.Dropout(0.2)(x)
-            
-            # Mécanisme d'attention simple
-            attention = layers.Dense(1, activation='tanh')(x)
-            attention = layers.Flatten()(attention)
-            attention = layers.Activation('softmax')(attention)
-            attention = layers.RepeatVector(128)(attention)
-            attention = layers.Permute([2, 1])(attention)
-            
-            x = layers.Multiply()([x, attention])
-            x = layers.Lambda(lambda xin: tf.reduce_sum(xin, axis=1))(x)
-            
-        else:
-            raise ValueError(f"Type de modèle inconnu: {self.model_type}")
-        
-        # Couches denses finales
-        x = layers.Dense(64, activation='relu', name='dense_1')(x)
-        x = layers.Dropout(0.1)(x)
-        x = layers.Dense(32, activation='relu', name='dense_2')(x)
-        
-        # Sortie : prédiction de la consommation au point central
-        outputs = layers.Dense(1, activation='linear', name='power_output')(x)
-        
-        model = models.Model(
-            inputs=inputs,
-            outputs=outputs,
-            name=f's2p_{self.normalized_name}'
-        )
-        
-        # Compiler avec MAE (Mean Absolute Error) adapté à la régression
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
-            loss='mae',
-            metrics=['mae', 'mse']
-        )
-        
-        logger.info(f"Modèle {self.model_type.upper()} construit pour '{self.appliance_name}' "
-                   f"(séquence={self.sequence_length}, params={model.count_params():,})")
-        return model
-    
-    def train(
-        self,
-        signatures: List[Dict[str, Any]],
-        version: str,
-        epochs: int = 30,
-        batch_size: int = 32,
-        validation_split: float = 0.15
-    ) -> Dict[str, Any]:
-        """
-        Entraîne le modèle Sequence-to-Point
-        
-        Args:
-            signatures: Signatures d'entraînement pour cet appareil
-            version: Version du modèle
-            epochs: Nombre d'époques max
-            batch_size: Taille des batchs
-            validation_split: Proportion de validation
-            
-        Returns:
-            Dictionnaire de métriques
-        """
-        if len(signatures) < 2:
-            logger.error(f"Pas assez de signatures pour '{self.appliance_name}' (minimum 2)")
-            return {}
-        
-        logger.info(f"Entraînement de '{self.appliance_name}' avec {len(signatures)} signatures")
-        
-        # Préparer les données d'entraînement
-        all_X, all_y = [], []
-        all_appliance_power = []  # Pour fit state detector
-        
-        # Durée minimale requise (en minutes)
-        min_duration_minutes = self.sequence_length / 60
-        logger.info(f"⏱️  Durée minimale requise par signature: {min_duration_minutes:.1f} min ({self.sequence_length} points à 1Hz)")
-        
-        # Compteurs pour diagnostics
-        valid_signatures = 0
-        ignored_signatures = 0
-        
-        for sig in signatures:
-            # Récupérer les données depuis linky_realtime
-            aggregate_power, appliance_power = self._load_signature_data(sig)
-            
-            if aggregate_power is None:
-                logger.warning(f"⚠️  Signature {sig['id']} : aucune donnée disponible")
-                ignored_signatures += 1
-                continue
-            
-            actual_duration_minutes = len(aggregate_power) / 60
-            
-            if len(aggregate_power) < self.sequence_length:
-                logger.warning(
-                    f"⚠️  Signature {sig['id']} ignorée : "
-                    f"durée {actual_duration_minutes:.1f} min < {min_duration_minutes:.1f} min requises "
-                    f"({len(aggregate_power)} points < {self.sequence_length} points)"
-                )
-                ignored_signatures += 1
-                continue
-            
-            # Créer les séquences S2P
-            X, y = self.preprocessor.create_sequences(
-                aggregate_power,
-                appliance_power,
-                stride=30  # Stride de 30s pour réduire la redondance
-            )
-            
-            if len(X) > 0:
-                all_X.append(X)
-                all_y.append(y)
-                all_appliance_power.append(appliance_power)
-                valid_signatures += 1
-                logger.info(f"✅ Signature {sig['id']} : {actual_duration_minutes:.1f} min, {len(X)} séquences créées")
-        
-        # Vérifier qu'on a au moins une signature valide
-        if len(all_X) == 0:
-            error_msg = (
-                f"❌ Aucune séquence valide pour '{self.appliance_name}' : "
-                f"{ignored_signatures} signature(s) ignorée(s), 0 valide(s). "
-                f"Créez des signatures d'au moins {min_duration_minutes:.1f} minutes "
-                f"(actuellement configuré: CNN_WINDOW_SIZE_MINUTES={settings.cnn_window_size_minutes})."
-            )
-            logger.error(error_msg)
-            return {}
-        
-        logger.info(f"📊 Bilan : {valid_signatures} signature(s) valide(s), {ignored_signatures} ignorée(s)")
-        
-        # Concaténer toutes les séquences
-        X = np.concatenate(all_X, axis=0)
-        y = np.concatenate(all_y, axis=0)
-        
-        logger.info(f"Séquences créées: {len(X)} échantillons")
-        
-        # Ajuster les scalers
-        all_aggregate = np.concatenate([self._load_signature_data(sig)[0] for sig in signatures 
-                                       if self._load_signature_data(sig)[0] is not None])
-        all_appliance = np.concatenate(all_appliance_power)
-        self.preprocessor.fit(all_aggregate, all_appliance)
-        
-        # Entraîner le détecteur d'états avec 2 états (ON/OFF)
-        self.state_detector = ApplianceStateDetector(n_states=2)
-        self.state_detector.fit(all_appliance)
-        
-        # Normaliser les données
-        X_scaled, y_scaled = self.preprocessor.transform(X, y)
-        
-        # Reshape X pour le modèle (ajouter dimension features)
-        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-        
-        # Split train/validation
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_scaled, y_scaled,
-            test_size=validation_split,
-            random_state=42
-        )
-        
-        logger.info(f"Split: {len(X_train)} train, {len(X_val)} validation")
-        
-        # Construire le modèle
-        self.model = self.build_model()
-        
-        # Callbacks (utiliser le nom normalisé pour le fichier)
-        model_path = Path(settings.cnn_model_path) / f's2p_{self.normalized_name}_{version}.keras'
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        callbacks_list = [
-            callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=10,
-                restore_best_weights=True,
-                verbose=1
-            ),
-            callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,
-                patience=5,
-                min_lr=1e-6,
-                verbose=1
-            ),
-            callbacks.ModelCheckpoint(
-                filepath=str(model_path),
-                monitor='val_loss',
-                save_best_only=True,
-                verbose=1
-            )
-        ]
-        tensorboard_root = Path(settings.cnn_model_path) / "tensorboard"
-        run_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        log_dir = tensorboard_root / self.normalized_name / version / run_id
-        log_dir.mkdir(parents=True, exist_ok=True)
-        callbacks_list.append(
-            callbacks.TensorBoard(
-                log_dir=str(log_dir),
-                histogram_freq=0,
-                write_graph=False,
-                profile_batch=0
-            )
-        )
-        logger.info(f"TensorBoard ({self.appliance_name}) → {log_dir}")
-        
-        # Entraînement
-        start_time = datetime.now()
-        
-        with tf.device('/GPU:0' if self.use_gpu else '/CPU:0'):
-            self.history = self.model.fit(
-                X_train, y_train,
-                validation_data=(X_val, y_val),
-                epochs=epochs,
-                batch_size=batch_size,
-                callbacks=callbacks_list,
-                verbose=1
-            )
-        
-        training_duration = (datetime.now() - start_time).total_seconds()
-        
-        # Métriques finales
-        final_metrics = {
-            'train_mae': float(self.history.history['mae'][-1]),
-            'train_mse': float(self.history.history['mse'][-1]),
-            'val_mae': float(self.history.history['val_mae'][-1]),
-            'val_mse': float(self.history.history['val_mse'][-1]),
-            'epochs_trained': len(self.history.history['loss']),
-            'training_duration_seconds': int(training_duration),
-            'num_sequences': int(len(X)),
-            'model_type': self.model_type,
-            'device': 'GPU' if self.use_gpu else 'CPU'
-        }
-        
-        logger.info(f"Entraînement terminé en {training_duration:.1f}s - "
-                   f"Val MAE: {final_metrics['val_mae']:.2f}W")
-        
-        return final_metrics
-    
-    def _load_signature_data(self, signature: Dict[str, Any]) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """
-        Charge les données d'une signature depuis linky_realtime
-        
-        Args:
-            signature: Dictionnaire de signature
-            
-        Returns:
-            Tuple (aggregate_power, appliance_power) ou (None, None) si erreur
-        """
-        try:
-            with db_manager.get_session() as session:
-                query = """
-                    SELECT time, papp
-                    FROM linky_realtime
-                    WHERE time >= :start_time AND time <= :end_time
-                    ORDER BY time
-                """
-                
-                result = session.execute(
-                    text(query),
-                    {
-                        'start_time': signature['start_time'],
-                        'end_time': signature['end_time']
-                    }
-                )
-                
-                data = result.fetchall()
-                
-                if not data:
-                    return None, None
-                
-                # Consommation totale (agrégat)
-                aggregate_power = np.array([row[1] for row in data], dtype=np.float32)
-                
-                # Consommation de l'appareil (pour l'entraînement, on l'isole)
-                # Ici on suppose que pendant la signature, seul cet appareil consomme
-                # ou on a une baseline pour soustraire
-                # Pour simplifier : appliance_power = aggregate_power pendant la signature
-                # (à affiner selon le contexte)
-                appliance_power = aggregate_power.copy()
-                
-                return aggregate_power, appliance_power
-                
-        except Exception as e:
-            logger.error(f"Erreur chargement signature {signature['id']}: {e}")
-            return None, None
-    
-    def predict(self, aggregate_power: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """
-        Prédit la consommation de l'appareil sur une période
-        
-        Args:
-            aggregate_power: Consommation totale
-            
-        Returns:
-            Tuple (prédictions de puissance, métadonnées incluant les états)
-        """
-        if self.model is None:
-            raise ValueError("Le modèle doit être entraîné avant prédiction")
-        
-        # Créer les séquences
-        X, _ = self.preprocessor.create_sequences(
-            aggregate_power,
-            np.zeros_like(aggregate_power),  # Dummy target
-            stride=1  # Stride de 1 pour prédiction complète
-        )
-        
-        if len(X) == 0:
-            return np.array([]), {}
-        
-        # Normaliser
-        X_scaled, _ = self.preprocessor.transform(X)
-        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-        
-        # Prédire
-        with tf.device('/GPU:0' if self.use_gpu else '/CPU:0'):
-            y_pred_scaled = self.model.predict(X_scaled, batch_size=64, verbose=0)
-        
-        # Dénormaliser
-        y_pred = self.preprocessor.inverse_transform_target(y_pred_scaled.flatten())
-        
-        # Assurer que les prédictions sont positives
-        y_pred = np.maximum(y_pred, 0)
-        
-        # Détecter les états si state_detector disponible
-        metadata = {
-            'appliance_id': self.appliance_id,
-            'appliance_name': self.appliance_name,
-            'num_predictions': int(len(y_pred)),
-            'avg_power': float(np.mean(y_pred)),
-            'max_power': float(np.max(y_pred)),
-            'energy_wh': float(np.sum(y_pred) / 3600),  # Wh (1Hz)
-        }
-        
-        if self.state_detector is not None and len(y_pred) > 0:
-            try:
-                states, cycles = self.state_detector.predict_states(y_pred)
-                metadata['states'] = states.tolist()
-                metadata['cycles'] = cycles
-                metadata['num_cycles'] = len(cycles)
-            except Exception as e:
-                logger.warning(f"Erreur détection d'états: {e}")
-        
-        return y_pred, metadata
-    
-    def save(self, filepath: str):
-        """Sauvegarde le modèle et ses métadonnées"""
-        if self.model is None:
-            raise ValueError("Aucun modèle à sauvegarder")
-        
-        # Sauvegarder le modèle Keras
-        self.model.save(filepath)
-        
-        # Sauvegarder les métadonnées (preprocessor, state_detector)
-        metadata_path = Path(filepath).with_suffix('.metadata.json')
-        
-        # Convertir state_thresholds en liste Python si présent
-        state_thresholds = None
-        if self.state_detector and self.state_detector.state_thresholds is not None:
-            state_thresholds = [float(x) for x in self.state_detector.state_thresholds]
-        
-        metadata = {
-            'appliance_id': self.appliance_id,
-            'appliance_name': self.appliance_name,
-            'sequence_length': self.sequence_length,
-            'model_type': self.model_type,
-            'use_gpu': self.use_gpu,
-            'input_scaler_mean': self.preprocessor.input_scaler.mean_.tolist() if self.preprocessor.fitted else None,
-            'input_scaler_scale': self.preprocessor.input_scaler.scale_.tolist() if self.preprocessor.fitted else None,
-            'target_scaler_min': self.preprocessor.target_scaler.data_min_.tolist() if self.preprocessor.fitted else None,
-            'target_scaler_scale': self.preprocessor.target_scaler.scale_.tolist() if self.preprocessor.fitted else None,
-            'state_thresholds': state_thresholds
-        }
-        
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-        
-        logger.info(f"Modèle sauvegardé: {filepath}")
-    
-    def load(self, filepath: str):
-        """Charge le modèle et ses métadonnées"""
-        # Charger le modèle Keras
-        self.model = keras.models.load_model(filepath)
-        
-        # Charger les métadonnées
-        metadata_path = Path(filepath).with_suffix('.metadata.json')
-        if metadata_path.exists():
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-            
-            self.appliance_id = metadata['appliance_id']
-            self.appliance_name = metadata['appliance_name']
-            self.sequence_length = metadata['sequence_length']
-            self.model_type = metadata['model_type']
-            
-            # Normaliser le nom pour TensorFlow
-            self.normalized_name = normalize_name_for_tensorflow(self.appliance_name)
-            
-            # Restaurer les scalers
-            if metadata.get('input_scaler_mean'):
-                self.preprocessor.input_scaler.mean_ = np.array(metadata['input_scaler_mean'])
-                self.preprocessor.input_scaler.scale_ = np.array(metadata['input_scaler_scale'])
-                self.preprocessor.target_scaler.data_min_ = np.array(metadata['target_scaler_min'])
-                self.preprocessor.target_scaler.scale_ = np.array(metadata['target_scaler_scale'])
-                self.preprocessor.fitted = True
-            
-            # Restaurer state detector
-            if metadata.get('state_thresholds'):
-                self.state_detector = ApplianceStateDetector()
-                self.state_detector.state_thresholds = metadata['state_thresholds']
-        
-        logger.info(f"Modèle chargé: {filepath}")
-    
-    def enrich_signature_with_cycles(self, signature_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Enrichit une signature avec les cycles détectés
-        
-        Args:
-            signature_id: ID de la signature à enrichir
-            
-        Returns:
-            Dictionnaire des cycles détectés ou None si erreur
-        """
-        if self.state_detector is None:
-            logger.warning("Aucun state detector disponible pour enrichissement")
-            return None
-        
-        try:
-            # Charger la signature depuis la base
-            with db_manager.get_session() as session:
-                query = """
-                    SELECT id, appliance_id, start_time, end_time
-                    FROM cnn_signatures
-                    WHERE id = :signature_id AND appliance_id = :appliance_id
-                """
-                
-                result = session.execute(
-                    text(query),
-                    {
-                        'signature_id': signature_id,
-                        'appliance_id': self.appliance_id
-                    }
-                )
-                
-                sig_data = result.fetchone()
-                
-                if not sig_data:
-                    logger.warning(f"Signature {signature_id} non trouvée pour appareil {self.appliance_id}")
-                    return None
-                
-                # Charger les données de consommation
-                signature = {
-                    'id': sig_data[0],
-                    'appliance_id': sig_data[1],
-                    'start_time': sig_data[2],
-                    'end_time': sig_data[3]
-                }
-                
-                aggregate_power, appliance_power = self._load_signature_data(signature)
-                
-                if appliance_power is None or len(appliance_power) < 10:
-                    logger.warning(f"Données insuffisantes pour signature {signature_id}")
-                    return None
-                
-                # Détecter les cycles
-                states, cycles = self.state_detector.predict_states(appliance_power)
-                
-                # Préparer les données de cycles (non persistées : colonne supprimée)
-                enriched_features = {
-                    'model_type': self.model_type,
-                    'model_version': 's2p',
-                    'num_cycles': len(cycles),
-                    'cycles': cycles,
-                    'num_states': len(np.unique(states)),
-                    'enriched_at': datetime.utcnow().isoformat()
-                }
-                
-                logger.info(
-                    f"✅ Cycles analysés pour signature {signature_id} "
-                    f"({len(cycles)} cycles détectés)"
-                )
-                return enriched_features
-                
-        except Exception as e:
-            logger.error(f"Erreur enrichissement signature {signature_id}: {e}")
-            return None
-
-
 class Seq2PointNILMManager:
-    """Gestionnaire de modèles S2P pour tous les appareils"""
+    """Gestionnaire de modèles S2P NILM avec architecture FiLM"""
     
     def __init__(self):
-        self.models: Dict[int, Seq2PointModel] = {}  # appliance_id -> model
         self.model_type = os.getenv('NILM_MODEL_TYPE', 'gru').lower()
-        
-        # Choix architecture: 'film' (défaut) ou 'multi' ou 'single'
-        self.architecture = os.getenv('NILM_ARCHITECTURE', 'film').lower()
 
         # Créer le répertoire des modèles
         Path(settings.cnn_model_path).mkdir(parents=True, exist_ok=True)
@@ -2644,19 +1360,17 @@ class Seq2PointNILMManager:
         )
         logger.info("Change Point Pattern Detector initialisé")
 
-        # Attribut pour le modèle (FiLM ou Multi-Output)
-        self.multi_model: Optional[Seq2PointMultiModel] = None
+        # Modèle FiLM (architecture unique)
         self.film_model: Optional[Seq2PointFiLMModel] = None
         
         logger.info(
-            f"🎯 Architecture: {self.architecture.upper()}, "
+            f"🎯 Architecture: FiLM, "
             f"Type: {self.model_type.upper()}"
         )
 
     def load_model(self, model_path: str):
         """
-        Charge un modèle S2P existant pour fine-tuning
-        Détecte automatiquement si c'est FiLM ou Multi-Output
+        Charge un modèle FiLM existant pour fine-tuning
 
         Args:
             model_path: Chemin vers le modèle .keras à charger
@@ -2676,39 +1390,40 @@ class Seq2PointNILMManager:
                 'sequence_length',
                 settings.effective_sequence_length
             )
-            architecture = metadata.get('architecture', 'multi')
+            architecture = metadata.get('architecture', 'FiLM')
 
-            # Charger selon l'architecture
-            if architecture.lower() == 'film':
-                logger.info("📂 Chargement modèle FiLM...")
-                self.film_model = Seq2PointFiLMModel(
-                    appliance_ids=appliance_ids,
-                    appliance_names=appliance_names,
-                    sequence_length=sequence_length,
-                    model_type=self.model_type
+            # Vérifier que c'est bien un modèle FiLM
+            if architecture.lower() != 'film':
+                logger.warning(
+                    f"Architecture {architecture} non supportée. "
+                    f"Seuls les modèles FiLM sont supportés."
                 )
-                self.film_model.load(model_path)
-                self.architecture = 'film'
-                logger.info(f"✅ Modèle FiLM chargé: {model_path}")
-            else:
-                logger.info("📂 Chargement modèle Multi-Output...")
-                self.multi_model = Seq2PointMultiModel(
-                    appliance_ids=appliance_ids,
-                    appliance_names=appliance_names,
-                    sequence_length=sequence_length,
-                    model_type=self.model_type
+                raise ValueError(
+                    f"Modèle {architecture} obsolète. "
+                    f"Veuillez réentraîner avec architecture FiLM."
                 )
-                self.multi_model.load(model_path)
-                self.architecture = 'multi'
-                logger.info(f"✅ Modèle Multi-Output chargé: {model_path}")
+
+            logger.info("📂 Chargement modèle FiLM...")
+            self.film_model = Seq2PointFiLMModel(
+                appliance_ids=appliance_ids,
+                appliance_names=appliance_names,
+                sequence_length=sequence_length,
+                model_type=self.model_type
+            )
+            self.film_model.load(model_path)
+            logger.info(f"✅ Modèle FiLM chargé: {model_path}")
 
         except Exception as e:
             logger.error(f"❌ Erreur chargement modèle: {e}")
             raise
 
-    def train_all_appliances(self, version: str, fine_tune: bool = False) -> Dict[str, Any]:
+    def train_all_appliances(
+        self,
+        version: str,
+        fine_tune: bool = False
+    ) -> Dict[str, Any]:
         """
-        Entraîne les modèles S2P (multi-sorties ou unitaire selon configuration)
+        Entraîne le modèle FiLM sur tous les appareils.
 
         Args:
             version: Version du modèle
@@ -2762,7 +1477,9 @@ class Seq2PointNILMManager:
                 app_idx = appliance_ids.index(appliance_id)
                 appliance_name = appliance_names[app_idx]
                 for sig in signatures:
-                    agg, app_pwr = Seq2PointFiLMModel._load_signature_data_static(sig)
+                    agg, app_pwr = (
+                        Seq2PointFiLMModel._load_signature_data_static(sig)
+                    )
                     if app_pwr is None or len(app_pwr) == 0:
                         continue
 
@@ -2780,330 +1497,83 @@ class Seq2PointNILMManager:
 
             total_profiles = sum(
                 len(data['profiles'])
-                for data in self.change_point_detector.signature_profiles.values()
+                for data in (
+                    self.change_point_detector.signature_profiles.values()
+                )
             )
             logger.info(
                 f"✅ {len(self.change_point_detector.signature_profiles)} "
                 f"appareils, {total_profiles} profils"
             )
 
-            # Entraîner selon l'architecture choisie
-            if self.architecture == 'film':
-                logger.info("🎬 Architecture FiLM (multi-target conditioning)")
-                
-                # Créer ou réutiliser modèle FiLM
-                if fine_tune and self.film_model is not None:
-                    logger.info("♻️ Réutilisation modèle FiLM pour fine-tuning")
-                else:
-                    self.film_model = Seq2PointFiLMModel(
-                        appliance_ids,
-                        appliance_names,
-                        sequence_length=settings.effective_sequence_length,
-                        model_type=self.model_type
-                    )
-
-                metrics = self.film_model.train(
-                    all_signatures,
-                    version,
-                    epochs=30,
-                    batch_size=32,
-                    use_feedback=True,
-                    fine_tune=fine_tune
-                )
-                
-                if not metrics:
-                    logger.error("Entraînement FiLM impossible (données insuffisantes)")
-                    return {'error': 'insufficient_training_data'}
-                
-                model_path = Path(settings.cnn_model_path) / \
-                    f's2p_film_{self.model_type}_{version}.keras'
-                self.film_model.save(str(model_path), metadata=metrics)
-                
-                # Formater la réponse pour compatibilité frontend
-                # Le frontend attend: model.metrics.appliances[0].metrics
-                return {
-                    'version': version,
-                    'model_type': f'FiLM-{self.model_type}',
-                    'architecture': 'FiLM',
-                    'num_appliances': len(appliance_ids),
-                    'model_path': str(model_path),
-                    'appliances': [
-                        {
-                            'id': appliance_ids[i],
-                            'name': appliance_names[i],
-                            'num_signatures': len(all_signatures[appliance_ids[i]]),
-                            # Les métriques globales pour cet appareil
-                            'metrics': {
-                                'train_mae': metrics.get('train_mae'),
-                                'val_mae': metrics.get('val_mae'),
-                                'train_mse': metrics.get('train_mae', 0) ** 2,  # Approximation
-                                'val_mse': metrics.get('val_mae', 0) ** 2,
-                                'train_loss': metrics.get('train_loss'),
-                                'val_loss': metrics.get('val_loss'),
-                                'epochs_trained': metrics.get('epochs_trained'),
-                            }
-                        }
-                        for i in range(len(appliance_ids))
-                    ]
-                }
+            # Entraîner avec architecture FiLM
+            logger.info("🎬 Architecture FiLM (multi-target conditioning)")
             
-            elif self.architecture == 'multi':
-                logger.info("🔀 Architecture Multi-Output (legacy)")
-                
-                # Si fine-tuning et multi_model déjà chargé
-                if fine_tune and self.multi_model is not None:
-                    logger.info("♻️ Réutilisation modèle multi pour fine-tuning")
-                else:
-                    self.multi_model = Seq2PointMultiModel(
-                        appliance_ids,
-                        appliance_names,
-                        sequence_length=settings.effective_sequence_length,
-                        model_type=self.model_type
-                    )
-
-                metrics = self.multi_model.train(
-                    all_signatures,
-                    version,
-                    epochs=30,
-                    batch_size=32,
-                    use_feedback=True,
-                    fine_tune=fine_tune
-                )
-                
-                if not metrics:
-                    logger.error("Entraînement multi impossible")
-                    return {'error': 'insufficient_training_data'}
-                
-                model_path = Path(settings.cnn_model_path) / \
-                    f's2p_multi_{self.model_type}_{version}.keras'
-                self.multi_model.save(str(model_path))
-                
-                return {
-                    'version': version,
-                    'model_type': f'multi-{self.model_type}',
-                    'architecture': 'multi',
-                    'num_appliances': len(appliance_ids),
-                    'model_path': str(model_path),
-                    'appliances': [
-                        {
-                            'id': appliance_ids[i],
-                            'name': appliance_names[i],
-                            'num_signatures': len(all_signatures[appliance_ids[i]]),
-                            'metrics': metrics.get(appliance_names[i], {})
-                        }
-                        for i in range(len(appliance_ids))
-                    ]
-                }
-            
-            # Fallback: un modèle par appareil
-            min_duration_minutes = settings.effective_sequence_length / 60
-            logger.info("=" * 60)
-            logger.info("🚀 Entraînement NILM Sequence-to-Point (S2P) par appareil")
-            logger.info("=" * 60)
-            logger.info("📊 Configuration:")
-            logger.info(f"   - Modèle: {self.model_type.upper()}")
-            logger.info(f"   - Fenêtre: {settings.cnn_window_size_minutes} min = {settings.effective_sequence_length} points")
-            logger.info(f"   - Durée minimale requise par signature: {min_duration_minutes:.1f} min")
-            logger.info(f"   - Appareils à entraîner: {len(appliances)}")
-            logger.info("=" * 60)
-            
-            global_metrics = {
-                'version': version,
-                'model_type': self.model_type,
-                'num_appliances': len(appliances),
-                'appliances': []
-            }
-            
-            for appliance_id, appliance_name, num_sigs in appliances:
-                logger.info(f"Entraînement de '{appliance_name}' ({num_sigs} signatures)")
-                
-                with db_manager.get_session() as session:
-                    query = """
-                        SELECT id, appliance_id, start_time, end_time
-                        FROM cnn_signatures
-                        WHERE appliance_id = :appliance_id
-                        ORDER BY created_at
-                    """
-                    result = session.execute(text(query), {'appliance_id': appliance_id})
-                    signatures = [dict(row._mapping) for row in result]
-                
-                model = Seq2PointModel(
-                    appliance_id=appliance_id,
-                    appliance_name=appliance_name,
+            # Créer ou réutiliser modèle FiLM
+            if fine_tune and self.film_model is not None:
+                logger.info("♻️  Réutilisation modèle FiLM pour fine-tuning")
+            else:
+                self.film_model = Seq2PointFiLMModel(
+                    appliance_ids,
+                    appliance_names,
                     sequence_length=settings.effective_sequence_length,
                     model_type=self.model_type
                 )
-                metrics = model.train(
-                    signatures=signatures,
-                    version=version,
-                    epochs=30,
-                    batch_size=32
+
+            metrics = self.film_model.train(
+                all_signatures,
+                version,
+                epochs=30,
+                batch_size=32,
+                use_feedback=True,
+                fine_tune=fine_tune
+            )
+            
+            if not metrics:
+                logger.error(
+                    "Entraînement FiLM impossible (données insuffisantes)"
                 )
-                
-                if not metrics:
-                    logger.warning(f"⚠️  Entraînement ignoré pour '{appliance_name}' (données insuffisantes)")
-                    continue
-                
-                normalized_name = model.normalized_name
-                filename = f's2p_{normalized_name}_{version}.keras'
-                model_path = Path(settings.cnn_model_path) / filename
-                model.save(str(model_path))
-                
-                self.models[appliance_id] = model
-                global_metrics['appliances'].append({
-                    'id': appliance_id,
-                    'name': appliance_name,
-                    'num_signatures': num_sigs,
-                    'metrics': metrics,
-                    'model_path': str(model_path)
-                })
+                return {'error': 'insufficient_training_data'}
             
-            if os.getenv('NILM_DETECT_STATES', 'true').lower() == 'true':
-                logger.info("🔍 Enrichissement des signatures avec cycles...")
-                enriched_count = self.enrich_all_signatures()
-                global_metrics['enriched_signatures'] = enriched_count
+            model_path = Path(settings.cnn_model_path) / (
+                f's2p_film_{self.model_type}_{version}.keras'
+            )
+            self.film_model.save(str(model_path), metadata=metrics)
             
-            return global_metrics
+            # Formater la réponse pour compatibilité frontend
+            return {
+                'version': version,
+                'model_type': f'FiLM-{self.model_type}',
+                'architecture': 'FiLM',
+                'num_appliances': len(appliance_ids),
+                'model_path': str(model_path),
+                'appliances': [
+                    {
+                        'id': appliance_ids[i],
+                        'name': appliance_names[i],
+                        'num_signatures': len(
+                            all_signatures[appliance_ids[i]]
+                        ),
+                        'metrics': {
+                            'train_mae': metrics.get('train_mae'),
+                            'val_mae': metrics.get('val_mae'),
+                            'train_mse': metrics.get('train_mae', 0) ** 2,
+                            'val_mse': metrics.get('val_mae', 0) ** 2,
+                            'train_loss': metrics.get('train_loss'),
+                            'val_loss': metrics.get('val_loss'),
+                            'epochs_trained': metrics.get('epochs_trained'),
+                        }
+                    }
+                    for i in range(len(appliance_ids))
+                ]
+            }
         
         except Exception as e:
             logger.error(f"Erreur entraînement global: {e}", exc_info=True)
             return {'error': str(e)}
-    
-    def enrich_all_signatures(self) -> int:
-        """
-        Enrichit toutes les signatures avec les cycles détectés
-        
-        Returns:
-            Nombre de signatures enrichies
-        """
-        enriched_count = 0
-        
-        try:
-            for appliance_id, model in self.models.items():
-                if model.state_detector is None:
-                    logger.warning(
-                        f"Pas de state detector pour '{model.appliance_name}'"
-                    )
-                    continue
-                
-                # Récupérer toutes les signatures de cet appareil
-                with db_manager.get_session() as session:
-                    query = """
-                        SELECT id
-                        FROM cnn_signatures
-                        WHERE appliance_id = :appliance_id
-                        ORDER BY created_at
-                    """
-                    
-                    result = session.execute(
-                        text(query),
-                        {'appliance_id': appliance_id}
-                    )
-                    
-                    signature_ids = [row[0] for row in result.fetchall()]
-                
-                # Enrichir chaque signature
-                for sig_id in signature_ids:
-                    enriched = model.enrich_signature_with_cycles(sig_id)
-                    if enriched:
-                        enriched_count += 1
-                
-                logger.info(
-                    f"✅ {len(signature_ids)} signatures enrichies "
-                    f"pour '{model.appliance_name}'"
-                )
-        
-        except Exception as e:
-            logger.error(f"Erreur enrichissement signatures: {e}")
-        
-        return enriched_count
-    
-    def load_active_models(self) -> bool:
-        """
-        Charge les modèles actifs depuis la base
-        
-        Returns:
-            True si succès
-        """
-        try:
-            with db_manager.get_session() as session:
-                query = (
-                    "SELECT version, model_path, architecture "
-                    "FROM cnn_models "
-                    "WHERE model_status = 'current' AND model_type LIKE 'S2P%' "
-                    "ORDER BY training_date DESC "
-                    "LIMIT 1"
-                )
-                result = session.execute(text(query))
-                active_model = result.fetchone()
-                if not active_model:
-                    logger.warning("Aucun modèle S2P multi-sorties actif trouvé")
-                    return False
-                version, model_path, architecture_json = active_model
-                # architecture_json est déjà un dict Python (PostgreSQL jsonb)
-                architecture = architecture_json if architecture_json else {}
-                if not Path(model_path).exists():
-                    logger.error(f"Modèle multi-sorties introuvable: {model_path}")
-                    return False
-                # Charger le modèle multi-sorties
-                self.multi_model = Seq2PointMultiModel(
-                    appliance_ids=[app['id'] for app in architecture.get('appliances', [])],
-                    appliance_names=[app['name'] for app in architecture.get('appliances', [])],
-                    sequence_length=settings.effective_sequence_length,
-                    model_type=self.model_type
-                )
-                self.multi_model.load(model_path)
-                logger.info(f"Modèle multi-sorties '{version}' chargé depuis {model_path}")
-                return True
-        except Exception as e:
-            logger.error(f"Erreur chargement modèle multi-sorties: {e}")
-            return False
 
-    def _load_signature_profiles(self):
-        """Charge les profils de signatures depuis la base de données."""
-        from sqlalchemy import text
 
-        with db_manager.get_session() as session:
-            # Récupérer les appareils actifs
-            appliances_query = """
-                SELECT DISTINCT appliance_id, ca.name
-                FROM cnn_signatures cs
-                JOIN cnn_appliances ca ON cs.appliance_id = ca.id
-            """
-            appliances = session.execute(text(appliances_query)).fetchall()
 
-            for appliance_id, appliance_name in appliances:
-                sig_query = """
-                    SELECT id, start_time, end_time
-                    FROM cnn_signatures
-                    WHERE appliance_id = :appliance_id
-                    ORDER BY created_at
-                """
-                signatures = session.execute(text(sig_query), {'appliance_id': appliance_id}).fetchall()
-
-                for sig_id, start_time, end_time in signatures:
-                    signature = {
-                        'id': sig_id,
-                        'appliance_id': appliance_id,
-                        'start_time': start_time,
-                        'end_time': end_time
-                    }
-                    aggregate_power, appliance_power = Seq2PointMultiModel._load_signature_data_static(signature)
-                    if appliance_power is None or len(appliance_power) == 0:
-                        continue
-
-                    duration = int((end_time - start_time).total_seconds())
-
-                    self.change_point_detector.add_signature_profile(
-                        appliance_id=appliance_id,
-                        appliance_name=appliance_name,
-                        power_sequence=appliance_power,
-                        duration=duration,
-                        signature_id=sig_id
-                    )
-
-        total_profiles = sum(len(data['profiles']) for data in self.change_point_detector.signature_profiles.values())
-        logger.info(f"Profils chargés: {len(self.change_point_detector.signature_profiles)} appareils, {total_profiles} profils")
 
     def _filter_against_negative_signatures(
         self,
@@ -3131,13 +1601,23 @@ class Seq2PointNILMManager:
             with db_manager.engine.connect() as conn:
                 query = text("""
                     SELECT
-                        id,
-                        appliance_id,
-                        start_time,
-                        end_time,
-                        avg_power,
-                        energy_consumed
-                    FROM cnn_signatures
+                        cs.id,
+                        cs.appliance_id,
+                        cs.start_time,
+                        cs.end_time,
+                        (
+                            SELECT AVG(papp)
+                            FROM linky_realtime
+                            WHERE time >= cs.start_time 
+                              AND time <= cs.end_time
+                        ) as avg_power,
+                        (
+                            SELECT SUM(papp) / 3600.0
+                            FROM linky_realtime
+                            WHERE time >= cs.start_time 
+                              AND time <= cs.end_time
+                        ) as energy_wh
+                    FROM cnn_signatures cs
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
                 """)
@@ -3260,6 +1740,69 @@ class Seq2PointNILMManager:
         
         return filtered
 
+    def _load_signature_profiles(self):
+        """
+        Charge les profils de signatures depuis la base de données.
+        
+        Utilisé pour le pattern matching dans la détection par change points.
+        """
+        with db_manager.get_session() as session:
+            # Récupérer les appareils actifs
+            appliances_query = """
+                SELECT DISTINCT appliance_id, ca.name
+                FROM cnn_signatures cs
+                JOIN cnn_appliances ca ON cs.appliance_id = ca.id
+            """
+            appliances = session.execute(text(appliances_query)).fetchall()
+
+            for appliance_id, appliance_name in appliances:
+                sig_query = """
+                    SELECT id, start_time, end_time
+                    FROM cnn_signatures
+                    WHERE appliance_id = :appliance_id
+                    ORDER BY created_at
+                """
+                signatures = session.execute(
+                    text(sig_query),
+                    {'appliance_id': appliance_id}
+                ).fetchall()
+
+                for sig_id, start_time, end_time in signatures:
+                    signature = {
+                        'id': sig_id,
+                        'appliance_id': appliance_id,
+                        'start_time': start_time,
+                        'end_time': end_time
+                    }
+                    
+                    # Utiliser la méthode statique de FiLMModel
+                    aggregate_power, appliance_power = (
+                        Seq2PointFiLMModel._load_signature_data_static(signature)
+                    )
+                    
+                    if appliance_power is None or len(appliance_power) == 0:
+                        continue
+
+                    duration = int((end_time - start_time).total_seconds())
+
+                    self.change_point_detector.add_signature_profile(
+                        appliance_id=appliance_id,
+                        appliance_name=appliance_name,
+                        power_sequence=appliance_power,
+                        duration=duration,
+                        signature_id=sig_id
+                    )
+
+        total_profiles = sum(
+            len(data['profiles'])
+            for data in self.change_point_detector.signature_profiles.values()
+        )
+        logger.info(
+            f"Profils chargés: "
+            f"{len(self.change_point_detector.signature_profiles)} appareils, "
+            f"{total_profiles} profils"
+        )
+
     def disaggregate(
         self,
         start_time: datetime,
@@ -3275,8 +1818,8 @@ class Seq2PointNILMManager:
         Returns:
             Liste de détections par appareil
         """
-        if not hasattr(self, 'multi_model') or self.multi_model is None:
-            logger.error("Aucun modèle multi-sorties chargé pour la désagrégation")
+        if self.film_model is None:
+            logger.error("Aucun modèle FiLM chargé pour la désagrégation")
             return []
 
         # Charger les profils de signatures si nécessaire
