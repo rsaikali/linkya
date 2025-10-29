@@ -733,120 +733,6 @@ async def trigger_signature_enrichment():
         )
 
 
-@app.post("/api/nilm/models/backup")
-async def create_model_backup():
-    """
-    Crée une sauvegarde manuelle du modèle 'current' en le copiant vers 'backup'.
-
-    L'ancien modèle 'backup' est archivé. Cette opération permet de créer
-    un point de restauration avant d'effectuer des modifications importantes.
-
-    Returns:
-        Confirmation de la création du backup
-
-    Raises:
-        HTTPException 404: Aucun modèle 'current' trouvé
-        HTTPException 500: Erreur serveur
-    """
-    import os
-    import shutil
-    from sqlalchemy import text
-
-    try:
-        with db_manager.get_session() as session:
-            # Vérifier qu'un modèle 'current' existe
-            current_query = text("""
-                SELECT id, version, model_path
-                FROM cnn_models
-                WHERE model_status = 'current'
-                LIMIT 1
-            """)
-            current_result = session.execute(current_query).fetchone()
-
-            if not current_result:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Aucun modèle 'current' à sauvegarder"
-                )
-
-            current_id, current_version, current_path = current_result
-
-            # Archiver l'ancien backup
-            session.execute(text("""
-                UPDATE cnn_models
-                SET model_status = 'archived'
-                WHERE model_status = 'backup'
-            """))
-
-            # Dupliquer le modèle current en backup
-            duplicate_query = text("""
-                INSERT INTO cnn_models
-                (version, model_type, architecture, training_date,
-                 num_signatures, num_classes, metrics, model_path,
-                 model_status, training_duration_seconds)
-                SELECT
-                    version || '_backup_' || TO_CHAR(NOW(), 'YYYYMMDD_HH24MISS'),
-                    model_type,
-                    architecture,
-                    training_date,
-                    num_signatures,
-                    num_classes,
-                    metrics,
-                    REPLACE(model_path, 'current', 'backup_' || TO_CHAR(NOW(), 'YYYYMMDD_HH24MISS')),
-                    'backup',
-                    training_duration_seconds
-                FROM cnn_models
-                WHERE id = :current_id
-                RETURNING id, version, model_path
-            """)
-
-            result = session.execute(
-                duplicate_query,
-                {"current_id": current_id}
-            ).fetchone()
-
-            backup_id, backup_version, backup_path = result
-
-            # Copier les fichiers physiques
-            if os.path.exists(current_path):
-                # Copier le fichier .keras
-                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-                shutil.copy2(current_path, backup_path)
-
-                # Copier le fichier metadata
-                current_metadata = current_path.replace('.keras', '.metadata.json')
-                backup_metadata = backup_path.replace('.keras', '.metadata.json')
-                if os.path.exists(current_metadata):
-                    shutil.copy2(current_metadata, backup_metadata)
-
-            session.commit()
-
-            logger.info(
-                f"✅ Backup manuel créé: {current_version} → {backup_version}"
-            )
-
-            return {
-                "status": "success",
-                "message": "Backup créé avec succès",
-                "current_id": current_id,
-                "current_version": current_version,
-                "backup_id": backup_id,
-                "backup_version": backup_version,
-            }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            f"Erreur lors de la création du backup: {str(e)}",
-            exc_info=True
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
-
-
 @app.get("/api/nilm/models")
 async def get_nilm_models(
     page: int = Query(default=1, ge=1, description="Numéro de page"),
@@ -886,9 +772,6 @@ async def delete_nilm_model(model_id: int):
     """
     Supprime un modèle NILM-CNN de la base de données et du filesystem.
 
-    Si le modèle 'current' est supprimé, le modèle 'backup' est automatiquement
-    promu en 'current' pour garantir qu'il y a toujours un modèle actif.
-
     Args:
         model_id: ID du modèle à supprimer
 
@@ -905,7 +788,8 @@ async def delete_nilm_model(model_id: int):
         # Supprimer de la base de données
         result = db_manager.delete_cnn_model(model_id)
         
-        # Supprimer les fichiers du filesystem si le chemin existe
+        # Supprimer les fichiers du filesystem
+        model_name = result.get("model_name")
         model_path = result.get("model_path")
         deleted_files = []
         
@@ -916,50 +800,41 @@ async def delete_nilm_model(model_id: int):
                 deleted_files.append(model_path)
                 logger.info(f"Fichier modèle supprimé: {model_path}")
                 
-                # Supprimer le fichier metadata JSON associé
-                # Même nom que le modèle avec .metadata.json
+                # Supprimer le fichier metadata JSON
                 metadata_path = model_path.replace(".keras", ".metadata.json")
                 if os.path.exists(metadata_path):
                     os.remove(metadata_path)
                     deleted_files.append(metadata_path)
-                    logger.info("Fichier metadata supprimé: %s", metadata_path)
+                    logger.info(f"Fichier metadata supprimé: {metadata_path}")
                 
                 # Supprimer le dossier logs TensorBoard si existant
-                version = result.get("version")
-                if version:
-                    # Structure: /app/models/tensorboard/multi_gru/version
+                if model_name:
                     logs_dir = os.path.join(
                         os.path.dirname(model_path),
-                        "tensorboard", "multi_gru", version
+                        "tensorboard", "film_gru", model_name
                     )
                     if os.path.exists(logs_dir):
                         import shutil
                         shutil.rmtree(logs_dir)
                         deleted_files.append(f"{logs_dir}/ (directory)")
-                        logger.info("Dossier logs supprimé: %s", logs_dir)
+                        logger.info(f"Dossier logs supprimé: {logs_dir}")
                         
             except OSError as e:
-                logger.warning(
-                    f"Erreur lors de la suppression des fichiers: {e}"
-                )
+                logger.warning(f"Erreur lors de la suppression des fichiers: {e}")
         
         return {
             "message": "Modèle supprimé avec succès",
             "model_id": result["id"],
-            "version": result["version"],
+            "model_name": model_name,
             "deleted_files": deleted_files,
         }
         
     except ValueError as e:
-        # Erreurs métier (modèle non trouvé ou actif)
-        error_message = str(e)
-        if "non trouvé" in error_message:
-            raise HTTPException(status_code=404, detail=error_message)
-        elif "actif" in error_message:
-            raise HTTPException(status_code=400, detail=error_message)
-        else:
-            raise HTTPException(status_code=400, detail=error_message)
-            
+        # Modèle non trouvé
+        raise HTTPException(
+            status_code=404,
+            detail=str(e)
+        )
     except Exception as e:
         logger.error(
             f"Erreur lors de la suppression du modèle {model_id}: {str(e)}",

@@ -546,7 +546,7 @@ class DatabaseManager:
         query = text("""
             SELECT
                 id,
-                version,
+                model_name,
                 model_type,
                 architecture,
                 training_date,
@@ -554,16 +554,9 @@ class DatabaseManager:
                 num_classes,
                 metrics,
                 model_path,
-                model_status,
                 training_duration_seconds
             FROM cnn_models
-            ORDER BY 
-                CASE model_status 
-                    WHEN 'current' THEN 1 
-                    WHEN 'backup' THEN 2 
-                    ELSE 3 
-                END,
-                training_date DESC
+            ORDER BY training_date DESC
             LIMIT :limit OFFSET :offset
         """)
 
@@ -586,7 +579,7 @@ class DatabaseManager:
             for row in result:
                 models.append({
                     "id": row[0],
-                    "version": row[1],
+                    "model_name": row[1],
                     "model_type": row[2],
                     "architecture": row[3],
                     "training_date": format_datetime(row[4]),
@@ -594,8 +587,7 @@ class DatabaseManager:
                     "num_classes": row[6],
                     "metrics": row[7],
                     "model_path": row[8],
-                    "model_status": row[9],
-                    "training_duration_seconds": row[10],
+                    "training_duration_seconds": row[9],
                 })
 
             return {
@@ -606,10 +598,7 @@ class DatabaseManager:
 
     def delete_cnn_model(self, model_id: int) -> dict[str, Any]:
         """
-        Deletes a CNN model from the database and filesystem.
-
-        If the 'current' model is deleted, the 'backup' model is automatically
-        promoted to 'current' to ensure there's always an active model.
+        Deletes a CNN model from the database.
 
         Args:
             model_id: ID of the model to delete
@@ -622,7 +611,7 @@ class DatabaseManager:
         """
         # Check that the model exists
         check_query = text("""
-            SELECT id, version, model_status, model_path
+            SELECT id, model_name, model_path
             FROM cnn_models
             WHERE id = :model_id
         """)
@@ -635,45 +624,20 @@ class DatabaseManager:
             if not result:
                 raise ValueError(f"Modèle {model_id} non trouvé")
 
-            model_id_db, version, model_status, model_path = result
+            model_id_db, model_name, model_path = result
 
-            # Supprimer d'abord le modèle de la base de données
+            # Supprimer le modèle de la base de données
             delete_query = text("""
                 DELETE FROM cnn_models
                 WHERE id = :model_id
             """)
 
             conn.execute(delete_query, {"model_id": model_id})
-
-            # Si on vient de supprimer le modèle 'current', promouvoir 'backup' → 'current'
-            if model_status == 'current':
-                # Vérifier s'il existe un backup
-                backup_query = text("""
-                    SELECT id FROM cnn_models
-                    WHERE model_status = 'backup'
-                    LIMIT 1
-                """)
-                backup_result = conn.execute(backup_query).fetchone()
-
-                if backup_result:
-                    # Promouvoir backup → current
-                    promote_query = text("""
-                        UPDATE cnn_models
-                        SET model_status = 'current'
-                        WHERE model_status = 'backup'
-                    """)
-                    conn.execute(promote_query)
-                    logger.info(
-                        "✅ Modèle backup promu en current après "
-                        "suppression du modèle actif"
-                    )
-
             conn.commit()
 
             return {
                 "id": model_id_db,
-                "version": version,
-                "model_status": model_status,
+                "model_name": model_name,
                 "model_path": model_path,
                 "deleted": True,
             }

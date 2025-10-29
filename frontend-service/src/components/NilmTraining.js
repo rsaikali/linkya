@@ -8,50 +8,34 @@ import {
   Typography,
   Alert,
   Snackbar,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Chip,
   IconButton,
-  Pagination,
   CircularProgress,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
   DialogActions,
-  Tooltip,
 } from '@mui/material';
 import {
   PlayArrow as TrainIcon,
-  CheckCircle as SuccessIcon,
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
-  Save as BackupIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
-import TrainingLogsViewer from './TrainingLogsViewer';
 
 const NilmTraining = () => {
   // État
   const [models, setModels] = useState([]);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [trainLoading, setTrainLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [backupLoading, setBackupLoading] = useState(false);
   
   // Dialog de confirmation de suppression
   const [deleteDialog, setDeleteDialog] = useState({
     open: false,
     modelId: null,
-    modelVersion: '',
-    modelStatus: '',
+    modelName: '',
   });
   
   // Snackbar pour les notifications
@@ -61,14 +45,12 @@ const NilmTraining = () => {
     severity: 'info',
   });
 
-  // Charger les modèles
-  const loadModels = async (currentPage = page) => {
+  // Charger les modèles (simplifié - on récupère juste le premier)
+  const loadModels = async () => {
     setLoading(true);
     try {
-      const response = await api.get(`/api/nilm/models?page=${currentPage}&per_page=3`);
+      const response = await api.get(`/api/nilm/models?page=1&per_page=1`);
       setModels(response.data.models);
-      setTotalPages(response.data.total_pages);
-      setTotal(response.data.total);
     } catch (error) {
       console.error('Erreur lors du chargement des modèles:', error);
       showSnackbar('Erreur lors du chargement des modèles', 'error');
@@ -84,12 +66,6 @@ const NilmTraining = () => {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Recharger quand la page change
-  useEffect(() => {
-    loadModels(page);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
 
   // Afficher une notification
   const showSnackbar = (message, severity = 'info') => {
@@ -123,12 +99,11 @@ const NilmTraining = () => {
   };
 
   // Ouvrir le dialog de confirmation de suppression
-  const handleOpenDeleteDialog = (modelId, modelVersion, modelStatus) => {
+  const handleOpenDeleteDialog = (modelId, modelName) => {
     setDeleteDialog({
       open: true,
       modelId,
-      modelVersion,
-      modelStatus,
+      modelName,
     });
   };
 
@@ -137,20 +112,19 @@ const NilmTraining = () => {
     setDeleteDialog({
       open: false,
       modelId: null,
-      modelVersion: '',
-      modelStatus: '',
+      modelName: '',
     });
   };
 
   // Confirmer et supprimer le modèle
   const handleConfirmDelete = async () => {
-    const { modelId, modelVersion } = deleteDialog;
+    const { modelId, modelName } = deleteDialog;
     setDeleteLoading(true);
     
     try {
       await api.delete(`/api/nilm/models/${modelId}`);
       showSnackbar(
-        `Modèle ${modelVersion} supprimé avec succès`,
+        `Modèle ${modelName} supprimé avec succès`,
         'success'
       );
       handleCloseDeleteDialog();
@@ -162,26 +136,6 @@ const NilmTraining = () => {
       showSnackbar(errorMsg, 'error');
     } finally {
       setDeleteLoading(false);
-    }
-  };
-
-  // Créer un backup manuel
-  const handleCreateBackup = async () => {
-    setBackupLoading(true);
-    try {
-      const response = await api.post('/api/nilm/models/backup');
-      showSnackbar(
-        `Backup créé: ${response.data.backup_version}`,
-        'success'
-      );
-      // Recharger la liste après 2 secondes
-      setTimeout(() => loadModels(), 2000);
-    } catch (error) {
-      console.error('Erreur lors de la création du backup:', error);
-      const errorMsg = error.response?.data?.detail || 'Erreur lors de la création du backup';
-      showSnackbar(errorMsg, 'error');
-    } finally {
-      setBackupLoading(false);
     }
   };
 
@@ -252,17 +206,43 @@ const NilmTraining = () => {
     );
   };
 
-  // Formater la date
-  const formatDate = (dateString) => {
+  // Formater la date de manière relative
+  const formatRelativeDate = (dateString) => {
     if (!dateString) return 'N/A';
+    
     const date = new Date(dateString);
-    return date.toLocaleString('fr-FR', {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    // Format absolu pour affichage entre parenthèses
+    const absoluteDate = date.toLocaleString('fr-FR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
     });
+    
+    // Format relatif
+    let relativeText = '';
+    if (diffSeconds < 60) {
+      relativeText = 'il y a quelques secondes';
+    } else if (diffMinutes < 60) {
+      relativeText = `il y a ${diffMinutes} minute${diffMinutes > 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      relativeText = `il y a ${diffHours} heure${diffHours > 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      relativeText = `il y a ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
+    } else {
+      const diffMonths = Math.floor(diffDays / 30);
+      relativeText = `il y a ${diffMonths} mois`;
+    }
+    
+    return `${relativeText} (${absoluteDate})`;
   };
 
   // Formater la durée d'entraînement
@@ -329,86 +309,30 @@ const NilmTraining = () => {
     return { score: score.toFixed(1), color, label, unit: '%' };
   };
 
-  // Obtenir le badge de statut du modèle
-  const getStatusBadge = (modelStatus) => {
-    switch (modelStatus) {
-      case 'current':
-        return (
-          <Chip
-            icon={<SuccessIcon />}
-            label="Actif"
-            color="success"
-            size="small"
-          />
-        );
-      case 'backup':
-        return (
-          <Chip
-            label="Backup"
-            color="warning"
-            size="small"
-          />
-        );
-      case 'archived':
-        return (
-          <Chip
-            label="Archivé"
-            color="default"
-            size="small"
-            variant="outlined"
-          />
-        );
-      default:
-        return (
-          <Chip
-            label={modelStatus || 'Inconnu'}
-            size="small"
-            variant="outlined"
-          />
-        );
-    }
+  // Obtenir le badge de statut du modèle (supprimé - un seul modèle maintenant)
+  
+  // Message d'avertissement pour la suppression (simplifié)
+  const getDeleteWarning = () => {
+    return (
+      <Alert severity="warning" sx={{ mt: 2 }}>
+        ⚠️ <strong>Attention :</strong> Vous supprimez le seul modèle existant.
+        Il faudra réentraîner un nouveau modèle pour continuer les détections.
+      </Alert>
+    );
   };
 
-  // Message d'avertissement pour la suppression
-  const getDeleteWarning = (modelStatus) => {
-    if (modelStatus === 'current') {
-      return (
-        <Alert severity="warning" sx={{ mt: 2 }}>
-          ⚠️ <strong>Attention :</strong> Vous supprimez le modèle actif.
-          Le modèle 'backup' sera automatiquement promu en 'current'.
-        </Alert>
-      );
-    } else if (modelStatus === 'backup') {
-      return (
-        <Alert severity="info" sx={{ mt: 2 }}>
-          ℹ️ Vous supprimez le modèle de sauvegarde.
-          Vous ne pourrez plus revenir en arrière en cas de problème.
-        </Alert>
-      );
-    }
-    return null;
-  };
+  const currentModel = models.length > 0 ? models[0] : null;
+  const quality = currentModel ? getQualityScore(currentModel) : null;
 
   return (
     <>
-      <Card>
+      {/* Modèle Courant */}
+      <Card sx={{ mb: 3 }}>
         <CardHeader
-          title="Historique des entraînements"
-          subheader={`${total} modèle${total !== 1 ? 's' : ''} entraîné${total !== 1 ? 's' : ''}`}
+          title="Modèle NILM Actuel"
           avatar={<TrainIcon />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Button
-                variant="outlined"
-                color="warning"
-                size="small"
-                startIcon={backupLoading ? <CircularProgress size={16} /> : <BackupIcon />}
-                onClick={handleCreateBackup}
-                disabled={backupLoading || trainLoading}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                {backupLoading ? 'Sauvegarde...' : 'Backup manuel'}
-              </Button>
               <Button
                 variant="contained"
                 color="primary"
@@ -418,7 +342,7 @@ const NilmTraining = () => {
                 disabled={trainLoading}
                 sx={{ whiteSpace: 'nowrap' }}
               >
-                {trainLoading ? 'Entraînement...' : 'Lancer entraînement'}
+                {trainLoading ? 'Entraînement...' : currentModel ? 'Réentraîner' : 'Lancer entraînement'}
               </Button>
               <IconButton onClick={() => loadModels()} disabled={loading} size="small">
                 <RefreshIcon />
@@ -427,121 +351,109 @@ const NilmTraining = () => {
           }
         />
         <CardContent>
-        {loading && models.length === 0 ? (
-          <Box display="flex" justifyContent="center" p={4}>
-            <CircularProgress />
-          </Box>
-        ) : models.length === 0 ? (
-          <Alert severity="info">
-            Aucun modèle entraîné. Lancez un premier entraînement pour commencer !
-          </Alert>
-        ) : (
-          <>
-            <TableContainer sx={{ maxHeight: 600 }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                    <TableCell>État</TableCell>
-                    <TableCell>Qualité</TableCell>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Durée</TableCell>
-                    <TableCell>Signatures</TableCell>
-                    <TableCell>Classes</TableCell>
-                    <TableCell>Métriques</TableCell>
-                    <TableCell align="center">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {models.map((model) => {
-                    const quality = getQualityScore(model);
-                    return (
-                      <TableRow key={model.id} hover>
-                        <TableCell>
-                          {getStatusBadge(model.model_status)}
-                        </TableCell>
-                        <TableCell>
-                            {quality ? (
-                              <Chip
-                                label={`${quality.label} (${quality.score}${quality.unit})`}
-                                color={quality.color}
-                                size="small"
-                              />
-                            ) : (
-                              <Typography variant="caption" color="text.secondary">
-                                N/A
-                              </Typography>
-                            )}
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">
-                            {formatDate(model.training_date)}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={formatDuration(model.training_duration_seconds)}
-                            size="small"
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell>
-                            <Chip
-                              label={model.num_signatures}
-                              size="small"
-                              color="primary"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={model.num_classes}
-                              size="small"
-                              color="secondary"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            {formatMetrics(model)}
-                          </TableCell>
-                          <TableCell align="center">
-                            <Tooltip title="Supprimer ce modèle">
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  color="error"
-                                  onClick={() => handleOpenDeleteDialog(
-                                    model.id, 
-                                    model.version,
-                                    model.model_status
-                                  )}
-                                  disabled={deleteLoading}
-                                >
-                                  <DeleteIcon />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <Box display="flex" justifyContent="center" mt={3}>
-                  <Pagination
-                    count={totalPages}
-                    page={page}
-                    onChange={(e, value) => setPage(value)}
-                    color="primary"
-                    showFirstButton
-                    showLastButton
-                  />
+          {loading ? (
+            <Box display="flex" justifyContent="center" p={4}>
+              <CircularProgress />
+            </Box>
+          ) : !currentModel ? (
+            <Alert severity="info">
+              Aucun modèle entraîné. Lancez un premier entraînement pour commencer !
+            </Alert>
+          ) : (
+            <Box>
+              {/* En-tête du modèle */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    {currentModel.model_name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Entraîné {formatRelativeDate(currentModel.training_date)}
+                  </Typography>
                 </Box>
-              )}
-            </>
+                <Box sx={{ textAlign: 'right' }}>
+                  {quality && (
+                    <Chip
+                      label={`${quality.label}`}
+                      color={quality.color}
+                      sx={{ mb: 1, fontSize: '0.9rem', fontWeight: 'bold' }}
+                    />
+                  )}
+                  <Typography variant="caption" display="block" color="text.secondary">
+                    Durée: {formatDuration(currentModel.training_duration_seconds)}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Statistiques du modèle */}
+              <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+                gap: 2,
+                mb: 3 
+              }}>
+                <Card variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                    Type de modèle
+                  </Typography>
+                  <Typography variant="h6">
+                    {currentModel.model_type || 'N/A'}
+                  </Typography>
+                </Card>
+                
+                <Card variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                    Signatures utilisées
+                  </Typography>
+                  <Typography variant="h6">
+                    {currentModel.num_signatures}
+                  </Typography>
+                </Card>
+                
+                <Card variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                    Appareils détectés
+                  </Typography>
+                  <Typography variant="h6">
+                    {currentModel.num_classes}
+                  </Typography>
+                </Card>
+                
+                <Card variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                    Score de qualité
+                  </Typography>
+                  <Typography variant="h6" color={quality ? `${quality.color}.main` : 'text.primary'}>
+                    {quality ? `${quality.score}${quality.unit}` : 'N/A'}
+                  </Typography>
+                </Card>
+              </Box>
+
+              {/* Métriques détaillées */}
+              <Card variant="outlined" sx={{ p: 2, mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Métriques d'entraînement
+                </Typography>
+                {formatMetrics(currentModel)}
+              </Card>
+
+              {/* Actions */}
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  startIcon={<DeleteIcon />}
+                  onClick={() => handleOpenDeleteDialog(
+                    currentModel.id, 
+                    currentModel.model_name
+                  )}
+                  disabled={deleteLoading}
+                >
+                  Supprimer le modèle
+                </Button>
+              </Box>
+            </Box>
           )}
         </CardContent>
       </Card>
@@ -556,7 +468,7 @@ const NilmTraining = () => {
         <DialogTitle>Confirmer la suppression</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Êtes-vous sûr de vouloir supprimer le modèle <strong>{deleteDialog.modelVersion}</strong> ?
+            Êtes-vous sûr de vouloir supprimer le modèle <strong>{deleteDialog.modelName}</strong> ?
             <br />
             <br />
             Cette action supprimera :
@@ -570,7 +482,7 @@ const NilmTraining = () => {
             <strong>Cette action est irréversible.</strong>
           </DialogContentText>
           
-          {getDeleteWarning(deleteDialog.modelStatus)}
+          {getDeleteWarning()}
         </DialogContent>
         <DialogActions>
           <Button 
@@ -606,9 +518,6 @@ const NilmTraining = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-
-      {/* Training Logs Viewer */}
-      <TrainingLogsViewer />
     </>
   );
 };

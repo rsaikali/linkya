@@ -4,6 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { Container, Box, Typography, AppBar, Toolbar } from '@mui/material';
 import { ElectricBolt } from '@mui/icons-material';
 import theme from './theme';
+import CurrentModel from './components/CurrentModel';
 import LatestConsumption from './components/LatestConsumption';
 import ConsumptionChart from './components/ConsumptionChart';
 import NilmTraining from './components/NilmTraining';
@@ -26,6 +27,7 @@ function App() {
 
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <CurrentModel />
             <LatestConsumption />
             <ConsumptionChart />
             <DetectionsList />

@@ -1,20 +1,18 @@
 # AGENTS.md
 
 This file acts as a guide when working with code in this repository.
-Keep it simple, no over-engineering, but remain thorough in your actions.
 No unnecessary documentation files or reports for your actions, only AGENTS.md and the root README.md.
 Do not create unnecessary scripts, or delete them once they are no longer needed.
 Everything in the codebase must be in English language.
+The environment to use for every command you should launch is defined in the root .env file.
+Keep it simple: no over-engineering in your actions, but try to be the expert you are in every domain asked.
 
 ## Context Documentation
-This "AGENTS.md" file contains everything you need to know about the project to quickly get a good understanding as a coding assistant.
+
+This "AGENTS.md" file contains everything you need to know about the project to quickly get a good understanding as an expert coding assistant.
 Update this file periodically as the project evolves.
 In this file, do not be too detailed to avoid overloading the context, but be precise enough to help you understand the application quickly when re-reading it.
 Regularly reorganize the file so that it is always up to date and coherent, but keep only the essentials such as the overall architecture and how it works, without too many technical details.
-
-## Schema
-
-Empty now, replace this text with an architecture diagram of the project when possible.
 
 ## Project Overview
 
@@ -149,7 +147,8 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Multi-output RNN architecture (GRU/LSTM) with attention mechanism
 - Detects states/cycles using KMeans clustering on predicted power
 - GPU support via `runtime: nvidia` (optional, falls back to CPU)
-- TensorBoard logs saved per model version
+- TensorBoard logs saved per model in `models/tensorboard/`
+- **Single Model System**: Only one model at a time, named `linkya_model_<timestamp>`
 - Celery tasks: `train_cnn_model`, `detect_cnn_appliances`, `add_cnn_signature`, `enrich_cnn_signatures`
 
 ### backend-service (FastAPI)
@@ -171,9 +170,8 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Appliance autocomplete with create-on-demand
 - Training management with paginated model history
 - **Real-time Training Logs**: WebSocket-based live training progress viewer
-- **Model Status Display**: Badges for current (green), backup (orange), archived (gray)
-- **Flexible Model Deletion**: Delete any model with appropriate warnings (current deletion auto-promotes backup)
-- **Manual Backup Creation**: Button to save current model as backup before risky operations
+- **Simple Model Display**: Shows model name (linkya_model_<timestamp>) without complex status badges
+- **Direct Model Deletion**: Delete button to remove the current model (requires retraining after)
 - WebSocket-based real-time training logs with auto-reconnection
 - SSE-based real-time updates for consumption data (migrating to WebSocket)
 - CSV export/import for signatures (bulk operations)
@@ -240,29 +238,29 @@ CNN_MIN_DURATION_SECONDS=30
 - Can be cleaned periodically (`make detections-clean`) - negative signatures are preserved
 
 **cnn_models**:
-- Metadata for trained models: `version`, `model_type`, `training_date` (timestamptz), `metrics` (JSON)
-- **Model Status System** (`model_status` ENUM):
-  - `current`: Active model used for detection (only one at a time, enforced by unique index)
-  - `backup`: Previous model saved before last training (only one, for rollback)
-  - `archived`: Historical models no longer active
-- **Model Management**:
-  - All models can be deleted from the frontend (current/backup/archived)
-  - Deleting 'current' automatically promotes 'backup' → 'current' to ensure always-active model
-  - Manual backup: Button in frontend to save 'current' → 'backup' (archives old backup)
-  - Automatic backup: Training automatically saves current → backup before fine-tuning
+- Metadata for trained models: `model_name`, `model_type`, `training_date` (timestamptz), `metrics` (JSON)
+- **Single Model System**: 
+  - Only ONE model at a time (table typically contains 0 or 1 row)
+  - `model_name` format: `linkya_model_<timestamp>` (e.g., `linkya_model_20251029_143052`)
+  - Training replaces the existing model (old model is deleted)
+  - No versioning, no backup system - simplicity over complexity
 
 ## NILM Workflow
 
 1. **Data Collection**: Let system run 48h to gather baseline consumption
 2. **Signature Creation**: Use frontend to select time ranges on chart → creates `cnn_signatures`
 3. **Model Training**: Run `make train` or use frontend trigger
-   - **Incremental Fine-Tuning**: System automatically detects if a `current` model exists
-     - If yes: Saves current → backup, loads model, fine-tunes with lower learning rate (0.0001 vs 0.001) and fewer epochs (max 15)
+   - **From-Scratch Training**: Each training creates a NEW model and deletes the old one
+     - New model named `linkya_model_<timestamp>`
+     - Old model files (.keras, .metadata.json, logs) automatically deleted
      - If no: Trains from scratch
    - **Feedback Learning**: Automatically uses negative signatures (persistent examples of what NOT to detect)
+     - New model named `linkya_model_<timestamp>`
+     - Old model files (.keras, .metadata.json, logs) automatically deleted
+     - Training always from scratch (no fine-tuning)
    - One multi-output model predicts all appliances simultaneously
-   - TensorBoard logs saved to `models/tensorboard/`
-   - Model always saved as version "current" (not timestamped)
+   - TensorBoard logs saved to `models/tensorboard/film_gru/<model_name>/`
+   - Model saved with timestamp in name for tracking
 4. **Detection**: Automatic every 5 minutes (configurable) or manual via `make detect`
    - Sliding window over recent data
    - Predicts appliance power using S2P model
@@ -277,32 +275,34 @@ CNN_MIN_DURATION_SECONDS=30
    - View feedback statistics: `make feedback-stats`
    - View signature statistics: `make signatures-stats` (positive + negative)
    - Clean old detections: `make detections-clean` (negative signatures preserved)
-   - Compare current vs backup: `make model-compare`
-   - Rollback to previous model if needed: `make model-rollback`
-   - Check model status: `make model-status`
-   - More user validations → more negative signatures → better model accuracy
+   - More user validations → more negative signatures → better model accuracy on next training
 
 ## Key Technical Details
 
-### Incremental Fine-Tuning System
+### Single Model System (Simplified)
 
-The system maintains only two active models:
-- **current**: Production model used for all detections
-- **backup**: Safety net for rollback if new training degrades performance
+The system maintains only ONE active model at a time:
+- **model_name**: Format `linkya_model_<timestamp>` (e.g., `linkya_model_20251029_143052`)
+- Training creates a new model and deletes the old one (both DB entry and files)
+- No versioning, no backup/archived states - keep it simple
 
 **Training Workflow**:
-1. Check for existing `current` model
-2. If found:
-   - Archive old `backup` → `archived`
-   - Promote `current` → `backup`
-   - Load `current` model weights
-   - Fine-tune with reduced learning rate (10x lower) and max 15 epochs
-3. If not found: Train from scratch with standard parameters (learning rate 0.001, 30 epochs)
-4. Save new model as `current`
+1. Generate model name with timestamp: `linkya_model_YYYYMMDD_HHMMSS`
+2. Train model from scratch (always, no fine-tuning)
+3. Delete old model entry and files if exists
+4. Save new model to database with new name
+5. Model files: `<model_name>.keras`, `<model_name>.metadata.json`
+**Training Workflow**:
+1. Generate model name with timestamp: `linkya_model_YYYYMMDD_HHMMSS`
+2. Train model from scratch (always, no fine-tuning)
+3. Delete old model entry and files if exists
+4. Save new model to database with new name
+5. Model files: `<model_name>.keras`, `<model_name>.metadata.json`
 
-**Rollback Workflow**:
-- `make model-rollback` atomically promotes `backup` → `current` and archives old `current`
-- Useful if fine-tuned model performs worse due to overfitting or bad feedback data
+**Model Deletion**:
+- Delete from frontend or via `make api-nilm-delete-model ID=<id>`
+- Removes DB entry, .keras file, .metadata.json, and TensorBoard logs
+- After deletion, no model available until next training
 
 ### S2P Multi-Output Model (`seq2point_nilm.py`)
 
@@ -406,24 +406,22 @@ ORDER BY total_wh DESC;
   - Real-time metrics: loss, accuracy, progress bar, elapsed time, ETA
   - Migration path from SSE to WebSocket for better bidirectional communication
 
-- **Flexible Model Management System** (October 2025):
-  - Frontend now displays `model_status` (current/backup/archived) with color-coded badges
-  - All models can be deleted from frontend, including current and backup
-  - Deleting 'current' model automatically promotes 'backup' → 'current' for continuity
-  - New "Backup manuel" button to save current model before risky operations
-  - Backend endpoint `POST /api/nilm/models/backup` for manual backup creation
-  - Improved delete dialog with status-specific warnings (current/backup/archived)
-  - Model list sorted by status priority (current first, then backup, then archived by date)
+- **Simplified Single Model System** (October 2025):
+  - Removed complex `model_status` ENUM (current/backup/archived) in favor of simplicity
+  - Only ONE model at a time with name format `linkya_model_<timestamp>`
+  - Removed `is_active`, `version` columns from `cnn_models` table
+  - Training always from-scratch (no fine-tuning) - creates new model and deletes old one
+  - Frontend simplified: removed status badges, backup button, complex warnings
+  - Backend simplified: removed `/api/nilm/models/backup` endpoint
+  - Migration SQL: `migrations/simplify_single_model.sql`
 
-- **Incremental Fine-Tuning System**: Revolutionary continuous learning approach replacing version-based training
-  - Migrated from `is_active` (boolean) to `model_status` (ENUM: current/backup/archived)
-  - System now maintains only ONE active model ("current") instead of accumulating versions
-  - Automatic backup before training: current → backup (old backup → archived)
-  - Fine-tuning when current exists: loads weights, reduces learning rate to 0.0001, max 15 epochs
-  - From-scratch when no current: standard parameters (lr=0.001, 30 epochs)
-  - New commands: `make model-compare`, `make model-rollback`, `make model-status`
-  - Model improves incrementally with each training cycle instead of starting over
-  - Rollback capability if fine-tuned model underperforms
+- **Real-time Training Logs via WebSocket** (October 2025):
+  - Custom Keras callback `RedisTrainingCallback` publishes training events to Redis Pub/Sub channel `training:logs`
+  - FastAPI WebSocket endpoint `/ws/training` subscribes to Redis and broadcasts to multiple clients
+  - Frontend `TrainingLogsViewer` component displays live training progress with auto-reconnection
+  - Events: `training_start`, `epoch_start`, `epoch_end` (with metrics, ETA), `batch_update`, `training_complete`
+  - Real-time metrics: loss, accuracy, progress bar, elapsed time, ETA
+  - Migration path from SSE to WebSocket for better bidirectional communication
 
 - **Negative Signatures System**: Persistent learning from invalidated detections
   - Added `is_negative` field to `cnn_signatures` table (boolean, default FALSE)

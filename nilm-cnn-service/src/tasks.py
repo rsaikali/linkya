@@ -107,7 +107,7 @@ def init_cnn_database() -> Dict[str, Any]:
 @celery_app.task(name='train_cnn_model')
 def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
     """
-    Entraîne le modèle NILM (S2P) avec système current/backup et fine-tuning automatique
+    Entraîne un nouveau modèle NILM (S2P) - remplace l'ancien modèle
 
     Args:
         min_signatures: Nombre minimum de signatures par appareil
@@ -119,68 +119,25 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         import time
         from sqlalchemy import text
         import json
-        import shutil
         from pathlib import Path
 
         start_time = time.time()
 
-        # Étape 1: Vérifier s'il existe un modèle current
-        logger.info("🔍 Recherche d'un modèle current existant...")
-        current_model = None
-        with db_manager.get_session() as session:
-            query = text("""
-                SELECT id, version, model_path, metrics
-                FROM cnn_models
-                WHERE model_status = 'current'
-                LIMIT 1
-            """)
-            result = session.execute(query).fetchone()
-            if result:
-                current_model = {
-                    'id': result[0],
-                    'version': result[1],
-                    'model_path': result[2],
-                    'metrics': result[3]
-                }
-                logger.info(f"✅ Modèle current trouvé: {current_model['version']}")
+        # Générer le nom du modèle avec timestamp
+        timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%Y%m%d_%H%M%S")
+        model_name = f"linkya_model_{timestamp}"
+        
+        logger.info(f"� Début de l'entraînement du modèle {model_name}...")
 
-        # Étape 2: Si un modèle current existe, le promouvoir en backup
-        if current_model:
-            logger.info("💾 Sauvegarde du modèle current vers backup...")
-            with db_manager.get_session() as session:
-                # Archiver l'ancien backup
-                session.execute(
-                    text("UPDATE cnn_models SET model_status = 'archived' WHERE model_status = 'backup'")
-                )
-                # Promouvoir current → backup
-                session.execute(
-                    text("UPDATE cnn_models SET model_status = 'backup' WHERE model_status = 'current'")
-                )
-                session.commit()
-            logger.info("✅ Ancien modèle sauvegardé en backup")
-
-            # Charger le modèle current pour fine-tuning
-            model_path = current_model['model_path']
-            if Path(model_path).exists():
-                logger.info(f"📂 Chargement du modèle {model_path} pour fine-tuning...")
-                try:
-                    nilm_manager.load_model(model_path)
-                    logger.info("✅ Modèle chargé avec succès")
-                except Exception as e:
-                    logger.warning(f"⚠️  Impossible de charger le modèle: {e}. Entraînement from-scratch.")
-        else:
-            logger.info("ℹ️  Aucun modèle current - Entraînement from-scratch")
-
-        # Étape 3: Entraîner le modèle (fine-tuning si modèle chargé, sinon from-scratch)
-        logger.info("🚀 Début de l'entraînement Sequence-to-Point...")
-        version = "current"  # On utilise toujours "current" comme version
-        metrics = nilm_manager.train_all_appliances(version, fine_tune=(current_model is not None))
+        # Entraîner le modèle from-scratch (pas de fine-tuning)
+        metrics = nilm_manager.train_all_appliances(model_name, fine_tune=False)
         if 'error' in metrics:
             return {
                 'status': 'error',
                 'message': metrics.get('error'),
                 'details': metrics
             }
+        
         # Préparer les infos pour la base
         num_appliances = metrics.get('num_appliances', 0)
         total_signatures = sum(
@@ -198,21 +155,49 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         
         # Calculer la durée
         training_duration = int(time.time() - start_time)
-
-        # Sauvegarder en base comme "current"
         completed_at = datetime.now(LOCAL_TIMEZONE)
-        training_mode = "fine-tuning" if current_model else "from-scratch"
 
+        # Supprimer l'ancien modèle s'il existe
+        with db_manager.get_session() as session:
+            old_models = session.execute(
+                text("SELECT id, model_path FROM cnn_models")
+            ).fetchall()
+            
+            for old_model in old_models:
+                old_id, old_path = old_model
+                # Supprimer le fichier modèle
+                if old_path and Path(old_path).exists():
+                    try:
+                        Path(old_path).unlink()
+                        logger.info(f"🗑️  Fichier modèle supprimé: {old_path}")
+                    except Exception as e:
+                        logger.warning(f"⚠️  Impossible de supprimer {old_path}: {e}")
+                
+                # Supprimer metadata
+                metadata_path = Path(str(old_path).replace('.keras', '.metadata.json'))
+                if metadata_path.exists():
+                    try:
+                        metadata_path.unlink()
+                    except Exception as e:
+                        logger.warning(f"⚠️  Impossible de supprimer metadata: {e}")
+            
+            # Supprimer toutes les entrées de la table
+            session.execute(text("DELETE FROM cnn_models"))
+            session.commit()
+            
+            logger.info("✅ Ancien modèle supprimé")
+
+        # Sauvegarder le nouveau modèle en base
         with db_manager.get_session() as session:
             query = text("""
                 INSERT INTO cnn_models
-                (version, model_type, architecture, training_date,
+                (model_name, model_type, architecture, training_date,
                  num_signatures, num_classes, metrics, model_path,
-                 model_status, training_duration_seconds)
+                 training_duration_seconds)
                 VALUES
-                (:version, :model_type, cast(:architecture as jsonb),
+                (:model_name, :model_type, cast(:architecture as jsonb),
                  :training_date, :num_signatures, :num_classes,
-                 cast(:metrics as jsonb), :model_path, :model_status,
+                 cast(:metrics as jsonb), :model_path,
                  :training_duration_seconds)
                 RETURNING id
             """)
@@ -220,15 +205,14 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
             result = session.execute(
                 query,
                 {
-                    'version': version,
+                    'model_name': model_name,
                     'model_type': model_type_str,
                     'architecture': json.dumps(architecture),
                     'training_date': completed_at,
                     'num_signatures': total_signatures,
                     'num_classes': num_appliances,
                     'metrics': json.dumps(metrics, default=str),
-                    'model_path': metrics.get('model_path', f"{settings.cnn_model_path}/{version}.keras"),
-                    'model_status': 'current',
+                    'model_path': metrics.get('model_path', f"{settings.cnn_model_path}/{model_name}.keras"),
                     'training_duration_seconds': training_duration
                 }
             )
@@ -237,15 +221,14 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
             session.commit()
         
         logger.info(
-            f"✅ Modèle {version} entraîné en {training_duration}s ({training_mode}) - "
+            f"✅ Modèle {model_name} entraîné en {training_duration}s - "
             f"{num_appliances} appareils, {total_signatures} signatures"
         )
 
         return {
             'status': 'success',
-            'version': version,
+            'model_name': model_name,
             'model_type': model_type_str,
-            'training_mode': training_mode,
             'num_signatures': total_signatures,
             'num_appliances': num_appliances,
             'metrics': metrics,
@@ -280,18 +263,17 @@ def detect_cnn_appliances(
         # Vérifier qu'un modèle est disponible
         with db_manager.engine.connect() as conn:
             result = conn.execute(
-                text("SELECT version, model_type FROM cnn_models "
-                     "WHERE model_status = 'current' "
+                text("SELECT model_name, model_type FROM cnn_models "
                      "ORDER BY training_date DESC LIMIT 1")
             )
             row = result.first()
             
             if not row:
-                message = "Aucun modèle actif disponible"
+                message = "Aucun modèle disponible"
                 logger.warning(message)
                 return {'status': 'skipped', 'message': message}
             
-            active_version = row.version
+            active_model = row.model_name
             model_type = row.model_type
         
         # Définir la période d'analyse
@@ -505,7 +487,7 @@ def detect_cnn_appliances(
             'num_updated': num_updated,
             'num_skipped': num_skipped,
             'total_processed': total_processed,
-            'model_version': active_version,
+            'model_name': active_model,
             'period': {'start': start_time.isoformat(), 'end': end_time.isoformat()},
             'timestamp': datetime.utcnow().isoformat()
         }

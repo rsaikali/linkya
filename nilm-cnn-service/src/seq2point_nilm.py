@@ -168,15 +168,15 @@ class RedisTrainingCallback(callbacks.Callback):
     by WebSocket endpoints.
     """
     
-    def __init__(self, model_version: str, total_epochs: int, batch_update_freq: int = 10):
+    def __init__(self, model_name: str, total_epochs: int, batch_update_freq: int = 10):
         """
         Args:
-            model_version: Model version identifier
+            model_name: Model name identifier (format: linkya_model_<timestamp>)
             total_epochs: Total number of epochs to train
             batch_update_freq: Publish batch updates every N batches
         """
         super().__init__()
-        self.model_version = model_version
+        self.model_name = model_name
         self.total_epochs = total_epochs
         self.batch_update_freq = batch_update_freq
         self.redis_client = None
@@ -213,7 +213,7 @@ class RedisTrainingCallback(callbacks.Callback):
         try:
             message = {
                 'event': event_type,
-                'version': self.model_version,
+                'model_name': self.model_name,
                 'timestamp': datetime.utcnow().isoformat(),
                 'data': data
             }
@@ -229,7 +229,7 @@ class RedisTrainingCallback(callbacks.Callback):
         self.training_start_time = datetime.utcnow()
         self._publish('training_start', {
             'total_epochs': self.total_epochs,
-            'message': f'Starting training for model {self.model_version}'
+            'message': f'Starting training for model {self.model_name}'
         })
     
     def on_epoch_begin(self, epoch, logs=None):
@@ -279,7 +279,7 @@ class RedisTrainingCallback(callbacks.Callback):
             'epochs_completed': self.current_epoch,
             'final_metrics': {k: float(v) for k, v in logs.items()},
             'total_duration_seconds': round(elapsed, 1),
-            'message': f'Training completed for model {self.model_version}'
+            'message': f'Training completed for model {self.model_name}'
         })
 
 
@@ -484,7 +484,7 @@ class Seq2PointFiLMModel:
     def train(
         self,
         all_signatures: Dict[int, List[Dict[str, Any]]],
-        version: str,
+        model_name: str,
         epochs: int = 30,
         batch_size: int = 32,
         validation_split: float = 0.15,
@@ -496,7 +496,7 @@ class Seq2PointFiLMModel:
         
         Args:
             all_signatures: Dict[appliance_id, List[signature]]
-            version: Version du modèle
+            model_name: Name of the model (format: linkya_model_<timestamp>)
             use_feedback: Utiliser détections invalidées comme négatifs
             fine_tune: Continue entraînement modèle existant
         
@@ -617,7 +617,7 @@ class Seq2PointFiLMModel:
         
         # Redis real-time training logs callback
         redis_callback = RedisTrainingCallback(
-            model_version=version,
+            model_name=model_name,
             total_epochs=epochs,
             batch_update_freq=10
         )
@@ -626,7 +626,7 @@ class Seq2PointFiLMModel:
         # TensorBoard
         tensorboard_root = Path(settings.cnn_model_path) / "tensorboard"
         run_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        log_dir = tensorboard_root / f"film_{self.model_type}" / version / run_id
+        log_dir = tensorboard_root / f"film_{self.model_type}" / model_name / run_id
         log_dir.mkdir(parents=True, exist_ok=True)
         callbacks_list.append(
             callbacks.TensorBoard(
@@ -1561,14 +1561,14 @@ class Seq2PointNILMManager:
 
     def train_all_appliances(
         self,
-        version: str,
+        model_name: str,
         fine_tune: bool = False
     ) -> Dict[str, Any]:
         """
         Entraîne le modèle FiLM sur tous les appareils.
 
         Args:
-            version: Version du modèle
+            model_name: Name of the model (format: linkya_model_<timestamp>)
             fine_tune: Si True, continue l'entraînement du modèle existant
 
         Returns:
@@ -1664,7 +1664,7 @@ class Seq2PointNILMManager:
 
             metrics = self.film_model.train(
                 all_signatures,
-                version,
+                model_name,
                 epochs=30,
                 batch_size=32,
                 use_feedback=True,
@@ -1678,13 +1678,13 @@ class Seq2PointNILMManager:
                 return {'error': 'insufficient_training_data'}
             
             model_path = Path(settings.cnn_model_path) / (
-                f's2p_film_{self.model_type}_{version}.keras'
+                f'{model_name}.keras'
             )
             self.film_model.save(str(model_path), metadata=metrics)
             
             # Formater la réponse pour compatibilité frontend
             return {
-                'version': version,
+                'model_name': model_name,
                 'model_type': f'FiLM-{self.model_type}',
                 'architecture': 'FiLM',
                 'num_appliances': len(appliance_ids),

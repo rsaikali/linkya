@@ -91,12 +91,12 @@ class DatabaseManager:
             Index('idx_cnn_detections_validation', 'user_validated', 'is_correct')
         )
         
-        # Table des modèles CNN versionnés
+        # Table des modèles CNN (un seul modèle actif à la fois)
         self.cnn_models = Table(
             'cnn_models',
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
-            Column('version', String(50), unique=True, nullable=False),
+            Column('model_name', String(255), unique=True, nullable=False),  # Format: linkya_model_<timestamp>
             Column('model_type', String(100), default='CNN1D'),
             Column('architecture', JSON),  # Architecture du modèle
             Column('training_date', DateTime(timezone=True), default=datetime.utcnow),
@@ -104,10 +104,8 @@ class DatabaseManager:
             Column('num_classes', Integer),  # Nombre de classes
             Column('metrics', JSON),  # Métriques de performance (accuracy, loss, etc.)
             Column('model_path', String(500)),
-            Column('is_active', Boolean, default=False),
             Column('training_duration_seconds', Integer),  # Durée d'entraînement (secondes)
-            Index('idx_cnn_models_version', 'version'),
-            Index('idx_cnn_models_active', 'is_active')
+            Index('idx_cnn_models_name', 'model_name')
         )
     
     @contextmanager
