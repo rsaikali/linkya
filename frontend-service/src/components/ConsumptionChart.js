@@ -300,12 +300,14 @@ const ConsumptionChart = () => {
         
         setIsReloading(true);
         
-        // Calculer la plage avec une marge de 20% de chaque côté pour permettre le pan
-        const timeRange = maxTime - minTime;
-        const margin = timeRange * 0.2;
-        const startTime = new Date(minTime.getTime() - margin).toISOString();
-        const endTime = new Date(maxTime.getTime() + margin).toISOString();
+        // Toujours charger les 7 derniers jours complets pour permettre le dézoom
+        // Cela évite le problème où on ne peut plus dézoomer après avoir zoomé sur une courte période
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
+        const startTime = sevenDaysAgo.toISOString();
+        const endTime = now.toISOString();
         
+        console.log(`📊 Loading full 7-day range with ${newInterval} interval`);
         fetchHistory(startTime, endTime, newInterval);
       }
     }, 500);
