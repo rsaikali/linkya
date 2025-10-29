@@ -450,6 +450,7 @@ const ConsumptionChart = () => {
     responsive: true,
     borderWidth:1,
     maintainAspectRatio: false,
+    animation: false, // Désactiver les animations pour éviter l'effet troublant lors du zoom
     layout: {
       padding: {
         top: topPadding,
