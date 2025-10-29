@@ -54,6 +54,7 @@ const ConsumptionChart = () => {
   const [isReloading, setIsReloading] = useState(false);
   const chartRef = useRef(null);
   const zoomTimeoutRef = useRef(null);
+  const pendingZoomRef = useRef(null); // Pour restaurer le zoom après rechargement
 
   // Calculer l'intervalle d'agrégation selon la plage de temps visible
   const getOptimalInterval = useCallback((visibleHours) => {
@@ -168,6 +169,30 @@ const ConsumptionChart = () => {
     };
   }, [fetchHistory]);
 
+  // Restaurer le zoom après rechargement des données
+  useEffect(() => {
+    if (pendingZoomRef.current && history && history.data && history.data.length > 0 && chartRef.current) {
+      const { minTime, maxTime } = pendingZoomRef.current;
+      
+      // Trouver les index correspondant aux timestamps sauvegardés
+      const minIndex = history.data.findIndex(d => new Date(d.time).getTime() >= minTime);
+      const maxIndex = history.data.findIndex(d => new Date(d.time).getTime() >= maxTime);
+      
+      const finalMinIndex = minIndex !== -1 ? minIndex : 0;
+      const finalMaxIndex = maxIndex !== -1 ? maxIndex : history.data.length - 1;
+      
+      // Restaurer le zoom
+      if (chartRef.current && chartRef.current.scales && chartRef.current.scales.x) {
+        chartRef.current.scales.x.min = finalMinIndex;
+        chartRef.current.scales.x.max = finalMaxIndex;
+        chartRef.current.update('none'); // Update sans animation
+      }
+      
+      pendingZoomRef.current = null;
+      console.log('🔍 Zoom restored after reload');
+    }
+  }, [history]);
+
   // Fonction pour réinitialiser le zoom
   const handleResetZoom = useCallback(() => {
     if (chartRef.current) {
@@ -228,6 +253,13 @@ const ConsumptionChart = () => {
       // Ne recharger que si l'intervalle a changé
       if (newInterval !== currentInterval) {
         console.log(`🔄 Reloading with new interval: ${currentInterval} → ${newInterval}`);
+        
+        // Sauvegarder la plage visible actuelle (en timestamp) pour la restaurer après rechargement
+        pendingZoomRef.current = {
+          minTime: minTime.getTime(),
+          maxTime: maxTime.getTime(),
+        };
+        
         setIsReloading(true);
         
         // Calculer la plage avec une marge de 20% de chaque côté pour permettre le pan
