@@ -188,6 +188,7 @@ class RedisTrainingCallback(callbacks.Callback):
         try:
             redis_host = os.environ.get('REDIS_HOST', 'redis')
             redis_port = int(os.environ.get('REDIS_PORT', 6379))
+            print(f"[RedisCallback] Connecting to Redis at {redis_host}:{redis_port}")
             self.redis_client = redis.Redis(
                 host=redis_host,
                 port=redis_port,
@@ -196,14 +197,17 @@ class RedisTrainingCallback(callbacks.Callback):
             )
             # Test connection
             self.redis_client.ping()
+            print(f"[RedisCallback] ✅ Connected to Redis")
             logger.info(f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}")
         except Exception as e:
+            print(f"[RedisCallback] ❌ Failed to connect to Redis: {e}")
             logger.warning(f"⚠️  RedisTrainingCallback: Could not connect to Redis: {e}")
             self.redis_client = None
     
     def _publish(self, event_type: str, data: Dict[str, Any]):
         """Publish event to Redis Pub/Sub channel"""
         if not self.redis_client:
+            print(f"[RedisCallback] Cannot publish {event_type}: no Redis client")
             return
         
         try:
@@ -213,12 +217,15 @@ class RedisTrainingCallback(callbacks.Callback):
                 'timestamp': datetime.utcnow().isoformat(),
                 'data': data
             }
-            self.redis_client.publish(self.channel, json.dumps(message))
+            result = self.redis_client.publish(self.channel, json.dumps(message))
+            print(f"[RedisCallback] Published {event_type} to {result} subscribers")
         except Exception as e:
+            print(f"[RedisCallback] Failed to publish {event_type}: {e}")
             logger.error(f"Failed to publish to Redis: {e}")
     
     def on_train_begin(self, logs=None):
         """Called at the beginning of training"""
+        print("[RedisCallback] on_train_begin called")
         self.training_start_time = datetime.utcnow()
         self._publish('training_start', {
             'total_epochs': self.total_epochs,
@@ -228,6 +235,7 @@ class RedisTrainingCallback(callbacks.Callback):
     def on_epoch_begin(self, epoch, logs=None):
         """Called at the beginning of each epoch"""
         self.current_epoch = epoch + 1
+        print(f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}")
         self._publish('epoch_start', {
             'epoch': self.current_epoch,
             'total_epochs': self.total_epochs,

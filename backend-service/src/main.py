@@ -37,10 +37,11 @@ app = FastAPI(
 )
 
 # CORS configuration to allow requests from the frontend
+# Note: WebSocket connections bypass CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins (safe for WebSocket + public API)
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1325,6 +1326,8 @@ class TrainingLogsManager:
     
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection."""
+        # Accept connection from any origin for WebSocket
+        # (WebSocket origin checking is handled differently than HTTP CORS)
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"WebSocket connected. Total: {len(self.active_connections)}")
@@ -1361,14 +1364,18 @@ class TrainingLogsManager:
     
     async def _listen_redis(self):
         """Background task that listens to Redis and broadcasts to WebSockets."""
+        logger.info("🎧 Redis listener task started")
         try:
             async for message in self.pubsub.listen():
+                logger.debug(f"📨 Redis message received: {message}")
                 if message['type'] == 'message':
                     data = message['data']
+                    logger.info(f"📢 Broadcasting to {len(self.active_connections)} clients")
                     await self.broadcast(data)
         except Exception as e:
-            logger.error(f"Error in Redis listener: {e}")
+            logger.error(f"Error in Redis listener: {e}", exc_info=True)
         finally:
+            logger.info("🔚 Redis listener task ending")
             if self.pubsub:
                 await self.pubsub.unsubscribe("training:logs")
                 await self.pubsub.close()
@@ -1401,15 +1408,21 @@ async def websocket_training_logs(websocket: WebSocket):
     Clients connect to this endpoint to receive live updates during model training.
     Events include: training_start, epoch_start, epoch_end, batch_update, training_complete.
     """
+    # Accept WebSocket connection (bypasses CORS for WebSocket)
     await training_logs_manager.connect(websocket)
     try:
         # Keep connection alive and wait for messages
         while True:
             # Wait for any client message (heartbeat, commands, etc.)
-            data = await websocket.receive_text()
-            # Echo back for now (can add commands later)
-            logger.debug(f"Received from client: {data}")
+            try:
+                data = await websocket.receive_text()
+                # Echo back for now (can add commands later)
+                logger.debug(f"Received from client: {data}")
+            except Exception as recv_error:
+                logger.debug(f"Receive error (client may have closed): {recv_error}")
+                break
     except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
         training_logs_manager.disconnect(websocket)
     except Exception as e:
         logger.error(f"WebSocket error: {e}")

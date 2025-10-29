@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     api_title: str = "Nilmia API"
     api_version: str = "0.1.0"
     api_description: str = "API REST pour accéder aux données Linky et NILM"
-    cors_origins: list[str] = ["http://localhost:3000", "http://frontend:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://frontend:3000",
+        "ws://localhost:3000",
+        "ws://frontend:3000"
+    ]
 
     # Celery Configuration
     celery_broker_url: str = "redis://redis:6379/0"
