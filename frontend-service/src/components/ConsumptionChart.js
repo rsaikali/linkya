@@ -55,13 +55,14 @@ const ConsumptionChart = () => {
   const chartRef = useRef(null);
   const zoomTimeoutRef = useRef(null);
   const pendingZoomRef = useRef(null); // Pour restaurer le zoom après rechargement
+  const isInitialLoadRef = useRef(true); // Pour détecter le premier chargement
 
   // Calculer l'intervalle d'agrégation selon la plage de temps visible
   const getOptimalInterval = useCallback((visibleHours) => {
     if (visibleHours <= 1) return 'raw';           // < 1h : données brutes
-    if (visibleHours <= 6) return '1 minutes';     // < 6h : 1 minute
-    if (visibleHours <= 24) return '5 minutes';    // < 24h : 5 minutes
-    if (visibleHours <= 72) return '15 minutes';   // < 3 jours : 15 minutes
+    if (visibleHours <= 6) return 'raw';     // < 6h : 1 minute
+    if (visibleHours <= 48) return '1 minute';    // < 24h : 5 minutes
+    if (visibleHours <= 720) return '15 minutes';   // < 3 jours : 15 minutes
     return '1 hour';                                // > 3 jours : 1 heure
   }, []);
 
@@ -169,28 +170,65 @@ const ConsumptionChart = () => {
     };
   }, [fetchHistory]);
 
-  // Restaurer le zoom après rechargement des données
+  // Appliquer le zoom (initial ou restauré) après chargement des données
   useEffect(() => {
-    if (pendingZoomRef.current && history && history.data && history.data.length > 0 && chartRef.current) {
-      const { minTime, maxTime } = pendingZoomRef.current;
-      
-      // Trouver les index correspondant aux timestamps sauvegardés
-      const minIndex = history.data.findIndex(d => new Date(d.time).getTime() >= minTime);
-      const maxIndex = history.data.findIndex(d => new Date(d.time).getTime() >= maxTime);
-      
-      const finalMinIndex = minIndex !== -1 ? minIndex : 0;
-      const finalMaxIndex = maxIndex !== -1 ? maxIndex : history.data.length - 1;
-      
-      // Restaurer le zoom
-      if (chartRef.current && chartRef.current.scales && chartRef.current.scales.x) {
+    if (!history || !history.data || history.data.length === 0 || !chartRef.current) {
+      return;
+    }
+
+    // Utiliser un petit délai pour s'assurer que le chart est complètement rendu
+    setTimeout(() => {
+      if (!chartRef.current) return;
+
+      let finalMinIndex, finalMaxIndex;
+
+      // Si on a un zoom à restaurer (après rechargement pendant zoom/pan)
+      if (pendingZoomRef.current) {
+        const { minTime, maxTime } = pendingZoomRef.current;
+        
+        console.log('🔍 Restoring zoom:', { 
+          minTime: new Date(minTime).toISOString(), 
+          maxTime: new Date(maxTime).toISOString(),
+          dataLength: history.data.length 
+        });
+        
+        // Trouver les index correspondant aux timestamps sauvegardés
+        const minIndex = history.data.findIndex(d => new Date(d.time).getTime() >= minTime);
+        const maxIndex = history.data.findIndex(d => new Date(d.time).getTime() >= maxTime);
+        
+        finalMinIndex = minIndex !== -1 ? minIndex : 0;
+        finalMaxIndex = maxIndex !== -1 ? maxIndex : history.data.length - 1;
+        
+        console.log('🔍 Computed indexes:', { finalMinIndex, finalMaxIndex });
+        pendingZoomRef.current = null;
+      } 
+      // Sinon, si c'est le premier chargement, appliquer le zoom initial de 48h
+      else if (isInitialLoadRef.current) {
+        const now = new Date();
+        const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+        const startIndex = history.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
+        
+        finalMinIndex = startIndex !== -1 ? startIndex : 0;
+        finalMaxIndex = history.data.length - 1;
+        
+        console.log('🔍 Applying initial 48h zoom:', { finalMinIndex, finalMaxIndex });
+        isInitialLoadRef.current = false;
+      } else {
+        // Pas de zoom à appliquer
+        return;
+      }
+
+      // Appliquer le zoom
+      if (chartRef.current.zoomScale) {
+        chartRef.current.zoomScale('x', { min: finalMinIndex, max: finalMaxIndex }, 'none');
+        console.log('✅ Zoom applied via zoomScale');
+      } else if (chartRef.current.scales && chartRef.current.scales.x) {
         chartRef.current.scales.x.min = finalMinIndex;
         chartRef.current.scales.x.max = finalMaxIndex;
-        chartRef.current.update('none'); // Update sans animation
+        chartRef.current.update('none');
+        console.log('✅ Zoom applied via scales');
       }
-      
-      pendingZoomRef.current = null;
-      console.log('🔍 Zoom restored after reload');
-    }
+    }, 100);
   }, [history]);
 
   // Fonction pour réinitialiser le zoom
@@ -316,12 +354,6 @@ const ConsumptionChart = () => {
   });
 
   const powerData = history.data.map(d => d.avg_papp);
-
-  // Calculer l'index de départ pour les dernières 48h (vue initiale)
-  const now = new Date();
-  const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-  const startIndex = history.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
-  const initialMinIndex = startIndex !== -1 ? startIndex : 0;
 
   // Créer une palette de couleurs par appareil
   const getApplianceColor = (applianceName) => {
@@ -562,8 +594,8 @@ const ConsumptionChart = () => {
         },
       },
       x: {
-        min: initialMinIndex,
-        max: history.data.length - 1,
+        // Ne pas définir min/max ici car ils écrasent le zoom restauré
+        // Le zoom initial sera appliqué via useEffect
         title: {
           display: false,
           text: 'Temps',
