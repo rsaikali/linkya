@@ -251,7 +251,8 @@ const ConsumptionChart = () => {
       clearTimeout(zoomTimeoutRef.current);
     }
 
-    // Debounce de 500ms avant de recharger les données
+    // Debounce de 1500ms (1.5s) avant de recharger les données
+    // Laisse le temps à l'utilisateur de finir ses manipulations
     zoomTimeoutRef.current = setTimeout(() => {
       if (!history || !history.data || history.data.length === 0) return;
 
@@ -310,7 +311,7 @@ const ConsumptionChart = () => {
         console.log(`📊 Loading full 7-day range with ${newInterval} interval`);
         fetchHistory(startTime, endTime, newInterval);
       }
-    }, 500);
+    }, 1500);
   };
 
   if (loading && !history) {
