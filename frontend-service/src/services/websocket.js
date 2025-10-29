@@ -32,6 +32,17 @@ class TrainingLogsWebSocket {
    * Connect to WebSocket server
    */
   connect() {
+    // If already connected, don't create a new connection
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('⚠️ WebSocket already connected, skipping');
+      return;
+    }
+    
+    // Close existing connection if any
+    if (this.ws) {
+      this.ws.close();
+    }
+    
     try {
       this.ws = new WebSocket(this.url);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -7,10 +7,6 @@ import {
   Typography,
   LinearProgress,
   Chip,
-  Alert,
-  List,
-  ListItem,
-  ListItemText,
   Divider,
   Grid,
   Paper,
@@ -19,10 +15,7 @@ import {
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
-  CheckCircle as CompleteIcon,
   PlayArrow as RunningIcon,
-  Error as ErrorIcon,
-  Speed as SpeedIcon,
 } from '@mui/icons-material';
 import trainingLogsWS from '../services/websocket';
 
@@ -51,81 +44,106 @@ const TrainingLogsViewer = () => {
     scrollToBottom();
   }, [logs]);
 
-  // WebSocket event handlers
+  // Helper functions wrapped in useCallback to avoid recreating on each render
+  const addLog = useCallback((level, message) => {
+    setLogs((prev) => [
+      ...prev,
+      {
+        timestamp: new Date(),
+        level,
+        message,
+      },
+    ]);
+  }, []);
+
+  const formatDuration = useCallback((seconds) => {
+    if (!seconds) return '0s';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }, []);
+
+  // WebSocket event handlers wrapped in useCallback
+  const handleConnected = useCallback(() => {
+    setIsConnected(true);
+    addLog('info', 'Connected to training logs stream');
+  }, [addLog]);
+
+  const handleDisconnected = useCallback(() => {
+    setIsConnected(false);
+    addLog('warning', 'Disconnected from training logs stream');
+  }, [addLog]);
+
+  const handleTrainingStart = useCallback((data) => {
+    setIsTraining(true);
+    setTrainingData({
+      version: data.version || 'current',
+      currentEpoch: 0,
+      totalEpochs: data.total_epochs || 0,
+      progress: 0,
+      metrics: {},
+      elapsedSeconds: 0,
+      etaSeconds: 0,
+    });
+    addLog('success', `Training started: ${data.message}`);
+  }, [addLog]);
+
+  const handleEpochStart = useCallback((data) => {
+    setTrainingData((prev) => ({
+      ...prev,
+      currentEpoch: data.epoch,
+      progress: data.progress,
+    }));
+    addLog('info', `Epoch ${data.epoch}/${data.total_epochs} started`);
+  }, [addLog]);
+
+  const handleEpochEnd = useCallback((data) => {
+    setTrainingData((prev) => ({
+      ...prev,
+      currentEpoch: data.epoch,
+      totalEpochs: data.total_epochs,
+      progress: data.progress,
+      metrics: data.metrics,
+      elapsedSeconds: data.elapsed_seconds,
+      etaSeconds: data.eta_seconds,
+    }));
+
+    const metricsStr = Object.entries(data.metrics)
+      .map(([key, value]) => `${key}=${value.toFixed(4)}`)
+      .join(', ');
+    addLog('success', `Epoch ${data.epoch} completed: ${metricsStr}`);
+  }, [addLog]);
+
+  const handleBatchUpdate = useCallback((data) => {
+    // Only update metrics, don't add log for each batch
+    setTrainingData((prev) => ({
+      ...prev,
+      metrics: data.metrics,
+    }));
+  }, []);
+
+  const handleTrainingComplete = useCallback((data) => {
+    setIsTraining(false);
+    setTrainingData((prev) => ({
+      ...prev,
+      progress: 100,
+      metrics: data.final_metrics,
+    }));
+    addLog('success', `Training completed in ${formatDuration(data.total_duration_seconds)}`);
+  }, [addLog, formatDuration]);
+
+  const handleError = useCallback((data) => {
+    addLog('error', `Error: ${data.error}`);
+  }, [addLog]);
+
+  // WebSocket connection and event registration
   useEffect(() => {
-    const handleConnected = () => {
-      setIsConnected(true);
-      addLog('info', 'Connected to training logs stream');
-    };
-
-    const handleDisconnected = () => {
-      setIsConnected(false);
-      addLog('warning', 'Disconnected from training logs stream');
-    };
-
-    const handleTrainingStart = (data) => {
-      setIsTraining(true);
-      setTrainingData({
-        version: data.version || 'current',
-        currentEpoch: 0,
-        totalEpochs: data.total_epochs || 0,
-        progress: 0,
-        metrics: {},
-        elapsedSeconds: 0,
-        etaSeconds: 0,
-      });
-      addLog('success', `Training started: ${data.message}`);
-    };
-
-    const handleEpochStart = (data) => {
-      setTrainingData((prev) => ({
-        ...prev,
-        currentEpoch: data.epoch,
-        progress: data.progress,
-      }));
-      addLog('info', `Epoch ${data.epoch}/${data.total_epochs} started`);
-    };
-
-    const handleEpochEnd = (data) => {
-      setTrainingData((prev) => ({
-        ...prev,
-        currentEpoch: data.epoch,
-        totalEpochs: data.total_epochs,
-        progress: data.progress,
-        metrics: data.metrics,
-        elapsedSeconds: data.elapsed_seconds,
-        etaSeconds: data.eta_seconds,
-      }));
-
-      const metricsStr = Object.entries(data.metrics)
-        .map(([key, value]) => `${key}=${value.toFixed(4)}`)
-        .join(', ');
-      addLog('success', `Epoch ${data.epoch} completed: ${metricsStr}`);
-    };
-
-    const handleBatchUpdate = (data) => {
-      // Only update metrics, don't add log for each batch
-      setTrainingData((prev) => ({
-        ...prev,
-        metrics: data.metrics,
-      }));
-    };
-
-    const handleTrainingComplete = (data) => {
-      setIsTraining(false);
-      setTrainingData((prev) => ({
-        ...prev,
-        progress: 100,
-        metrics: data.final_metrics,
-      }));
-      addLog('success', `Training completed in ${formatDuration(data.total_duration_seconds)}`);
-    };
-
-    const handleError = (data) => {
-      addLog('error', `Error: ${data.error}`);
-    };
-
-    // Register handlers
+    console.log('🔧 TrainingLogsViewer: Registering WebSocket handlers');
+    
+    // Register handlers (defined above with useCallback)
     trainingLogsWS.on('connected', handleConnected);
     trainingLogsWS.on('disconnected', handleDisconnected);
     trainingLogsWS.on('training_start', handleTrainingStart);
@@ -140,6 +158,7 @@ const TrainingLogsViewer = () => {
 
     // Cleanup
     return () => {
+      console.log('🧹 TrainingLogsViewer: Cleaning up WebSocket handlers');
       trainingLogsWS.off('connected', handleConnected);
       trainingLogsWS.off('disconnected', handleDisconnected);
       trainingLogsWS.off('training_start', handleTrainingStart);
@@ -149,41 +168,7 @@ const TrainingLogsViewer = () => {
       trainingLogsWS.off('training_complete', handleTrainingComplete);
       trainingLogsWS.off('error', handleError);
     };
-  }, []);
-
-  const addLog = (level, message) => {
-    setLogs((prev) => [
-      ...prev,
-      {
-        timestamp: new Date(),
-        level,
-        message,
-      },
-    ]);
-  };
-
-  const formatDuration = (seconds) => {
-    if (!seconds) return '0s';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-  };
-
-  const getLogIcon = (level) => {
-    switch (level) {
-      case 'success':
-        return <CompleteIcon fontSize="small" color="success" />;
-      case 'error':
-        return <ErrorIcon fontSize="small" color="error" />;
-      case 'warning':
-        return <ErrorIcon fontSize="small" color="warning" />;
-      default:
-        return <SpeedIcon fontSize="small" color="info" />;
-    }
-  };
+  }, [handleConnected, handleDisconnected, handleTrainingStart, handleEpochStart, handleEpochEnd, handleBatchUpdate, handleTrainingComplete, handleError]);
 
   return (
     <Card sx={{ mt: 2 }}>
@@ -284,38 +269,176 @@ const TrainingLogsViewer = () => {
             <Typography variant="body2" color="text.secondary" gutterBottom>
               Event Log
             </Typography>
+            {/* Terminal header */}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                bgcolor: '#2d2d2d',
+                borderTopLeftRadius: 4,
+                borderTopRightRadius: 4,
+                px: 1.5,
+                py: 0.75,
+                borderBottom: '1px solid #3e3e3e',
+              }}
+            >
+              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    bgcolor: '#ff5f56',
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    bgcolor: '#ffbd2e',
+                  }}
+                />
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    bgcolor: '#27c93f',
+                  }}
+                />
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: '0.75rem',
+                  color: '#858585',
+                  fontFamily: "'Fira Code', 'Courier New', monospace",
+                  ml: 1,
+                }}
+              >
+                nilmia-training.log
+              </Typography>
+            </Box>
+            {/* Terminal content */}
             <Paper
               sx={{
-                maxHeight: 300,
+                maxHeight: 400,
                 overflow: 'auto',
-                bgcolor: 'grey.50',
+                bgcolor: '#1e1e1e',
                 border: 1,
-                borderColor: 'grey.300',
+                borderColor: '#333',
+                borderTopLeftRadius: 0,
+                borderTopRightRadius: 0,
+                borderBottomLeftRadius: 4,
+                borderBottomRightRadius: 4,
+                p: 2,
+                fontFamily: "'Fira Code', 'Courier New', monospace",
+                fontSize: '0.875rem',
+                lineHeight: 1.6,
+                color: '#d4d4d4',
+                '&::-webkit-scrollbar': {
+                  width: '8px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  background: '#2d2d2d',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  background: '#555',
+                  borderRadius: '4px',
+                  '&:hover': {
+                    background: '#777',
+                  },
+                },
               }}
             >
               {logs.length === 0 ? (
-                <Box p={2}>
-                  <Alert severity="info">
-                    Waiting for training events...
-                  </Alert>
+                <Box sx={{ color: '#858585', fontStyle: 'italic' }}>
+                  $ Waiting for training events...
                 </Box>
               ) : (
-                <List dense>
-                  {logs.map((log, index) => (
-                    <ListItem key={index} divider={index < logs.length - 1}>
-                      <ListItemText
-                        primary={
-                          <Box display="flex" alignItems="center" gap={1}>
-                            {getLogIcon(log.level)}
-                            <Typography variant="body2">{log.message}</Typography>
-                          </Box>
-                        }
-                        secondary={log.timestamp.toLocaleTimeString()}
-                      />
-                    </ListItem>
-                  ))}
+                <Box>
+                  {logs.map((log, index) => {
+                    const timestamp = log.timestamp.toLocaleTimeString('fr-FR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    });
+                    
+                    let color = '#d4d4d4';
+                    let prefix = '●';
+                    
+                    switch (log.level) {
+                      case 'success':
+                        color = '#4ec9b0';
+                        prefix = '✓';
+                        break;
+                      case 'error':
+                        color = '#f48771';
+                        prefix = '✗';
+                        break;
+                      case 'warning':
+                        color = '#dcdcaa';
+                        prefix = '⚠';
+                        break;
+                      case 'info':
+                      default:
+                        color = '#569cd6';
+                        prefix = '●';
+                        break;
+                    }
+                    
+                    return (
+                      <Box
+                        key={index}
+                        sx={{
+                          mb: 0.5,
+                          display: 'flex',
+                          gap: 1,
+                          '&:hover': {
+                            bgcolor: '#2d2d2d',
+                            borderRadius: '2px',
+                          },
+                        }}
+                      >
+                        <Typography
+                          component="span"
+                          sx={{
+                            color: '#858585',
+                            minWidth: '70px',
+                            fontFamily: 'inherit',
+                            fontSize: 'inherit',
+                          }}
+                        >
+                          [{timestamp}]
+                        </Typography>
+                        <Typography
+                          component="span"
+                          sx={{
+                            color,
+                            minWidth: '20px',
+                            fontFamily: 'inherit',
+                            fontSize: 'inherit',
+                          }}
+                        >
+                          {prefix}
+                        </Typography>
+                        <Typography
+                          component="span"
+                          sx={{
+                            color,
+                            flex: 1,
+                            fontFamily: 'inherit',
+                            fontSize: 'inherit',
+                          }}
+                        >
+                          {log.message}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
                   <div ref={logsEndRef} />
-                </List>
+                </Box>
               )}
             </Paper>
           </Box>

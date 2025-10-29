@@ -385,6 +385,19 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
+- **Fix Duplicate Training Logs** (October 2025):
+  - **Root cause**: Event handlers were redefined inside `useEffect` without stable references, causing multiple registrations
+  - **Solution**: Wrapped all handlers in `useCallback` with proper dependencies to ensure stable function references
+  - Modified `TrainingLogsViewer.js`:
+    - Added `useCallback` import
+    - Moved `addLog`, `formatDuration`, and all event handlers outside `useEffect`
+    - Wrapped each in `useCallback` with appropriate dependency arrays
+    - Updated `useEffect` dependency array to include all handlers (ensures proper cleanup on handler changes)
+  - Modified `websocket.js`:
+    - Added guard in `connect()` to skip if already connected (prevents duplicate WebSocket instances)
+    - Closes existing connection before creating new one
+  - **Impact**: Each event now triggers exactly once (no more duplicates), proper cleanup when component unmounts
+
 - **Real-time Training Logs via WebSocket** (October 2025):
   - Custom Keras callback `RedisTrainingCallback` publishes training events to Redis Pub/Sub channel `training:logs`
   - FastAPI WebSocket endpoint `/ws/training` subscribes to Redis and broadcasts to multiple clients
