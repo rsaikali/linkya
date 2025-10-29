@@ -31,8 +31,9 @@ Nilmia is a real-time electrical consumption analysis platform that:
 **Real-time Communication (WebSocket + Redis Pub/Sub)**:
 - **Training logs**: Keras callback → Redis `training:logs` → WebSocket `/ws/training` → React frontend
 - **Consumption updates**: sync-service → Redis `consumption:updates` → WebSocket `/ws/consumption` → React frontend
-- **Detection updates**: nilm-cnn-service → Redis `detections:updates` → WebSocket `/ws/detections` → React frontend
-- Events: `training_start`, `epoch_start`, `epoch_end`, `new_consumption`, `new_detection`, etc.
+- **Detection updates**: nilm-cnn-service + backend-service → Redis `detections:updates` → WebSocket `/ws/detections` → React frontend
+- Events: `training_start`, `epoch_start`, `epoch_end`, `new_consumption`, `new_detection`, `detection_start`, `detection_complete`, `detection_deleted`, `detections_cleared`
+- Frontend updates detection list in real-time (new, deleted, cleared) - zero polling
 - Auto-reconnection and broadcast to multiple clients
 
 **Storage Model**:
@@ -169,18 +170,23 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
   - `WS /ws/detections` - WebSocket for real-time detection updates
 
 ### frontend-service (React 18 + MUI)
-- Consumption charts with Chart.js
-- Interactive range selection for signature creation
-- Appliance autocomplete with create-on-demand
-- Training management with paginated model history
-- **Real-time Training Logs**: WebSocket-based live training progress viewer
-- **Real-time Consumption**: WebSocket updates for latest power/temperature data
-- **Real-time Detections**: WebSocket updates for new appliance detections
-- **Simple Model Display**: Shows model name (linkya_model_<timestamp>) without complex status badges
-- **Direct Model Deletion**: Delete button to remove the current model (requires retraining after)
-- Three WebSocket connections: training, consumption, detections (SSE removed October 2025)
-- CSV export/import for signatures (bulk operations)
-- Manual refresh for consumption history (auto-refresh removed October 2025)
+**Active Components**:
+- `CurrentModel` - Display current trained model with delete action
+- `LatestConsumption` - Real-time power/temperature via WebSocket
+- `ConsumptionChart` - Interactive chart with signature creation via range selection
+- `DetectionsList` - Paginated detection list with validation controls
+- `SignaturesList` - Manage training signatures with CSV import/export
+- `SignatureModal` - Modal for creating signatures from chart selection
+
+**Real-time Features**:
+- Three WebSocket connections: `/ws/training`, `/ws/consumption`, `/ws/detections`
+- No polling - all updates event-driven via WebSocket
+- Auto-refresh on `detection_complete` event (replaces 60s polling)
+- Live training logs, consumption updates, and detection streaming
+
+**Removed Components** (October 2025):
+- `NilmTraining` - Unused, replaced by CurrentModel
+- `DetectionsTimeline` - Unused, DetectionsList is the main view
 
 ## Configuration
 

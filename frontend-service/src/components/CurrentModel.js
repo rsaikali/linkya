@@ -143,8 +143,7 @@ const CurrentModel = () => {
 
   useEffect(() => {
     loadModel();
-    const interval = setInterval(loadModel, 30000);
-    return () => clearInterval(interval);
+    // No polling needed - model refresh is handled via WebSocket training_complete event
   }, [loadModel]);
 
   // Connexion WebSocket au montage du composant

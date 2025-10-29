@@ -43,7 +43,6 @@ const LatestConsumption = () => {
 
     // Setup WebSocket for real-time consumption updates
     const handleNewConsumption = (consumptionData) => {
-      console.log('📊 New consumption data received:', consumptionData);
       setData(consumptionData);
       setError(null);
     };

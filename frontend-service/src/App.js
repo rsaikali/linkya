@@ -7,7 +7,6 @@ import theme from './theme';
 import CurrentModel from './components/CurrentModel';
 import LatestConsumption from './components/LatestConsumption';
 import ConsumptionChart from './components/ConsumptionChart';
-import NilmTraining from './components/NilmTraining';
 import DetectionsList from './components/DetectionsList';
 import SignaturesList from './components/SignaturesList';
 
@@ -32,7 +31,6 @@ function App() {
             <ConsumptionChart />
             <DetectionsList />
             <SignaturesList />
-            <NilmTraining />
           </Box>
         </Container>
 

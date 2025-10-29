@@ -34,7 +34,6 @@ class TrainingLogsWebSocket {
   connect() {
     // If already connected, don't create a new connection
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('⚠️ WebSocket already connected, skipping');
       return;
     }
     
@@ -65,8 +64,6 @@ class TrainingLogsWebSocket {
         try {
           const message = JSON.parse(event.data);
           const { event: eventType, data } = message;
-
-          console.log(`📨 Training log event: ${eventType}`, data);
 
           // Trigger event-specific handlers
           if (this.eventHandlers[eventType]) {
@@ -108,7 +105,6 @@ class TrainingLogsWebSocket {
       return; // Already scheduled
     }
 
-    console.log(`🔄 Reconnecting in ${this.reconnectInterval / 1000}s...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.shouldReconnect) {
@@ -230,7 +226,6 @@ class GenericWebSocket {
 
   connect() {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log(`⚠️ WebSocket already connected to ${this.url}`);
       return;
     }
     
@@ -258,8 +253,6 @@ class GenericWebSocket {
         try {
           const message = JSON.parse(event.data);
           const { event: eventType, data } = message;
-
-          console.log(`📨 WS event [${this.url}]: ${eventType}`, data);
 
           if (this.eventHandlers[eventType]) {
             this.triggerEvent(eventType, data);
@@ -296,7 +289,6 @@ class GenericWebSocket {
       return;
     }
 
-    console.log(`🔄 Reconnecting to ${this.url} in ${this.reconnectInterval / 1000}s...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.shouldReconnect) {
@@ -369,7 +361,13 @@ class GenericWebSocket {
 // Singleton instances
 const trainingLogsWS = new TrainingLogsWebSocket();
 const consumptionWS = new GenericWebSocket('/ws/consumption', ['new_consumption']);
-const detectionsWS = new GenericWebSocket('/ws/detections', ['new_detection']);
+const detectionsWS = new GenericWebSocket('/ws/detections', [
+  'new_detection',
+  'detection_start',
+  'detection_complete',
+  'detection_deleted',
+  'detections_cleared'
+]);
 
 export default trainingLogsWS;
 export { consumptionWS, detectionsWS };

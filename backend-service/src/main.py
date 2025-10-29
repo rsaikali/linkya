@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import redis
 import redis.asyncio as aioredis
 from datetime import datetime, timedelta
 from typing import Optional, Set
@@ -19,6 +20,17 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Redis client for publishing real-time events
+try:
+    redis_client = redis.from_url(
+        settings.celery_broker_url,
+        decode_responses=True
+    )
+    logger.info("✅ Redis client initialized for real-time events")
+except Exception as e:
+    logger.warning(f"⚠️ Redis client init failed: {e}")
+    redis_client = None
 
 # Pydantic models
 class SignatureCreate(BaseModel):
@@ -357,6 +369,23 @@ async def delete_all_detections():
     """
     try:
         result = db_manager.delete_all_detections()
+        
+        # Publish detections_cleared event to Redis for WebSocket streaming
+        if redis_client:
+            try:
+                import json
+                from datetime import datetime
+                message = json.dumps({
+                    "event": "detections_cleared",
+                    "data": {
+                        "deleted_count": result['deleted_count']
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                redis_client.publish("detections:updates", message)
+                logger.info(f"📢 Published detections_cleared to Redis ({result['deleted_count']} deleted)")
+            except Exception as e:
+                logger.error(f"Failed to publish detections_cleared to Redis: {e}")
 
         return {
             "status": "success",
@@ -383,6 +412,23 @@ async def delete_detection(detection_id: int):
         result = db_manager.delete_detection(detection_id)
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
+        
+        # Publish detection_deleted event to Redis for WebSocket streaming
+        if redis_client:
+            try:
+                import json
+                message = json.dumps({
+                    "event": "detection_deleted",
+                    "data": {
+                        "detection_id": detection_id,
+                        "appliance_name": result.get('appliance_name')
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                redis_client.publish("detections:updates", message)
+                logger.info(f"📢 Published detection_deleted to Redis (ID: {detection_id})")
+            except Exception as e:
+                logger.error(f"Failed to publish detection_deleted: {e}")
 
         return {
             "status": "success",

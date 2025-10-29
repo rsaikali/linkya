@@ -1,6 +1,15 @@
-# WebSocket Training Logs - Message Examples
+# WebSocket Message Examples
 
-## Event: training_start
+This document provides examples of WebSocket messages sent through the three WebSocket endpoints:
+- `/ws/training` - Training progress and logs
+- `/ws/consumption` - Real-time consumption updates
+- `/ws/detections` - Detection job progress and new detections
+
+---
+
+## Training WebSocket Messages (`/ws/training`)
+
+### Event: training_start
 
 Published when training begins.
 
@@ -285,6 +294,203 @@ trainingLogsWS.on('epoch_end', (data) => {
 });
 
 trainingLogsWS.on('training_complete', (data) => {
+  console.log('Training finished!');
+});
+```
+
+---
+
+## Detection WebSocket Messages (`/ws/detections`)
+
+### Event: detection_start
+
+Published when a detection job begins.
+
+```json
+{
+  "event": "detection_start",
+  "timestamp": "2025-10-29T16:30:00.123Z",
+  "data": {
+    "model_name": "linkya_model_20251029_143052",
+    "start_time": "2025-10-28T16:30:00+02:00",
+    "end_time": "2025-10-29T16:30:00+02:00"
+  }
+}
+```
+
+### Event: new_detection
+
+Published for each new detection created during the job (real-time streaming).
+
+```json
+{
+  "event": "new_detection",
+  "timestamp": "2025-10-29T16:30:05.456Z",
+  "data": {
+    "appliance_id": 3,
+    "appliance_name": "Lave-vaisselle",
+    "start_time": "2025-10-29T14:23:15+02:00",
+    "end_time": "2025-10-29T15:45:30+02:00",
+    "avg_power": 1200.5,
+    "energy_consumed": 1650.8,
+    "confidence_score": 0.87,
+    "prediction_class": "active"
+  }
+}
+```
+
+### Event: detection_complete
+
+Published when the detection job finishes successfully. Frontend should refresh the full detection list on this event.
+
+```json
+{
+  "event": "detection_complete",
+  "timestamp": "2025-10-29T16:30:45.789Z",
+  "data": {
+    "status": "success",
+    "num_detections": 12,
+    "num_updated": 3,
+    "num_skipped": 5,
+    "total_processed": 20,
+    "model_name": "linkya_model_20251029_143052",
+    "period": {
+      "start": "2025-10-28T16:30:00+02:00",
+      "end": "2025-10-29T16:30:00+02:00"
+    }
+  }
+}
+```
+
+### Frontend Usage Example
+
+```javascript
+import { detectionsWS } from '../services/websocket';
+
+// Connect
+detectionsWS.connect();
+
+// Listen to detection job lifecycle
+detectionsWS.on('detection_start', (data) => {
+  console.log('🚀 Detection job started');
+});
+
+detectionsWS.on('new_detection', (detection) => {
+  console.log('🔍 New detection:', detection.appliance_name);
+  // Optionally add to list in real-time
+});
+
+detectionsWS.on('detection_complete', async (data) => {
+  console.log(`✅ Detection complete: ${data.num_detections} new detections`);
+  // Refresh the full list
+  const result = await apiService.getDetections();
+  setDetections(result.detections);
+});
+```
+
+**Note**: The `detection_complete` event is crucial for knowing when to refresh the detection list, eliminating the need for polling or manual refresh.
+
+### Event: detection_deleted
+
+Published when a single detection is deleted.
+
+```json
+{
+  "event": "detection_deleted",
+  "timestamp": "2025-10-29T16:40:15.456Z",
+  "data": {
+    "detection_id": 42,
+    "appliance_name": "Lave-vaisselle"
+  }
+}
+```
+
+### Event: detections_cleared
+
+Published when all detections are deleted at once.
+
+```json
+{
+  "event": "detections_cleared",
+  "timestamp": "2025-10-29T16:45:30.789Z",
+  "data": {
+    "deleted_count": 125
+  }
+}
+```
+
+### Frontend Usage Example (Complete)
+
+```javascript
+import { detectionsWS } from '../services/websocket';
+
+// Connect
+detectionsWS.connect();
+
+// Listen to detection job lifecycle
+detectionsWS.on('detection_start', (data) => {
+  console.log('🚀 Detection job started');
+});
+
+detectionsWS.on('new_detection', (detection) => {
+  console.log('🔍 New detection:', detection.appliance_name);
+  // Add to list in real-time
+  setDetections(prev => [...prev, detection]);
+});
+
+detectionsWS.on('detection_complete', async (data) => {
+  console.log(`✅ Detection complete: ${data.num_detections} new detections`);
+  // Refresh the full list
+  const result = await apiService.getDetections();
+  setDetections(result.detections);
+});
+
+detectionsWS.on('detection_deleted', (data) => {
+  console.log(`🗑️ Detection deleted: ${data.detection_id}`);
+  // Remove from list
+  setDetections(prev => prev.filter(d => d.id !== data.detection_id));
+});
+
+detectionsWS.on('detections_cleared', (data) => {
+  console.log(`🧹 All detections cleared: ${data.deleted_count}`);
+  // Clear the list
+  setDetections([]);
+});
+```
+
+---
+
+## Consumption WebSocket Messages (`/ws/consumption`)
+
+### Event: new_consumption
+
+Published when new consumption data is inserted (real-time streaming every ~5 seconds).
+
+```json
+{
+  "event": "new_consumption",
+  "timestamp": "2025-10-29T16:35:20.123Z",
+  "data": {
+    "time": "2025-10-29T16:35:15+02:00",
+    "papp": 1850,
+    "hchp": 12345678,
+    "hchc": 23456789,
+    "temperature": 21.5,
+    "libelle_tarif": "HP"
+  }
+}
+```
+
+### Frontend Usage Example
+
+```javascript
+import { consumptionWS } from '../services/websocket';
+
+// Connect
+consumptionWS.connect();
+
+// Listen to real-time consumption
+consumptionWS.on('new_consumption', (data) => {
   console.log('Training completed!');
   console.log(`Final loss: ${data.final_metrics.loss.toFixed(4)}`);
   console.log(`Duration: ${formatDuration(data.total_duration_seconds)}`);

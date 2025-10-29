@@ -32,6 +32,7 @@ import {
 } from '@mui/material';
 import { Timeline, Delete, Search as DetectIcon, CheckCircle, Cancel, DeleteSweep } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
+import { detectionsWS } from '../services/websocket';
 
 // Options de période disponibles
 const TIME_PERIODS = [
@@ -95,9 +96,40 @@ function DetectionsList() {
   useEffect(() => {
     fetchDetections();
 
-    // Rafraîchir toutes les 60 secondes
-    const interval = setInterval(fetchDetections, 60000);
-    return () => clearInterval(interval);
+    // Setup WebSocket for real-time detection updates
+    const handleNewDetection = (detection) => {
+      // Refresh the list to include the new detection
+      fetchDetections();
+    };
+
+    const handleDetectionStart = (data) => {
+    };
+
+    const handleDetectionComplete = (data) => {
+      // Refresh the entire list when job is complete
+      fetchDetections();
+    };
+
+    const handleError = (errorData) => {
+      console.error('[DetectionsList] Detections WebSocket error:', errorData);
+    };
+
+    // Register event handlers
+    detectionsWS.on('new_detection', handleNewDetection);
+    detectionsWS.on('detection_start', handleDetectionStart);
+    detectionsWS.on('detection_complete', handleDetectionComplete);
+    detectionsWS.on('error', handleError);
+
+    // Connect to WebSocket
+    detectionsWS.connect();
+
+    // Cleanup on unmount
+    return () => {
+      detectionsWS.off('new_detection', handleNewDetection);
+      detectionsWS.off('detection_start', handleDetectionStart);
+      detectionsWS.off('detection_complete', handleDetectionComplete);
+      detectionsWS.off('error', handleError);
+    };
   }, [fetchDetections]);
 
   const handlePeriodChange = (event) => {
@@ -164,8 +196,7 @@ function DetectionsList() {
         severity: 'success',
       });
       
-      // Rafraîchir la liste après 5 secondes
-      setTimeout(() => fetchDetections(), 5000);
+      // List will refresh automatically via WebSocket detection_complete event
     } catch (error) {
       console.error('Erreur lors du lancement de la détection:', error);
       const errorMsg = error.response?.data?.detail || 'Erreur lors du lancement de la détection';
@@ -233,9 +264,9 @@ function DetectionsList() {
         severity: 'success',
       });
       handleCloseDeleteAllDialog();
-      // Réinitialiser la pagination et rafraîchir
+      // Réinitialiser la pagination et rafraîchir immédiatement
       setPage(0);
-      setTimeout(() => fetchDetections(), 500);
+      fetchDetections();
     } catch (error) {
       console.error('Erreur lors de la suppression des détections:', error);
       const errorMsg = error.response?.data?.detail || 'Erreur lors de la suppression des détections';

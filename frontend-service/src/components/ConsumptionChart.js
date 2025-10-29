@@ -105,9 +105,34 @@ const ConsumptionChart = () => {
 
     // Setup WebSocket for real-time detection updates
     const handleNewDetection = (detection) => {
-      console.log('🔍 New detection received:', detection);
       // Add new detection to the list
       setDetections(prev => [...prev, detection]);
+    };
+
+    const handleDetectionStart = (data) => {
+    };
+
+    const handleDetectionComplete = async (data) => {
+      console.log('✅ Detection job completed:', data);
+      // Refresh the entire detection list when job is complete
+      try {
+        const result = await apiService.getDetections(timeRange);
+        setDetections(result.detections || []);
+      } catch (err) {
+        console.error('Failed to refresh detections after job completion:', err);
+      }
+    };
+
+    const handleDetectionDeleted = (data) => {
+      console.log('🗑️ Detection deleted:', data.detection_id);
+      // Remove the deleted detection from the list
+      setDetections(prev => prev.filter(d => d.id !== data.detection_id));
+    };
+
+    const handleDetectionsCleared = (data) => {
+      console.log('🧹 All detections cleared:', data.deleted_count);
+      // Clear all detections from the list
+      setDetections([]);
     };
 
     const handleError = (errorData) => {
@@ -116,6 +141,10 @@ const ConsumptionChart = () => {
 
     // Register event handlers
     detectionsWS.on('new_detection', handleNewDetection);
+    detectionsWS.on('detection_start', handleDetectionStart);
+    detectionsWS.on('detection_complete', handleDetectionComplete);
+    detectionsWS.on('detection_deleted', handleDetectionDeleted);
+    detectionsWS.on('detections_cleared', handleDetectionsCleared);
     detectionsWS.on('error', handleError);
 
     // Connect to WebSocket
@@ -124,6 +153,10 @@ const ConsumptionChart = () => {
     // Cleanup on unmount or timeRange change
     return () => {
       detectionsWS.off('new_detection', handleNewDetection);
+      detectionsWS.off('detection_start', handleDetectionStart);
+      detectionsWS.off('detection_complete', handleDetectionComplete);
+      detectionsWS.off('detection_deleted', handleDetectionDeleted);
+      detectionsWS.off('detections_cleared', handleDetectionsCleared);
       detectionsWS.off('error', handleError);
     };
   }, [timeRange]);
@@ -199,10 +232,13 @@ const ConsumptionChart = () => {
 
   // Créer une palette de couleurs par appareil
   const getApplianceColor = (applianceName) => {
+    // Valeur par défaut si le nom est undefined/null
+    const name = applianceName || 'Unknown';
+    
     // Générer une couleur unique et cohérente basée sur le nom de l'appareil
     let hash = 0;
-    for (let i = 0; i < applianceName.length; i++) {
-      hash = applianceName.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
     
     // Utiliser le hash pour choisir une teinte (hue) cohérente
@@ -219,7 +255,6 @@ const ConsumptionChart = () => {
   // Créer les annotations pour les périodes de détection
   const createDetectionAnnotations = () => {
     if (!showAnnotations || !detections || detections.length === 0) {
-      console.log('📊 Annotations désactivées ou pas de détections');
       return {};
     }
 
@@ -227,7 +262,7 @@ const ConsumptionChart = () => {
     
     // Préparer les détections avec leurs indices de graphique
     const detectionWithIndices = detections
-      .filter(d => d.start_time && d.end_time)
+      .filter(d => d.start_time && d.end_time && d.name)
       .map(d => {
         const startTime = new Date(d.start_time).getTime();
         const endTime = new Date(d.end_time).getTime();
@@ -261,9 +296,6 @@ const ConsumptionChart = () => {
           const dLabelEnd = d.centerIndex + labelWidth / 2;
           // Chevauchement si les labels se superposent visuellement
           const overlap = labelStart < dLabelEnd && dLabelStart < labelEnd;
-          if (overlap) {
-            console.log(`🔍 Chevauchement de labels: ${detection.name} vs ${d.name}`);
-          }
           return overlap;
         });
         
@@ -274,7 +306,6 @@ const ConsumptionChart = () => {
       if (!detectionRows[row]) detectionRows[row] = [];
       detectionRows[row].push(detection);
       detection.row = row;
-      console.log(`📍 ${detection.name} assigné à row ${row}`);
     });
 
     // Calculer le nombre maximum de lignes nécessaires
@@ -320,10 +351,8 @@ const ConsumptionChart = () => {
         },
       };
       
-      console.log(`📊 Annotation créée pour ${detection.name} (${detection.startIndex} → ${detection.endIndex}), row: ${detection.row}, yAdjust: ${yAdjust}px`);
     });
 
-    console.log(`📊 Total annotations créées: ${Object.keys(annotations).length}, max rows: ${maxRow + 1}`);
     return { annotations, maxRows: maxRow + 1 };
   };
 

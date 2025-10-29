@@ -323,6 +323,23 @@ def detect_cnn_appliances(
         # Désagrégation FiLM
         logger.info(f"🔍 Désagrégation FiLM: {start_time} -> {end_time}")
         
+        # Publish detection_start event to Redis
+        if redis_client:
+            try:
+                message = json.dumps({
+                    "event": "detection_start",
+                    "data": {
+                        "model_name": active_model,
+                        "start_time": start_time.isoformat(),
+                        "end_time": end_time.isoformat()
+                    },
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                redis_client.publish("detections:updates", message)
+                logger.info("📢 Published detection_start to Redis")
+            except Exception as e:
+                logger.error(f"Failed to publish detection_start to Redis: {e}")
+        
         # Vérifier qu'un modèle FiLM est chargé
         if nilm_manager.film_model is None:
             logger.error("Aucun modèle FiLM chargé")
@@ -466,9 +483,10 @@ def detect_cnn_appliances(
                         (:appliance_id, :start_time, :end_time,
                          :confidence_score, :prediction_class,
                          :features, NOW())
+                        RETURNING id
                     """)
                     
-                    session.execute(
+                    result = session.execute(
                         insert_query,
                         {
                             'appliance_id': appliance_id,
@@ -479,6 +497,7 @@ def detect_cnn_appliances(
                             'features': json.dumps(features_data)
                         }
                     )
+                    detection_id = result.scalar()
                     num_saved += 1
                     logger.debug(
                         f"✅ Nouvelle détection: {event['appliance_name']} "
@@ -492,8 +511,9 @@ def detect_cnn_appliances(
                             message = json.dumps({
                                 "event": "new_detection",
                                 "data": {
+                                    "id": detection_id,
                                     "appliance_id": appliance_id,
-                                    "appliance_name": event['appliance_name'],
+                                    "name": event['appliance_name'],
                                     "start_time": event['start_time'].isoformat(),
                                     "end_time": event['end_time'].isoformat(),
                                     "avg_power": event['avg_power'],
@@ -507,9 +527,13 @@ def detect_cnn_appliances(
                                 "timestamp": datetime.utcnow().isoformat()
                             })
                             redis_client.publish("detections:updates", message)
-                            logger.debug(f"📢 Published detection to Redis")
+                            logger.debug(
+                                f"Published detection #{detection_id} to Redis"
+                            )
                         except Exception as e:
-                            logger.error(f"Failed to publish detection to Redis: {e}")
+                            logger.error(
+                                f"Failed to publish detection to Redis: {e}"
+                            )
         
         total_processed = num_saved + num_updated + num_skipped
         logger.info(
@@ -518,7 +542,7 @@ def detect_cnn_appliances(
             f"ignorées: {num_skipped})"
         )
         
-        return {
+        result = {
             'status': 'success',
             'num_detections': num_saved,
             'num_updated': num_updated,
@@ -528,6 +552,26 @@ def detect_cnn_appliances(
             'period': {'start': start_time.isoformat(), 'end': end_time.isoformat()},
             'timestamp': datetime.utcnow().isoformat()
         }
+        
+        # Publish detection_complete event to Redis
+        if redis_client:
+            try:
+                message = json.dumps({
+                    "event": "detection_complete",
+                    "data": result,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                redis_client.publish("detections:updates", message)
+                logger.info(
+                    f"📢 Published detection_complete to Redis "
+                    f"({num_saved} nouvelles, {num_updated} mises à jour)"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to publish detection_complete: {e}"
+                )
+        
+        return result
         
     except Exception as e:
         logger.error(f"Erreur lors de la détection: {e}", exc_info=True)
