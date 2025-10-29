@@ -20,17 +20,19 @@ Nilmia is a real-time electrical consumption analysis platform that:
 - Ingests Linky smart meter data from remote MySQL into local TimescaleDB
 - Applies Sequence-to-Point NILM (Non-Intrusive Load Monitoring) to detect appliance-level consumption
 - Uses TensorFlow LSTM/GRU models to disaggregate aggregate power into individual appliances
-- Provides React frontend with SSE streaming for real-time monitoring
+- Provides React frontend with WebSocket streaming for real-time monitoring
 
 ## Architecture Principles
 
 **Service Architecture**: The system uses a microservices architecture orchestrated by Docker Compose, with services communicating via Redis/Celery queues and TimescaleDB as the central data store.
 
-**Data Pipeline**: Remote MySQL → sync-service (Celery) → TimescaleDB hypertable → nilm-cnn-service (TensorFlow) → detections → backend-service (FastAPI) → frontend-service (React WebSocket/SSE streams)
+**Data Pipeline**: Remote MySQL → sync-service (Celery) → TimescaleDB hypertable → nilm-cnn-service (TensorFlow) → detections → backend-service (FastAPI) → frontend-service (React WebSocket)
 
-**Real-time Training Communication**:
-- Keras callback (nilm-cnn-service) → Redis Pub/Sub channel `training:logs` → FastAPI WebSocket (`/ws/training`) → React frontend
-- Events: `training_start`, `epoch_start`, `epoch_end`, `batch_update`, `training_complete`
+**Real-time Communication (WebSocket + Redis Pub/Sub)**:
+- **Training logs**: Keras callback → Redis `training:logs` → WebSocket `/ws/training` → React frontend
+- **Consumption updates**: sync-service → Redis `consumption:updates` → WebSocket `/ws/consumption` → React frontend
+- **Detection updates**: nilm-cnn-service → Redis `detections:updates` → WebSocket `/ws/detections` → React frontend
+- Events: `training_start`, `epoch_start`, `epoch_end`, `new_consumption`, `new_detection`, etc.
 - Auto-reconnection and broadcast to multiple clients
 
 **Storage Model**:
@@ -140,6 +142,7 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Polls remote MySQL `linky_realtime` every 5 seconds
 - Bulk inserts into TimescaleDB with automatic hypertable partitioning
 - Enforces 48h retention policy
+- Publishes new consumption data to Redis `consumption:updates` channel for real-time WebSocket streaming
 - Celery tasks: `init_database`, `full_sync`, `incremental_sync`, `get_stats`
 
 ### nilm-cnn-service (Python 3.12 + TensorFlow)
@@ -149,20 +152,21 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - GPU support via `runtime: nvidia` (optional, falls back to CPU)
 - TensorBoard logs saved per model in `models/tensorboard/`
 - **Single Model System**: Only one model at a time, named `linkya_model_<timestamp>`
+- Publishes new detections to Redis `detections:updates` channel for real-time WebSocket streaming
 - Celery tasks: `train_cnn_model`, `detect_cnn_appliances`, `add_cnn_signature`, `enrich_cnn_signatures`
 
 ### backend-service (FastAPI)
-- REST API with WebSocket and SSE endpoints
-- **Real-time Training Logs**: WebSocket endpoint (`/ws/training`) for live training progress
+- REST API with WebSocket endpoints (SSE removed October 2025)
+- **Real-time Updates**: Three WebSocket endpoints for live streaming
 - Routes Celery tasks to appropriate queues (`nilm_cnn` for NILM operations)
-- **Redis Pub/Sub Integration**: Subscribes to training events and broadcasts via WebSocket
+- **Redis Pub/Sub Integration**: Subscribes to Redis channels and broadcasts via WebSocket
 - Key endpoints:
   - `GET /api/consumption/history` - aggregated time-series data
   - `POST /api/signatures` - create appliance signatures
   - `POST /api/nilm/train` - trigger training
-  - `GET /api/stream/consumption/latest` - SSE real-time power
-  - `GET /api/stream/detections` - SSE detection updates
   - `WS /ws/training` - WebSocket for real-time training logs
+  - `WS /ws/consumption` - WebSocket for real-time consumption updates
+  - `WS /ws/detections` - WebSocket for real-time detection updates
 
 ### frontend-service (React 18 + MUI)
 - Consumption charts with Chart.js
@@ -170,11 +174,13 @@ make pgadmin   # TimescaleDB admin (localhost:8080)
 - Appliance autocomplete with create-on-demand
 - Training management with paginated model history
 - **Real-time Training Logs**: WebSocket-based live training progress viewer
+- **Real-time Consumption**: WebSocket updates for latest power/temperature data
+- **Real-time Detections**: WebSocket updates for new appliance detections
 - **Simple Model Display**: Shows model name (linkya_model_<timestamp>) without complex status badges
 - **Direct Model Deletion**: Delete button to remove the current model (requires retraining after)
-- WebSocket-based real-time training logs with auto-reconnection
-- SSE-based real-time updates for consumption data (migrating to WebSocket)
+- Three WebSocket connections: training, consumption, detections (SSE removed October 2025)
 - CSV export/import for signatures (bulk operations)
+- Manual refresh for consumption history (auto-refresh removed October 2025)
 
 ## Configuration
 
@@ -385,6 +391,21 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
+- **Complete WebSocket Implementation** (October 2025):
+  - **Removed SSE**: Deleted `sse.js`, removed all SSE endpoints (`/api/stream/*`)
+  - **Backend**: Added WebSocket managers for consumption and detections (similar to training)
+    - `ConsumptionUpdatesManager` listens to Redis `consumption:updates`
+    - `DetectionUpdatesManager` listens to Redis `detections:updates`
+    - Endpoints: `/ws/consumption`, `/ws/detections`
+  - **sync-service**: Publishes to Redis after inserting new consumption data
+  - **nilm-cnn-service**: Publishes to Redis after creating new detections
+  - **Frontend**: Extended `websocket.js` with `GenericWebSocket` class
+    - `consumptionWS` singleton for consumption updates
+    - `detectionsWS` singleton for detection updates
+    - `LatestConsumption.js` uses WebSocket for real-time power/temp
+    - `ConsumptionChart.js` uses WebSocket for real-time detections
+  - **Architecture**: Full event-driven real-time system via Redis Pub/Sub + WebSocket
+
 - **Fix Duplicate Training Logs** (October 2025):
   - **Root cause**: Event handlers were redefined inside `useEffect` without stable references, causing multiple registrations
   - **Solution**: Wrapped all handlers in `useCallback` with proper dependencies to ensure stable function references
@@ -414,14 +435,6 @@ ORDER BY total_wh DESC;
   - Frontend simplified: removed status badges, backup button, complex warnings
   - Backend simplified: removed `/api/nilm/models/backup` endpoint
   - Migration SQL: `migrations/simplify_single_model.sql`
-
-- **Real-time Training Logs via WebSocket** (October 2025):
-  - Custom Keras callback `RedisTrainingCallback` publishes training events to Redis Pub/Sub channel `training:logs`
-  - FastAPI WebSocket endpoint `/ws/training` subscribes to Redis and broadcasts to multiple clients
-  - Frontend `TrainingLogsViewer` component displays live training progress with auto-reconnection
-  - Events: `training_start`, `epoch_start`, `epoch_end` (with metrics, ETA), `batch_update`, `training_complete`
-  - Real-time metrics: loss, accuracy, progress bar, elapsed time, ETA
-  - Migration path from SSE to WebSocket for better bidirectional communication
 
 - **Negative Signatures System**: Persistent learning from invalidated detections
   - Added `is_negative` field to `cnn_signatures` table (boolean, default FALSE)

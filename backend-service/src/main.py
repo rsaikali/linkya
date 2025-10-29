@@ -1,7 +1,6 @@
 """Main FastAPI backend for Nilmia."""
 
 import asyncio
-import json
 import logging
 import redis.asyncio as aioredis
 from datetime import datetime, timedelta
@@ -10,7 +9,6 @@ from typing import Optional, Set
 from fastapi import FastAPI, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 
 from .config import settings
 from .database import db_manager
@@ -59,9 +57,9 @@ async def root():
             "appliances": "/api/appliances",
             "detections": "/api/detections",
             "signatures_create": "POST /api/signatures",
-            "stream_latest": "/api/stream/consumption/latest",
-            "stream_detections": "/api/stream/detections",
-            "stream_appliances": "/api/stream/appliances",
+            "ws_training": "/ws/training",
+            "ws_consumption": "/ws/consumption",
+            "ws_detections": "/ws/detections",
         },
     }
 
@@ -847,161 +845,6 @@ async def delete_nilm_model(model_id: int):
 
 
 # ============================================================================
-# Server-Sent Events (SSE) - Streaming en temps réel
-# ============================================================================
-
-
-@app.get("/api/stream/consumption/latest")
-async def stream_latest_consumption(
-    update_interval: int = Query(default=1, ge=1, le=60, description="Intervalle de mise à jour en secondes"),
-):
-    """
-    Stream Server-Sent Events de la dernière consommation en temps réel.
-    
-    Args:
-        update_interval: Intervalle de mise à jour en secondes
-    
-    Returns:
-        Stream d'événements SSE avec dernière consommation
-    """
-    async def generator():
-        while True:
-            try:
-                data = db_manager.get_latest_consumption()
-                if data:
-                    event_data = json.dumps(data)
-                    yield f"data: {event_data}\n\n"
-                await asyncio.sleep(update_interval)
-            except Exception as e:
-                print(f"Erreur stream consumption: {str(e)}")
-                await asyncio.sleep(update_interval)
-    
-    return StreamingResponse(
-        generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-async def stream_detections_generator(hours: int = None, minutes: int = None, update_interval: int = 10):
-    """
-    Génère un stream des détections d'appareils.
-    
-    Args:
-        hours: Nombre d'heures d'historique
-        minutes: Nombre de minutes d'historique
-        update_interval: Intervalle de mise à jour en secondes
-    """
-    # Déterminer la période à récupérer
-    if minutes is not None and minutes > 0:
-        delta = timedelta(minutes=minutes)
-    elif hours is not None and hours > 0:
-        # Valider les heures (1-168)
-        if hours < 1 or hours > 168:
-            hours = 24  # Fallback à 24h
-        delta = timedelta(hours=hours)
-    else:
-        # Valeur par défaut: 24 heures
-        delta = timedelta(hours=24)
-    
-    while True:
-        try:
-            end_time = datetime.now()
-            start_time = end_time - delta
-            detections = db_manager.get_detected_appliances(start_time, end_time)
-            
-            event_data = json.dumps({
-                "start_time": start_time.isoformat(),
-                "end_time": end_time.isoformat(),
-                "total_detections": len(detections),
-                "detections": detections,
-            })
-            yield f"data: {event_data}\n\n"
-            await asyncio.sleep(update_interval)
-        except Exception as e:
-            print(f"Erreur dans stream_detections: {str(e)}")
-            await asyncio.sleep(update_interval)
-
-
-@app.get("/api/stream/detections")
-async def stream_detections(
-    hours: int = Query(default=None, description="Nombre d'heures d'historique"),
-    minutes: int = Query(default=None, description="Nombre de minutes d'historique"),
-    update_interval: int = Query(default=10, ge=1, le=60, description="Intervalle de mise à jour en secondes"),
-):
-    """
-    Stream Server-Sent Events des détections NILM.
-    
-    Cette endpoint push les détections d'appareils au client.
-    
-    Args:
-        hours: Nombre d'heures d'historique à récupérer
-        minutes: Nombre de minutes d'historique à récupérer
-        update_interval: Intervalle de mise à jour en secondes (1-60)
-    
-    Returns:
-        Stream d'événements SSE avec détections NILM
-    """
-    return StreamingResponse(
-        stream_detections_generator(hours, minutes, update_interval),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-async def stream_appliances_generator(update_interval: int = 30):
-    """
-    Génère un stream de la liste des appareils.
-    
-    Args:
-        update_interval: Intervalle de mise à jour en secondes
-    """
-    while True:
-        try:
-            appliances = db_manager.get_all_appliances()
-            event_data = json.dumps({
-                "total": len(appliances),
-                "appliances": appliances,
-            })
-            yield f"data: {event_data}\n\n"
-            await asyncio.sleep(update_interval)
-        except Exception as e:
-            print(f"Erreur dans stream_appliances: {str(e)}")
-            await asyncio.sleep(update_interval)
-
-
-@app.get("/api/stream/appliances")
-async def stream_appliances(
-    update_interval: int = Query(default=30, ge=1, le=300, description="Intervalle de mise à jour en secondes"),
-):
-    """
-    Stream Server-Sent Events de la liste des appareils.
-
-    Args:
-        update_interval: Intervalle de mise à jour en secondes (1-300)
-
-    Returns:
-        Stream d'événements SSE avec liste des appareils
-    """
-    return StreamingResponse(
-        stream_appliances_generator(update_interval),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
 # ============================================================================
 # Export/Import CSV des signatures
 # ============================================================================
@@ -1275,6 +1118,164 @@ class TrainingLogsManager:
 training_logs_manager = TrainingLogsManager()
 
 
+# --- WebSocket Manager for Consumption Updates ---
+class ConsumptionUpdatesManager:
+    """Manages WebSocket connections for real-time consumption data."""
+    
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self.redis_client = None
+        self.pubsub = None
+        self.listener_task = None
+    
+    async def connect(self, websocket: WebSocket):
+        """Accept new WebSocket connection."""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"Consumption WS connected. Total: {len(self.active_connections)}")
+        
+        if not self.listener_task:
+            await self.start_redis_listener()
+    
+    def disconnect(self, websocket: WebSocket):
+        """Remove WebSocket connection."""
+        self.active_connections.discard(websocket)
+        logger.info(f"Consumption WS disconnected. Total: {len(self.active_connections)}")
+    
+    async def start_redis_listener(self):
+        """Start listening to Redis Pub/Sub channel."""
+        try:
+            redis_url = settings.celery_broker_url.replace('redis://', '')
+            host_port = redis_url.split('/')[0]
+            
+            self.redis_client = await aioredis.from_url(
+                f"redis://{host_port}",
+                decode_responses=True
+            )
+            self.pubsub = self.redis_client.pubsub()
+            await self.pubsub.subscribe("consumption:updates")
+            
+            logger.info("✅ Started Redis listener for consumption:updates")
+            self.listener_task = asyncio.create_task(self._listen_redis())
+            
+        except Exception as e:
+            logger.error(f"Failed to start consumption Redis listener: {e}")
+    
+    async def _listen_redis(self):
+        """Background task that listens to Redis and broadcasts to WebSockets."""
+        logger.info("🎧 Consumption Redis listener task started")
+        try:
+            async for message in self.pubsub.listen():
+                if message['type'] == 'message':
+                    data = message['data']
+                    logger.debug(f"📢 Broadcasting consumption to {len(self.active_connections)} clients")
+                    await self.broadcast(data)
+        except Exception as e:
+            logger.error(f"Error in consumption Redis listener: {e}", exc_info=True)
+        finally:
+            logger.info("🔚 Consumption Redis listener task ending")
+            if self.pubsub:
+                await self.pubsub.unsubscribe("consumption:updates")
+                await self.pubsub.close()
+            if self.redis_client:
+                await self.redis_client.close()
+    
+    async def broadcast(self, message: str):
+        """Broadcast message to all connected WebSocket clients."""
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.warning(f"Failed to send to consumption WebSocket: {e}")
+                disconnected.add(connection)
+        
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+consumption_updates_manager = ConsumptionUpdatesManager()
+
+
+# --- WebSocket Manager for Detection Updates ---
+class DetectionUpdatesManager:
+    """Manages WebSocket connections for real-time detection updates."""
+    
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self.redis_client = None
+        self.pubsub = None
+        self.listener_task = None
+    
+    async def connect(self, websocket: WebSocket):
+        """Accept new WebSocket connection."""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"Detection WS connected. Total: {len(self.active_connections)}")
+        
+        if not self.listener_task:
+            await self.start_redis_listener()
+    
+    def disconnect(self, websocket: WebSocket):
+        """Remove WebSocket connection."""
+        self.active_connections.discard(websocket)
+        logger.info(f"Detection WS disconnected. Total: {len(self.active_connections)}")
+    
+    async def start_redis_listener(self):
+        """Start listening to Redis Pub/Sub channel."""
+        try:
+            redis_url = settings.celery_broker_url.replace('redis://', '')
+            host_port = redis_url.split('/')[0]
+            
+            self.redis_client = await aioredis.from_url(
+                f"redis://{host_port}",
+                decode_responses=True
+            )
+            self.pubsub = self.redis_client.pubsub()
+            await self.pubsub.subscribe("detections:updates")
+            
+            logger.info("✅ Started Redis listener for detections:updates")
+            self.listener_task = asyncio.create_task(self._listen_redis())
+            
+        except Exception as e:
+            logger.error(f"Failed to start detection Redis listener: {e}")
+    
+    async def _listen_redis(self):
+        """Background task that listens to Redis and broadcasts to WebSockets."""
+        logger.info("🎧 Detection Redis listener task started")
+        try:
+            async for message in self.pubsub.listen():
+                if message['type'] == 'message':
+                    data = message['data']
+                    logger.debug(f"📢 Broadcasting detection to {len(self.active_connections)} clients")
+                    await self.broadcast(data)
+        except Exception as e:
+            logger.error(f"Error in detection Redis listener: {e}", exc_info=True)
+        finally:
+            logger.info("🔚 Detection Redis listener task ending")
+            if self.pubsub:
+                await self.pubsub.unsubscribe("detections:updates")
+                await self.pubsub.close()
+            if self.redis_client:
+                await self.redis_client.close()
+    
+    async def broadcast(self, message: str):
+        """Broadcast message to all connected WebSocket clients."""
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.warning(f"Failed to send to detection WebSocket: {e}")
+                disconnected.add(connection)
+        
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+detection_updates_manager = DetectionUpdatesManager()
+
+
 @app.websocket("/ws/training")
 async def websocket_training_logs(websocket: WebSocket):
     """
@@ -1302,3 +1303,53 @@ async def websocket_training_logs(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         training_logs_manager.disconnect(websocket)
+
+
+@app.websocket("/ws/consumption")
+async def websocket_consumption_updates(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time consumption data updates.
+    
+    Clients connect to receive live consumption data as it arrives from sync-service.
+    Events include: new_consumption with latest PAPP, temperature, counters.
+    """
+    await consumption_updates_manager.connect(websocket)
+    try:
+        while True:
+            try:
+                data = await websocket.receive_text()
+                logger.debug(f"Received from consumption client: {data}")
+            except Exception as recv_error:
+                logger.debug(f"Consumption receive error: {recv_error}")
+                break
+    except WebSocketDisconnect:
+        logger.info("Consumption WebSocket client disconnected")
+        consumption_updates_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Consumption WebSocket error: {e}")
+        consumption_updates_manager.disconnect(websocket)
+
+
+@app.websocket("/ws/detections")
+async def websocket_detection_updates(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time detection updates.
+    
+    Clients connect to receive live NILM detection results as they are created.
+    Events include: new_detection with appliance, timing, power, confidence.
+    """
+    await detection_updates_manager.connect(websocket)
+    try:
+        while True:
+            try:
+                data = await websocket.receive_text()
+                logger.debug(f"Received from detection client: {data}")
+            except Exception as recv_error:
+                logger.debug(f"Detection receive error: {recv_error}")
+                break
+    except WebSocketDisconnect:
+        logger.info("Detection WebSocket client disconnected")
+        detection_updates_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Detection WebSocket error: {e}")
+        detection_updates_manager.disconnect(websocket)

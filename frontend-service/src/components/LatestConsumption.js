@@ -15,70 +15,74 @@ import {
   AccessTime,
   SignalCellularAlt,
 } from '@mui/icons-material';
-import { streamLatestConsumption, closeStream } from '../services/sse';
 import { apiService } from '../services/api';
+import { consumptionWS } from '../services/websocket';
 
 const LatestConsumption = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [eventSource, setEventSource] = useState(null);
-  const [updateMethod, setUpdateMethod] = useState('sse');
+  const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
-    const connectSSE = () => {
+    // Fetch initial data
+    const fetchLatestConsumption = async () => {
       try {
-        const source = streamLatestConsumption(
-          (data) => {
-            setData(data);
-            setError(null);
-            setLoading(false);
-            setUpdateMethod('sse');
-          },
-          (error) => {
-            console.warn('SSE failed, falling back to polling:', error);
-            fallbackToPolling();
-          },
-          1
-        );
-        setEventSource(source);
+        const result = await apiService.getLatestConsumption();
+        setData(result);
+        setError(null);
+        setLoading(false);
       } catch (err) {
-        console.warn('SSE not supported, falling back to polling:', err);
-        fallbackToPolling();
+        setError('Impossible de récupérer les données de consommation');
+        console.error(err);
+        setLoading(false);
       }
     };
 
-    const fallbackToPolling = () => {
-      const fetchLatestConsumption = async () => {
-        try {
-          const result = await apiService.getLatestConsumption();
-          setData(result);
-          setError(null);
-          setUpdateMethod('polling');
-        } catch (err) {
-          setError('Impossible de récupérer les données de consommation');
-          console.error(err);
-        } finally {
-          setLoading(false);
-        }
-      };
+    fetchLatestConsumption();
 
-      fetchLatestConsumption();
-      const interval = setInterval(fetchLatestConsumption, 1000);
-      setEventSource({ interval });
-      return interval;
+    // Setup WebSocket for real-time consumption updates
+    const handleNewConsumption = (consumptionData) => {
+      console.log('📊 New consumption data received:', consumptionData);
+      setData(consumptionData);
+      setError(null);
     };
 
-    connectSSE();
+    const handleConnected = () => {
+      console.log('✅ Consumption WebSocket connected');
+      setWsConnected(true);
+    };
 
+    const handleDisconnected = () => {
+      console.log('🔌 Consumption WebSocket disconnected');
+      setWsConnected(false);
+    };
+
+    const handleError = (errorData) => {
+      console.error('WebSocket error:', errorData);
+      setWsConnected(false);
+    };
+
+    // Register event handlers
+    consumptionWS.on('new_consumption', handleNewConsumption);
+    consumptionWS.on('connected', handleConnected);
+    consumptionWS.on('disconnected', handleDisconnected);
+    consumptionWS.on('error', handleError);
+
+    // Connect to WebSocket
+    consumptionWS.connect();
+
+    // Check initial connection state
+    const status = consumptionWS.getStatus();
+    setWsConnected(status.isConnected);
+
+    // Cleanup on unmount
     return () => {
-      if (eventSource) {
-        if (eventSource.close) {
-          closeStream(eventSource);
-        } else if (eventSource.interval) {
-          clearInterval(eventSource.interval);
-        }
-      }
+      consumptionWS.off('new_consumption', handleNewConsumption);
+      consumptionWS.off('connected', handleConnected);
+      consumptionWS.off('disconnected', handleDisconnected);
+      consumptionWS.off('error', handleError);
+      // Don't disconnect permanently - other components might use it
     };
   }, []);
 
@@ -145,10 +149,10 @@ const LatestConsumption = () => {
             />
             <Chip
               icon={<SignalCellularAlt />}
-              label={updateMethod === 'sse' ? 'Live' : 'Polling'}
+              label={wsConnected ? 'Live' : 'Loading'}
               size="small"
               variant="filled"
-              color={updateMethod === 'sse' ? 'success' : 'warning'}
+              color={wsConnected ? 'success' : 'warning'}
               sx={{ fontSize: '0.75rem' }}
             />
           </Box>
@@ -169,10 +173,10 @@ const LatestConsumption = () => {
               <ElectricBolt sx={{ fontSize: 48, mr: 2 }} />
               <Box>
                 <Typography variant="h3" component="div" fontWeight="bold">
-                  {data.papp}
+                  {data.papp} W
                 </Typography>
                 <Typography variant="body2">
-                  Puissance apparente (VA)
+                  Puissance apparente
                 </Typography>
               </Box>
             </Box>
@@ -192,10 +196,10 @@ const LatestConsumption = () => {
               <ThermostatAuto sx={{ fontSize: 48, mr: 2 }} />
               <Box>
                 <Typography variant="h3" component="div" fontWeight="bold">
-                  {data.temperature ? data.temperature.toFixed(1) : 'N/A'}
+                  {data.temperature ? data.temperature.toFixed(1) + "°C" : 'N/A'}
                 </Typography>
                 <Typography variant="body2">
-                  Température (°C)
+                  Température extérieure
                 </Typography>
               </Box>
             </Box>

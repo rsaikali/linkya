@@ -3,6 +3,8 @@ from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import logging
+import json
+import redis
 
 from .config import settings
 
@@ -29,6 +31,15 @@ class DatabaseManager:
         
         self.LocalSession = sessionmaker(bind=self.local_engine)
         self.RemoteSession = sessionmaker(bind=self.remote_engine)
+        
+        # Redis client pour WebSocket real-time updates
+        try:
+            redis_url = settings.celery_broker_url
+            self.redis_client = redis.from_url(redis_url, decode_responses=True)
+            logger.info("✅ Redis client initialized for consumption updates")
+        except Exception as e:
+            logger.warning(f"⚠️ Redis client init failed: {e}")
+            self.redis_client = None
     
     def init_local_db(self):
         """Initialise la base locale avec TimescaleDB"""
@@ -124,6 +135,7 @@ class DatabaseManager:
         
         with self.local_engine.begin() as conn:
             inserted = 0
+            latest_row = None
             for row in data:
                 try:
                     conn.execute(text("""
@@ -137,8 +149,29 @@ class DatabaseManager:
                             libelle_tarif = EXCLUDED.libelle_tarif
                     """), row)
                     inserted += 1
+                    latest_row = row
                 except Exception as e:
                     logger.error(f"Erreur insertion: {e}")
+            
+            # Publish latest consumption to Redis for WebSocket streaming
+            if inserted > 0 and latest_row and self.redis_client:
+                try:
+                    message = json.dumps({
+                        "event": "new_consumption",
+                        "data": {
+                            "time": latest_row['time'].isoformat(),
+                            "papp": latest_row['papp'],
+                            "hchp": latest_row['hchp'],
+                            "hchc": latest_row['hchc'],
+                            "temperature": latest_row['temperature'],
+                            "libelle_tarif": latest_row['libelle_tarif']
+                        },
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    self.redis_client.publish("consumption:updates", message)
+                    logger.debug(f"📢 Published consumption update to Redis")
+                except Exception as e:
+                    logger.error(f"Failed to publish to Redis: {e}")
             
             return inserted
     

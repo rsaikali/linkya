@@ -29,7 +29,7 @@ import annotationPlugin from 'chartjs-plugin-annotation';
 import { Line } from 'react-chartjs-2';
 import { ShowChart } from '@mui/icons-material';
 import { apiService } from '../services/api';
-import { streamDetections, closeStream } from '../services/sse';
+import { detectionsWS } from '../services/websocket';
 import SignatureModal from './SignatureModal';
 
 ChartJS.register(
@@ -53,8 +53,6 @@ const ConsumptionChart = () => {
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
-  const detectionEventSourceRef = useRef(null);
-  const historyIntervalRef = useRef(null);
   const chartRef = useRef(null);
   const selectionStartRef = useRef(null);
 
@@ -91,40 +89,42 @@ const ConsumptionChart = () => {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    // Fetch initial
+    // Fetch initial data
     fetchHistory();
+    
+    // Fetch initial detections
+    const fetchDetections = async () => {
+      try {
+        const result = await apiService.getDetections(timeRange);
+        setDetections(result.detections || []);
+      } catch (err) {
+        console.error('Failed to fetch detections:', err);
+      }
+    };
+    fetchDetections();
 
-    // Fermer les connexions SSE existantes
-    if (detectionEventSourceRef.current) {
-      closeStream(detectionEventSourceRef.current);
-    }
+    // Setup WebSocket for real-time detection updates
+    const handleNewDetection = (detection) => {
+      console.log('🔍 New detection received:', detection);
+      // Add new detection to the list
+      setDetections(prev => [...prev, detection]);
+    };
 
-    // Polling régulier pour graphique glissant
-    // Pour courtes périodes: polling rapide (1 seconde)
-    // Pour longues périodes: polling lent (30 secondes)
-    const pollInterval = timeRange <= 1 ? 1000 : timeRange <= 6 ? 5000 : 30000;
-    historyIntervalRef.current = setInterval(fetchHistory, pollInterval);
+    const handleError = (errorData) => {
+      console.error('Detections WebSocket error:', errorData);
+    };
 
-    // Stream pour détections (moins critique, update toutes les 10s)
-    const detectionSource = streamDetections(
-      (data) => {
-        setDetections(data.detections || []);
-      },
-      (error) => {
-        console.warn('SSE détections failed:', error);
-      },
-      timeRange,
-      10
-    );
-    detectionEventSourceRef.current = detectionSource;
+    // Register event handlers
+    detectionsWS.on('new_detection', handleNewDetection);
+    detectionsWS.on('error', handleError);
 
+    // Connect to WebSocket
+    detectionsWS.connect();
+
+    // Cleanup on unmount or timeRange change
     return () => {
-      if (historyIntervalRef.current) {
-        clearInterval(historyIntervalRef.current);
-      }
-      if (detectionEventSourceRef.current) {
-        closeStream(detectionEventSourceRef.current);
-      }
+      detectionsWS.off('new_detection', handleNewDetection);
+      detectionsWS.off('error', handleError);
     };
   }, [timeRange]);
 

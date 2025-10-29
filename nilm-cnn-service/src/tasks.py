@@ -5,6 +5,7 @@ import json
 import logging
 import warnings
 import os
+import redis
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from zoneinfo import ZoneInfo
@@ -71,6 +72,17 @@ celery_app.conf.update(
     task_time_limit=3600,  # 1 heure max par tâche
     worker_pool='solo',  # Pour éviter les conflits avec TensorFlow
 )
+
+# Redis client pour WebSocket real-time updates
+try:
+    redis_client = redis.from_url(
+        settings.celery_broker_url,
+        decode_responses=True
+    )
+    logger.info("✅ Redis client initialized for detection updates")
+except Exception as e:
+    logger.warning(f"⚠️ Redis client init failed: {e}")
+    redis_client = None
 
 
 @celery_app.task(name='init_cnn_database')
@@ -473,6 +485,31 @@ def detect_cnn_appliances(
                         f"- {event.get('duration_seconds', 0)}s "
                         f"- {event['avg_power']:.1f}W"
                     )
+                    
+                    # Publish detection to Redis for WebSocket streaming
+                    if redis_client:
+                        try:
+                            message = json.dumps({
+                                "event": "new_detection",
+                                "data": {
+                                    "appliance_id": appliance_id,
+                                    "appliance_name": event['appliance_name'],
+                                    "start_time": event['start_time'].isoformat(),
+                                    "end_time": event['end_time'].isoformat(),
+                                    "avg_power": event['avg_power'],
+                                    "energy_consumed": event.get(
+                                        'energy_consumed',
+                                        event.get('energy_wh', 0)
+                                    ),
+                                    "confidence_score": event['confidence_score'],
+                                    "prediction_class": event.get('prediction_class')
+                                },
+                                "timestamp": datetime.utcnow().isoformat()
+                            })
+                            redis_client.publish("detections:updates", message)
+                            logger.debug(f"📢 Published detection to Redis")
+                        except Exception as e:
+                            logger.error(f"Failed to publish detection to Redis: {e}")
         
         total_processed = num_saved + num_updated + num_skipped
         logger.info(
