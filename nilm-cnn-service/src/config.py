@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     
     # Device configuration (CPU/GPU)
     use_gpu: Optional[str] = None  # "true", "false", "auto" (default)
-    nilm_model_type: str = "gru"  # "lstm", "gru", "attention"
+    nilm_model_type: str = "gru"  # Type de modèle: "gru" (défaut) ou "lstm"
     nilm_detect_states: bool = True  # Activer détection d'états/cycles
     
     @property

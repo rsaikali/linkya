@@ -50,9 +50,10 @@ La table `linky_realtime` contient les données de consommation Linky :
 - ✅ Monitoring avec Flower
 
 ### Détection d'appareils NILM (nilm-cnn-service)
-- 🧠 Détection automatique d'appareils électriques par CNN 1D
+- 🧠 Détection automatique d'appareils électriques par FiLM CNN
 - 🔄 Training périodique automatique (toutes les 24h)
 - 📊 Analyse en temps réel (toutes les 5 minutes)
+- 🎯 Architecture FiLM : un seul modèle pour tous les appareils
 - 🎯 Signatures complexes (cycles, variations, pics de consommation)
 - 🚀 Accélération GPU optionnelle (fallback CPU)
 - ✏️ Ajout manuel de signatures d'appareils via interface web
@@ -226,11 +227,11 @@ Les données plus anciennes que 48h sont automatiquement supprimées (configurab
 
 ### Principe de fonctionnement
 
-Le service NILM utilise des algorithmes ML avancés pour identifier les appareils électriques :
+Le service NILM utilise l'architecture FiLM (Feature-wise Linear Modulation) pour identifier les appareils électriques :
 
 1. **Extraction de features** : Analyse de la puissance, variations, cycles, pics
-2. **Clustering CRLI** : Identification des patterns de consommation
-3. **Détection d'événements** : Analyse des transitions entre clusters
+2. **Architecture FiLM** : Modulation des features par appareil cible (un seul modèle pour tous)
+3. **Détection d'événements** : Analyse des transitions et patterns
 4. **Scoring** : Calcul de confiance pour chaque détection
 
 ### Signatures détectées

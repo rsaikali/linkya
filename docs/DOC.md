@@ -82,26 +82,15 @@ Frontend (React) → Backend (FastAPI) → TimescaleDB
 
 ### Model Configuration (Environment Variables)
 ```env
-NILM_ARCHITECTURE=film  # 'film', 'multi', or 'single'
 NILM_MODEL_TYPE=gru     # 'gru' or 'lstm'
 ```
 
-### Supported Architectures
-
-**1. FiLM (Feature-wise Linear Modulation) - Default**
+### Architecture: FiLM (Feature-wise Linear Modulation)
 - Multi-appliance with conditional learning
 - FiLM layers for appliance-specific feature modulation
 - Best for complex appliance patterns (washing machines, dryers)
 - Outputs: power + state predictions per appliance
-
-**2. Multi-Output**
-- Shared CNN encoder + separate decoder per appliance
-- Parallel prediction for all appliances
-- Good for concurrent appliance detection
-
-**3. Single-Output**
-- One model per appliance (simplest approach)
-- Higher accuracy per appliance but requires more models
+- Single unified model for all appliances
 
 ### Model Pipeline
 1. **Input**: 599-point sliding window (PAPP values, ~20min at 2s interval)
@@ -197,7 +186,6 @@ CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/0
 
 # NILM Configuration
-NILM_ARCHITECTURE=film
 NILM_MODEL_TYPE=gru
 ```
 

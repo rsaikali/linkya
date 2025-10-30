@@ -14,14 +14,16 @@ Ce service utilise un réseau de neurones convolutifs 1D pour identifier automat
 
 ## Architecture
 
-### Modèle CNN
+### Modèle CNN - FiLM (Feature-wise Linear Modulation)
 
-- **Architecture**: CNN 1D avec 3 couches convolutionnelles
+- **Architecture**: FiLM-based multi-target CNN avec GRU/LSTM
+- **Principe**: Un seul modèle pour tous les appareils avec conditioning
 - **Features extraites**:
   - Statistiques (moyenne, écart-type, min, max, médiane, quartiles)
   - Gradients et variations temporelles
   - FFT (analyse fréquentielle)
   - Autocorrélation (détection de cycles)
+- **FiLM layers**: Modulation des features par appareil cible
 - **Augmentation de données**: bruit, décalage temporel, mise à l'échelle
 - **Normalisation**: StandardScaler sur les séquences
 

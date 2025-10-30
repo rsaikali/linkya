@@ -158,7 +158,6 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
-      NILM_ARCHITECTURE: "film"  # Architecture: 'film' (défaut), 'multi' ou 'single'
       NILM_MODEL_TYPE: "gru"  # Type de modèle: 'gru' (défaut) ou 'lstm'
     env_file:
       - .env

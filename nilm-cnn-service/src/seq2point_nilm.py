@@ -1549,13 +1549,10 @@ class Seq2PointNILMManager:
         )
         logger.info("Change Point Pattern Detector initialisé")
 
-        # Modèle FiLM (architecture unique)
+        # Modèle FiLM (seule architecture supportée)
         self.film_model: Optional[Seq2PointFiLMModel] = None
         
-        logger.info(
-            f"🎯 Architecture: FiLM, "
-            f"Type: {self.model_type.upper()}"
-        )
+        logger.info(f"🎯 Architecture: FiLM, Type: {self.model_type.upper()}")
 
     def load_model(self, model_path: str):
         """
@@ -1584,12 +1581,12 @@ class Seq2PointNILMManager:
             # Vérifier que c'est bien un modèle FiLM
             if architecture.lower() != 'film':
                 logger.warning(
-                    f"Architecture {architecture} non supportée. "
-                    f"Seuls les modèles FiLM sont supportés."
+                    f"Seule l'architecture FiLM est supportée. "
+                    f"Modèle {architecture} détecté."
                 )
                 raise ValueError(
-                    f"Modèle {architecture} obsolète. "
-                    f"Veuillez réentraîner avec architecture FiLM."
+                    f"Modèle {architecture} non supporté. "
+                    f"Veuillez réentraîner avec l'architecture FiLM."
                 )
 
             logger.info("📂 Chargement modèle FiLM...")
@@ -1695,8 +1692,8 @@ class Seq2PointNILMManager:
                 f"appareils, {total_profiles} profils"
             )
 
-            # Entraîner avec architecture FiLM
-            logger.info("🎬 Architecture FiLM (multi-target conditioning)")
+            # Entraîner avec architecture FiLM (seule architecture supportée)
+            logger.info("🎬 Entraînement FiLM (multi-target conditioning)")
             
             # Créer ou réutiliser modèle FiLM
             if fine_tune and self.film_model is not None:
