@@ -65,6 +65,27 @@ class DatabaseManager:
                 }
             return None
 
+    def get_consumption_time_range(self) -> dict[str, datetime] | None:
+        """
+        Get the min and max timestamps from linky_realtime table.
+
+        Returns:
+            Dictionary with min_time and max_time, or None if no data
+        """
+        query = text("""
+            SELECT MIN(time) as min_time, MAX(time) as max_time
+            FROM linky_realtime
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(query).fetchone()
+            if result and result[0] and result[1]:
+                return {
+                    "min_time": result[0],
+                    "max_time": result[1],
+                }
+            return None
+
     def get_consumption_history(
         self, start_time: datetime, end_time: datetime, interval: str = "5 minutes"
     ) -> list[dict[str, Any]]:

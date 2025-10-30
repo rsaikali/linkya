@@ -101,32 +101,58 @@ async def get_latest_consumption():
 
 @app.get("/api/consumption/history")
 async def get_consumption_history(
-    start_time: str = Query(description="Start time (ISO format)"),
-    end_time: str = Query(description="End time (ISO format)"),
+    start_time: Optional[str] = Query(default=None, description="Start time (ISO format), omit for all data"),
+    end_time: Optional[str] = Query(default=None, description="End time (ISO format), omit for all data"),
     interval: str = Query(
-        default="5 minutes",
-        description="Aggregation interval"
+        default="auto",
+        description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)"
     ),
 ):
     """
     Retrieves consumption history over a given period.
 
     Args:
-        start_time: Absolute start time (ISO format, required)
-        end_time: Absolute end time (ISO format, required)
-        interval: Data aggregation interval
+        start_time: Absolute start time (ISO format, optional - if omitted, returns all data)
+        end_time: Absolute end time (ISO format, optional - if omitted, returns all data)
+        interval: Data aggregation interval (auto adapts to data range)
 
     Returns:
         List of consumption points aggregated by interval
     """
     try:
-        # Parse dates absolues
-        start_time_dt = datetime.fromisoformat(
-            start_time.replace('Z', '+00:00')
-        )
-        end_time_dt = datetime.fromisoformat(
-            end_time.replace('Z', '+00:00')
-        )
+        # If no time range specified, get all available data
+        if start_time is None or end_time is None:
+            # Get min/max timestamps from database
+            all_data_range = db_manager.get_consumption_time_range()
+            if not all_data_range:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Aucune donnée disponible"
+                )
+            start_time_dt = all_data_range['min_time']
+            end_time_dt = all_data_range['max_time']
+            
+            # Auto-determine optimal interval based on data range
+            if interval == "auto":
+                duration_hours = (end_time_dt - start_time_dt).total_seconds() / 3600
+                if duration_hours <= 6:
+                    interval = "raw"
+                elif duration_hours <= 24:
+                    interval = "1 minute"
+                elif duration_hours <= 72:
+                    interval = "5 minutes"
+                elif duration_hours <= 168:
+                    interval = "10 minutes"
+                else:
+                    interval = "1 hour"
+        else:
+            # Parse absolute dates
+            start_time_dt = datetime.fromisoformat(
+                start_time.replace('Z', '+00:00')
+            )
+            end_time_dt = datetime.fromisoformat(
+                end_time.replace('Z', '+00:00')
+            )
 
         data = db_manager.get_consumption_history(
             start_time_dt, end_time_dt, interval

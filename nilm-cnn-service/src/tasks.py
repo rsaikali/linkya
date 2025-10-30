@@ -288,6 +288,20 @@ def detect_cnn_appliances(
             active_model = row.model_name
             model_type = row.model_type
         
+        # Charger le modèle FiLM si pas déjà chargé
+        model_path = os.path.join(
+            settings.cnn_model_path,
+            f"{active_model}.keras"
+        )
+        if nilm_manager.film_model is None:
+            if os.path.exists(model_path):
+                logger.info(f"📂 Chargement du modèle: {active_model}")
+                nilm_manager.load_model(model_path)
+            else:
+                message = f"Fichier modèle introuvable: {model_path}"
+                logger.error(message)
+                return {'status': 'error', 'message': message}
+        
         # Définir la période d'analyse
         from datetime import timezone
         end_time = datetime.now(timezone.utc)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Card,
   CardContent,
@@ -10,6 +10,7 @@ import {
   FormControlLabel,
   Switch,
   Button,
+  LinearProgress,
 } from '@mui/material';
 import {
   Chart as ChartJS,
@@ -21,6 +22,7 @@ import {
   Tooltip,
   Legend,
   Filler,
+  Decimation,
 } from 'chart.js';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import zoomPlugin from 'chartjs-plugin-zoom';
@@ -39,67 +41,66 @@ ChartJS.register(
   Tooltip,
   Legend,
   Filler,
+  Decimation,
   annotationPlugin,
   zoomPlugin
 );
 
 const ConsumptionChart = () => {
-  const [history, setHistory] = useState(null);
+  // Données brutes complètes (chargées une seule fois)
+  const [rawData, setRawData] = useState(null);
+  // Détections
   const [detections, setDetections] = useState([]);
+  // États de chargement et erreur
   const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [error, setError] = useState(null);
+  // Modal de signature
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
+  // Affichage des annotations
   const [showAnnotations, setShowAnnotations] = useState(true);
-  const [isReloading, setIsReloading] = useState(false);
+  // Référence au graphique
   const chartRef = useRef(null);
-  const zoomTimeoutRef = useRef(null);
-  const pendingZoomRef = useRef(null); // Pour restaurer le zoom après rechargement
-  const isInitialLoadRef = useRef(true); // Pour détecter le premier chargement
+  const isInteractingRef = useRef(false);
+  const interactionTimeoutRef = useRef(null);
 
-  // Calculer l'intervalle d'agrégation selon la plage de temps visible
-  const getOptimalInterval = useCallback((visibleHours) => {
-    if (visibleHours <= 1) return 'raw';           // < 1h : données brutes
-    if (visibleHours <= 6) return 'raw';     // < 6h : 1 minute
-    if (visibleHours <= 48) return '1 minute';    // < 24h : 5 minutes
-    if (visibleHours <= 720) return '15 minutes';   // < 3 jours : 15 minutes
-    return '1 hour';                                // > 3 jours : 1 heure
-  }, []);
-
-  const fetchHistory = useCallback(async (startTime, endTime, customInterval = null) => {
-    try {
-      // Calculer la durée en heures pour déterminer l'intervalle optimal
-      const durationMs = new Date(endTime) - new Date(startTime);
-      const durationHours = durationMs / (1000 * 60 * 60);
-      
-      const interval = customInterval || getOptimalInterval(durationHours);
-      
-      console.log(`📊 Loading from ${startTime} to ${endTime} with ${interval} interval (${durationHours.toFixed(1)}h)`);
-      const result = await apiService.getConsumptionHistory(startTime, endTime, interval);
-      setHistory(result);
-      setError(null);
-    } catch (err) {
-      setError('Impossible de récupérer les données');
-      console.error(err);
-    } finally {
-      setLoading(false);
-      setIsReloading(false);
-    }
-  }, [getOptimalInterval]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Charger TOUTES les données disponibles au montage
   useEffect(() => {
-    // Fetch initial data - 168h (7 days) ending now
-    // Mais avec intervalle optimal pour vue initiale de 48h
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
-    const optimalIntervalFor48h = getOptimalInterval(48); // Intervalle pour 48h visible
-    fetchHistory(sevenDaysAgo.toISOString(), now.toISOString(), optimalIntervalFor48h);
-    
-    // Fetch initial detections (toutes les détections disponibles)
+    const loadAllData = async () => {
+      try {
+        setLoading(true);
+        setLoadingProgress(10);
+        
+        // Charger toutes les données avec intervalle de 10 secondes
+        // Bon compromis : ~36k points pour 360k points bruts (1/10)
+        // Chart.js peut gérer cela + decimation LTTB pour affichage fluide
+        console.log('📥 Loading all data from database (10s interval)...');
+        setLoadingProgress(30);
+        
+        const result = await apiService.getConsumptionHistory(null, null, '30 seconds');
+        setLoadingProgress(70);
+        
+        setRawData(result);
+        setLoadingProgress(100);
+        
+        console.log(`📊 Loaded ${result.data_points} data points (interval: ${result.interval})`);
+        console.log(`📅 From ${result.start_time} to ${result.end_time}`);
+        setError(null);
+      } catch (err) {
+        setError('Impossible de récupérer les données');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAllData();
+
+    // Charger les détections
     const fetchDetections = async () => {
       try {
-        const result = await apiService.getDetections(168);
+        const result = await apiService.getDetections(0, null, 100); // 0 = all detections, 100 per page (max)
         setDetections(result.detections || []);
       } catch (err) {
         console.error('Failed to fetch detections:', err);
@@ -107,400 +108,106 @@ const ConsumptionChart = () => {
     };
     fetchDetections();
 
-    // Setup WebSocket for real-time detection updates
+    // Setup WebSocket pour les mises à jour en temps réel
     const handleNewDetection = (detection) => {
-      // Add new detection to the list
       setDetections(prev => [...prev, detection]);
-    };
-
-    const handleDetectionStart = (data) => {
     };
 
     const handleDetectionComplete = async (data) => {
       console.log('✅ Detection job completed:', data);
-      // Refresh the entire detection list when job is complete
       try {
-        const result = await apiService.getDetections(168);
+        const result = await apiService.getDetections(0, null, 100);
         setDetections(result.detections || []);
       } catch (err) {
-        console.error('Failed to refresh detections after job completion:', err);
+        console.error('Failed to refresh detections:', err);
       }
     };
 
     const handleDetectionDeleted = (data) => {
       console.log('🗑️ Detection deleted:', data.detection_id);
-      // Remove the deleted detection from the list
       setDetections(prev => prev.filter(d => d.id !== data.detection_id));
     };
 
     const handleDetectionsCleared = (data) => {
       console.log('🧹 All detections cleared:', data.deleted_count);
-      // Clear all detections from the list
       setDetections([]);
     };
 
-    const handleError = (errorData) => {
-      console.error('Detections WebSocket error:', errorData);
-    };
-
-    // Register event handlers
+    // Enregistrer les handlers
     detectionsWS.on('new_detection', handleNewDetection);
-    detectionsWS.on('detection_start', handleDetectionStart);
     detectionsWS.on('detection_complete', handleDetectionComplete);
     detectionsWS.on('detection_deleted', handleDetectionDeleted);
     detectionsWS.on('detections_cleared', handleDetectionsCleared);
-    detectionsWS.on('error', handleError);
-
-    // Connect to WebSocket
     detectionsWS.connect();
 
-    // Cleanup on unmount
+    // Cleanup
     return () => {
       detectionsWS.off('new_detection', handleNewDetection);
-      detectionsWS.off('detection_start', handleDetectionStart);
       detectionsWS.off('detection_complete', handleDetectionComplete);
       detectionsWS.off('detection_deleted', handleDetectionDeleted);
       detectionsWS.off('detections_cleared', handleDetectionsCleared);
-      detectionsWS.off('error', handleError);
       
-      // Clear zoom timeout
-      if (zoomTimeoutRef.current) {
-        clearTimeout(zoomTimeoutRef.current);
+      // Nettoyer le timeout d'interaction
+      if (interactionTimeoutRef.current) {
+        clearTimeout(interactionTimeoutRef.current);
       }
-    };
-  }, [fetchHistory]);
-
-  // Appliquer le zoom (initial ou restauré) après chargement des données
-  useEffect(() => {
-    if (!history || !history.data || history.data.length === 0) return;
-
-    // Petit délai pour s'assurer que le chart est rendu
-    const timer = setTimeout(() => {
-      if (!chartRef.current) return;
-
-      let finalMinIndex, finalMaxIndex;
-
-      // Restaurer le zoom après rechargement pendant zoom/pan
-      if (pendingZoomRef.current) {
-        const { minTime, maxTime } = pendingZoomRef.current;
-        
-        // Recherche optimisée des index
-        finalMinIndex = history.data.findIndex(d => new Date(d.time).getTime() >= minTime);
-        finalMaxIndex = history.data.findIndex(d => new Date(d.time).getTime() >= maxTime);
-        
-        // Fallback si pas trouvé
-        if (finalMinIndex === -1) finalMinIndex = 0;
-        if (finalMaxIndex === -1) finalMaxIndex = history.data.length - 1;
-        
-        console.log(`✅ Zoom restored: [${finalMinIndex}, ${finalMaxIndex}]`);
-        pendingZoomRef.current = null;
-      } 
-      // Zoom initial de 48h au premier chargement
-      else if (isInitialLoadRef.current) {
-        const now = new Date();
-        const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-        finalMinIndex = history.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
-        
-        if (finalMinIndex === -1) finalMinIndex = 0;
-        finalMaxIndex = history.data.length - 1;
-        
-        console.log(`✅ Initial 48h zoom: [${finalMinIndex}, ${finalMaxIndex}]`);
-        isInitialLoadRef.current = false;
-      } else {
-        return; // Pas de zoom à appliquer
-      }
-
-      // Appliquer le zoom via l'API Chart.js
-      if (chartRef.current.scales?.x) {
-        chartRef.current.scales.x.min = finalMinIndex;
-        chartRef.current.scales.x.max = finalMaxIndex;
-        chartRef.current.update('none');
-      }
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [history]);
-
-  // Fonction pour réinitialiser le zoom
-  const handleResetZoom = useCallback(() => {
-    if (chartRef.current) {
-      chartRef.current.resetZoom();
-    }
-    // Recharger les données initiales (7 jours avec intervalle optimal pour 48h)
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
-    const optimalIntervalFor48h = getOptimalInterval(48); // Intervalle pour 48h visible
-    setIsReloading(true);
-    fetchHistory(sevenDaysAgo.toISOString(), now.toISOString(), optimalIntervalFor48h);
-  }, [getOptimalInterval, fetchHistory]);
-
-  // Calculer la plage de chargement intelligente basée sur la plage visible
-  const getSmartLoadingRange = useCallback((visibleHours, centerTime) => {
-    // Déterminer la plage de chargement selon le niveau de zoom
-    let loadHours;
-    if (visibleHours <= 6) {
-      loadHours = 48; // Vue détaillée : charger 48h (permet dézoom vers 24h)
-    } else if (visibleHours <= 24) {
-      loadHours = 72; // Vue moyenne : charger 72h (permet dézoom)
-    } else {
-      loadHours = 168; // Vue large : charger 7 jours complets
-    }
-    
-    // Calculer les bornes centrées sur la plage visible
-    const halfRange = (loadHours * 60 * 60 * 1000) / 2;
-    const startTime = new Date(centerTime - halfRange);
-    const endTime = new Date(centerTime + halfRange);
-    
-    // S'assurer qu'on ne dépasse pas "maintenant"
-    const now = new Date();
-    if (endTime > now) {
-      endTime.setTime(now.getTime());
-      startTime.setTime(now.getTime() - loadHours * 60 * 60 * 1000);
-    }
-    
-    return {
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
-      loadHours
     };
   }, []);
 
-  // Callback appelé après un zoom ou pan
-  const handleZoomPanComplete = useCallback(({ chart }) => {
-    // Annuler le timeout précédent pour éviter les requêtes multiples
-    if (zoomTimeoutRef.current) {
-      clearTimeout(zoomTimeoutRef.current);
+  // Plus de useEffect pour le zoom initial - on le fait directement dans les scales
+
+  // Réinitialiser le zoom
+  const handleResetZoom = useCallback(() => {
+    if (chartRef.current) {
+      chartRef.current.resetZoom();
+      // Pas besoin de réinitialiser initialZoomApplied car on veut garder la vue complète
     }
+  }, []);
 
-    // Debounce de 1s avant d'analyser si un rechargement est nécessaire
-    zoomTimeoutRef.current = setTimeout(() => {
-      if (!history || !history.data || history.data.length === 0) return;
-
-      const xScale = chart.scales.x;
-      const visibleMin = Math.max(0, Math.floor(xScale.min));
-      const visibleMax = Math.min(history.data.length - 1, Math.ceil(xScale.max));
-
-      // Calculer la plage de temps visible
-      const minTimeStr = history.data[visibleMin]?.time;
-      const maxTimeStr = history.data[visibleMax]?.time;
-      
-      if (!minTimeStr || !maxTimeStr) {
-        console.warn('⚠️ Invalid timestamps in visible range');
-        return;
-      }
-      
-      const minTime = new Date(minTimeStr);
-      const maxTime = new Date(maxTimeStr);
-      
-      if (isNaN(minTime.getTime()) || isNaN(maxTime.getTime())) {
-        console.warn('⚠️ Invalid date objects');
-        return;
-      }
-      
-      const visibleHours = (maxTime - minTime) / (1000 * 60 * 60);
-      const centerTime = (minTime.getTime() + maxTime.getTime()) / 2;
-
-      console.log(`🔍 Visible: ${visibleHours.toFixed(1)}h | Interval: ${history.interval}`);
-
-      // Déterminer l'intervalle optimal pour cette plage
-      const optimalInterval = getOptimalInterval(visibleHours);
-
-      // Ne recharger que si l'intervalle doit changer
-      if (optimalInterval !== history.interval) {
-        console.log(`🔄 Interval change needed: ${history.interval} → ${optimalInterval}`);
-        
-        // Sauvegarder la plage visible pour restauration
-        pendingZoomRef.current = {
-          minTime: minTime.getTime(),
-          maxTime: maxTime.getTime(),
-        };
-        
-        setIsReloading(true);
-        
-        // Calculer la plage de chargement intelligente
-        const { startTime, endTime, loadHours } = getSmartLoadingRange(visibleHours, centerTime);
-        
-        console.log(`📊 Loading ${loadHours}h with ${optimalInterval} interval`);
-        fetchHistory(startTime, endTime, optimalInterval);
-      }
-    }, 1000);
-  }, [history, getOptimalInterval, getSmartLoadingRange, fetchHistory]);
-
-  if (loading && !history) {
-    return (
-      <Card>
-        <CardContent sx={{ textAlign: 'center', py: 4 }}>
-          <CircularProgress />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card>
-        <CardContent>
-          <Alert severity="error">{error}</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!history || !history.data || history.data.length === 0) {
-    return (
-      <Card>
-        <CardContent>
-          <Alert severity="info">Aucune donnée disponible pour cette période</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const labels = history.data.map(d => {
-    const date = new Date(d.time);
-    return date.toLocaleString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit'
-    });
-  });
-
-  const powerData = history.data.map(d => d.avg_papp);
-
-  // Créer une palette de couleurs par appareil
-  const getApplianceColor = (applianceName) => {
-    // Valeur par défaut si le nom est undefined/null
-    const name = applianceName || 'Unknown';
+  // Callback après zoom/pan - juste pour logger
+  const handleZoomPanComplete = useCallback(() => {
+    // Annuler le timeout précédent si existant
+    if (interactionTimeoutRef.current) {
+      clearTimeout(interactionTimeoutRef.current);
+    }
     
-    // Générer une couleur unique et cohérente basée sur le nom de l'appareil
+    // Attendre 200ms après la fin du zoom/pan avant de marquer comme terminé
+    // Cela évite les mises à jour d'annotations pendant le pan
+    interactionTimeoutRef.current = setTimeout(() => {
+      isInteractingRef.current = false;
+      interactionTimeoutRef.current = null;
+    }, 200);
+    
+    if (chartRef.current?.scales?.x && rawData?.data) {
+      const xScale = chartRef.current.scales.x;
+      const visibleMin = Math.max(0, Math.floor(xScale.min || 0));
+      const visibleMax = Math.min(rawData.data.length - 1, Math.ceil(xScale.max || rawData.data.length - 1));
+      
+      const visibleCount = visibleMax - visibleMin + 1;
+      console.log(`👁️ Visible: ${visibleCount} points [${visibleMin}, ${visibleMax}]`);
+    }
+  }, [rawData]);
+
+  // Palette de couleurs par appareil
+  const getApplianceColor = useCallback((applianceName) => {
+    const name = applianceName || 'Unknown';
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
       hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    
-    // Utiliser le hash pour choisir une teinte (hue) cohérente
     const hue = Math.abs(hash % 360);
-    
     return {
       bg: `hsla(${hue}, 70%, 60%, 0.15)`,
       border: `hsla(${hue}, 70%, 60%, 0.6)`,
       solid: `hsl(${hue}, 70%, 60%)`,
-      dark: `hsl(${hue}, 70%, 35%)` // Version sombre pour le texte
+      dark: `hsl(${hue}, 70%, 35%)`,
     };
-  };
+  }, []);
 
-  // Créer les annotations pour les périodes de détection
-  const createDetectionAnnotations = () => {
-    if (!showAnnotations || !detections || detections.length === 0) {
-      return {};
-    }
-
-    const annotations = {};
-    
-    // Préparer les détections avec leurs indices de graphique
-    const detectionWithIndices = detections
-      .filter(d => d.start_time && d.end_time && d.name)
-      .map(d => {
-        const startTime = new Date(d.start_time).getTime();
-        const endTime = new Date(d.end_time).getTime();
-        const startIndex = history.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
-        const endIndex = history.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
-        
-        return {
-          ...d,
-          startIndex: startIndex !== -1 ? startIndex : 0,
-          endIndex: endIndex !== -1 ? endIndex : history.data.length - 1,
-          centerIndex: startIndex !== -1 ? (startIndex + (endIndex !== -1 ? endIndex : history.data.length - 1)) / 2 : 0,
-        };
-      })
-      .filter(d => d.startIndex !== -1)
-      .sort((a, b) => a.startIndex - b.startIndex);
-
-    // Calculer le niveau (row) de chaque label pour éviter les superpositions visuelles
-    // On considère qu'un label occupe environ 15% de la largeur du graphique autour de son centre
-    const labelWidth = history.data.length * 0.15;
-    
-    const detectionRows = [];
-    detectionWithIndices.forEach((detection) => {
-      let row = 0;
-      const labelStart = detection.centerIndex - labelWidth / 2;
-      const labelEnd = detection.centerIndex + labelWidth / 2;
-      
-      // Trouver la première ligne disponible sans chevauchement de labels
-      while (detectionRows[row]) {
-        const hasOverlap = detectionRows[row].some(d => {
-          const dLabelStart = d.centerIndex - labelWidth / 2;
-          const dLabelEnd = d.centerIndex + labelWidth / 2;
-          // Chevauchement si les labels se superposent visuellement
-          const overlap = labelStart < dLabelEnd && dLabelStart < labelEnd;
-          return overlap;
-        });
-        
-        if (!hasOverlap) break;
-        row++;
-      }
-      
-      if (!detectionRows[row]) detectionRows[row] = [];
-      detectionRows[row].push(detection);
-      detection.row = row;
-    });
-
-    // Calculer le nombre maximum de lignes nécessaires
-    const maxRow = detectionWithIndices.reduce((max, d) => Math.max(max, d.row), 0);
-
-    detectionWithIndices.forEach((detection) => {
-      const colors = getApplianceColor(detection.name);
-      
-      // Les labels sont positionnés AU-DESSUS de la zone de tracé
-      // Hauteur estimée d'un label : ~30px
-      const labelHeight = 30;
-      const rowSpacing = 2;
-      // yAdjust négatif pour remonter au-dessus de la zone de tracé
-      // Row 0 : -10px (juste au-dessus), row 1 : -42px, row 2 : -74px
-      const yAdjust = -30 - (detection.row * (labelHeight + rowSpacing));
-
-      annotations[`detection-${detection.id}`] = {
-        type: 'box',
-        xMin: detection.startIndex,
-        xMax: detection.endIndex,
-        backgroundColor: colors.bg,
-        borderColor: colors.border,
-        borderWidth: 1,
-        label: {
-          display: true,
-          content: `${detection.name}`,
-          position: {
-            x: 'center',
-            y: 'start'
-          },
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          color: colors.dark,
-          borderColor: 'rgba(114, 114, 114, 0.95)',
-          borderWidth: 0.5,
-          borderRadius: 8,
-          font: {
-            family: 'monospace',
-            size: 14,
-            weight: 'normal',
-          },
-          padding: 3,
-          yAdjust: yAdjust,
-        },
-      };
-      
-    });
-
-    return { annotations, maxRows: maxRow + 1 };
-  };
-
-  // Créer la légende des appareils détectés
-  const getLegendItems = () => {
+  // Légende des appareils
+  const getLegendItems = useCallback(() => {
     if (!detections || detections.length === 0) return [];
     
-    // Grouper par nom d'appareil pour éviter les doublons
     const applianceMap = new Map();
     detections.forEach(detection => {
       if (!applianceMap.has(detection.name)) {
@@ -518,117 +225,257 @@ const ConsumptionChart = () => {
     });
     
     return Array.from(applianceMap.values());
-  };
+  }, [detections, getApplianceColor]);
 
-  const chartData = {
-    labels,
-    datasets: [
-      {
-        label: 'Puissance moyenne (VA)',
-        data: powerData,
-        borderColor: '#BD2A2E',
-        backgroundColor: 'rgba(189, 42, 46, 0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        pointHoverRadius: 0,
-      },
-    ],
-  };
+  // Préparer les données du graphique (useMemo pour éviter recalcul)
+  const chartData = useMemo(() => {
+    if (!rawData || !rawData.data || rawData.data.length === 0) {
+      return null;
+    }
 
-  // Calculer les annotations et le nombre de lignes nécessaires
-  const annotationsData = createDetectionAnnotations();
-  const maxRows = annotationsData.maxRows || 0;
-  
-  // Calculer le padding dynamiquement : hauteur de label (30px) * nombre de lignes + marge (20px)
-  const topPadding = showAnnotations && maxRows > 0 ? (maxRows * 32) : 10;
+    // Utiliser les timestamps bruts comme labels (plus performant)
+    // Le formatage sera fait uniquement dans les tooltips
+    const labels = rawData.data.map((d, index) => index);
+    const powerData = rawData.data.map(d => d.avg_papp);
 
-  const options = {
-    responsive: true,
-    borderWidth:1,
-    maintainAspectRatio: false,
-    animation: false, // Désactiver les animations pour éviter l'effet troublant lors du zoom
-    layout: {
-      padding: {
-        top: topPadding,
+    return {
+      labels,
+      datasets: [
+        {
+          label: 'Puissance moyenne (VA)',
+          data: powerData,
+          borderColor: '#0d6e00ff',
+          backgroundColor: 'rgba(72, 105, 102, 0.1)',
+          fill: true,
+          borderWidth: 1,
+          tension: 0,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+        },
+      ],
+    };
+  }, [rawData]);
+
+  // Créer les annotations (useMemo) - calculer directement sans passer par createDetectionAnnotations
+  const annotationsData = useMemo(() => {
+    if (!showAnnotations || !detections || detections.length === 0 || !rawData) {
+      return { annotations: {}, maxRows: 0 };
+    }
+
+    const annotations = {};
+    
+    // Créer les annotations pour chaque détection (zones colorées uniquement)
+    detections
+      .filter(d => d.start_time && d.end_time && d.name)
+      .forEach(d => {
+        const startTime = new Date(d.start_time).getTime();
+        const endTime = new Date(d.end_time).getTime();
+        const startIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
+        const endIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
+        
+        if (startIndex !== -1) {
+          const colors = getApplianceColor(d.name);
+          const finalEndIndex = endIndex !== -1 ? endIndex : rawData.data.length - 1;
+          
+          annotations[`detection-${d.id}`] = {
+            type: 'box',
+            xMin: startIndex,
+            xMax: finalEndIndex,
+            yMin: 'min',  // Du bas du graphique
+            yMax: 'max',  // Au haut du graphique
+            backgroundColor: colors.bg,
+            borderColor: colors.border,
+            borderWidth: 1,
+            drawTime: 'beforeDatasetsDraw',
+            clip: true,  // Clipper l'annotation dans la zone du graphique
+          };
+        }
+      });
+
+    return { annotations, maxRows: 0 };
+  }, [showAnnotations, detections, rawData, getApplianceColor]);
+
+  // Options TOTALEMENT stables - ne dépendent QUE de rawData et handleZoomPanComplete
+  const options = useMemo(() => {
+    if (!rawData || !rawData.data) return {};
+    
+    // Calculer les indices pour les 48 dernières heures (pour affichage initial)
+    const now = new Date();
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const minIndex48h = rawData.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
+    const maxIndex48h = rawData.data.length - 1;
+    const initialMin = minIndex48h !== -1 ? minIndex48h : 0;
+    
+    console.log(`📊 Creating options with initial zoom: [${initialMin}, ${maxIndex48h}]`);
+    
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
       },
-    },
-    interaction: {
-      mode: 'index',
-      intersect: false,
-    },
-    plugins: {
-      annotation: {
-        clip: false, // Ne pas clipper les annotations en dehors de la zone
-        annotations: annotationsData.annotations,
-      },
-      legend: {
-        display: false,
-      },
-      title: {
-        display: false,
-      },
-      tooltip: {
-        callbacks: {
-          label: (context) => {
-            return `${context.dataset.label}: ${context.parsed.y.toFixed(0)} VA`;
+      plugins: {
+        annotation: {
+          clip: true,  // Clipper les annotations dans la zone du graphique
+          annotations: {}, // VIDE - sera rempli par useEffect
+        },
+        legend: { display: false },
+        title: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (context) => {
+              // Formater le timestamp uniquement dans le tooltip
+              if (context[0] && rawData?.data) {
+                const index = context[0].parsed.x;
+                const dataPoint = rawData.data[index];
+                if (dataPoint) {
+                  const date = new Date(dataPoint.time);
+                  return date.toLocaleString('fr-FR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: '2-digit'
+                  });
+                }
+              }
+              return '';
+            },
+            label: (context) => `${context.dataset.label}: ${context.parsed.y.toFixed(0)} VA`,
           },
         },
-      },
-      zoom: {
         zoom: {
-          wheel: {
-            enabled: true,
-            speed: 0.1,
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            mode: 'x',
+            scaleMode: 'x',
+            onZoomStart: () => { isInteractingRef.current = true; },
+            onZoomComplete: handleZoomPanComplete,
           },
-          pinch: {
+          pan: {
             enabled: true,
+            mode: 'x',
+            scaleMode: 'x',
+            modifierKey: null,
+            onPanStart: () => { isInteractingRef.current = true; },
+            onPanComplete: handleZoomPanComplete,
+            threshold: 10, // Seuil minimum de déplacement en pixels (augmenté pour plus de stabilité)
           },
-          mode: 'x',
-          onZoomComplete: handleZoomPanComplete,
+          limits: {
+            x: { 
+              min: 0, 
+              max: rawData.data.length - 1,
+              minRange: 10,
+            },
+          },
         },
-        pan: {
+        decimation: {
           enabled: true,
-          mode: 'x',
-          onPanComplete: handleZoomPanComplete,
+          algorithm: 'lttb',
+          samples: 1000,
         },
-        limits: {
-          x: {
-            min: 0,
-            max: history.data.length - 1,
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Puissance (VA)' },
+        },
+        x: {
+          min: initialMin,  // Zoom initial sur 48h
+          max: maxIndex48h,
+          type: 'linear',  // Utiliser échelle linéaire pour les indices
+          title: { display: false },
+          ticks: { 
+            maxRotation: 45, 
+            minRotation: 45,
+            autoSkip: true,
+            maxTicksLimit: 20,
+            callback: (value, index) => {
+              // Formater uniquement les ticks visibles
+              if (rawData?.data && rawData.data[value]) {
+                const date = new Date(rawData.data[value].time);
+                return date.toLocaleString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  day: '2-digit',
+                  month: '2-digit',
+                });
+              }
+              return '';
+            },
           },
         },
       },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        title: {
-          display: true,
-          text: 'Puissance (VA)',
-        },
-      },
-      x: {
-        // Ne pas définir min/max ici car ils écrasent le zoom restauré
-        // Le zoom initial sera appliqué via useEffect
-        title: {
-          display: false,
-          text: 'Temps',
-        },
-        ticks: {
-          maxRotation: 45,
-          minRotation: 45,
-        },
-      },
-    },
-  };
+    };
+  }, [handleZoomPanComplete, rawData]); // NE DÉPEND PAS de annotationsData !
+
+  // Mettre à jour les annotations après création du chart, sans changer les options
+  useEffect(() => {
+    if (!chartRef.current || !annotationsData) return;
+    
+    // Ne pas update pendant une interaction utilisateur (zoom/pan)
+    if (isInteractingRef.current) {
+      console.log('⏸️ Skipping annotation update during user interaction');
+      return;
+    }
+    
+    const chart = chartRef.current;
+    if (chart.options?.plugins?.annotation) {
+      console.log(`🎨 Updating ${Object.keys(annotationsData.annotations).length} annotations without re-rendering chart`);
+      chart.options.plugins.annotation.annotations = annotationsData.annotations;
+      // update('none') = mise à jour sans animation ni reset du zoom
+      chart.update('none');
+    }
+  }, [annotationsData]);
+
+  // Rendu conditionnel APRÈS tous les hooks
+  if (loading) {
+    return (
+      <Card>
+        <CardContent sx={{ textAlign: 'center', py: 4 }}>
+          <CircularProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            Chargement des données...
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent>
+          <Alert severity="error">{error}</Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!rawData || !rawData.data || rawData.data.length === 0 || !chartData) {
+    return (
+      <Card>
+        <CardContent>
+          <Alert severity="info">Aucune donnée disponible</Alert>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <>
       <Card>
         <CardHeader
           title="Historique de consommation"
-          subheader="Utilisez la molette pour zoomer et glisser-déposer pour naviguer"
+          subheader={
+            loading 
+              ? `Chargement des données (${loadingProgress}%)...`
+              : `${rawData.data_points.toLocaleString('fr-FR')} points (${rawData.interval}) • ${new Date(rawData.start_time).toLocaleDateString('fr-FR')} → ${new Date(rawData.end_time).toLocaleDateString('fr-FR')} • Molette: zoom • Glisser: naviguer`
+          }
           avatar={<ShowChart />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -637,6 +484,7 @@ const ConsumptionChart = () => {
                 variant="outlined"
                 startIcon={<ZoomOutMap />}
                 onClick={handleResetZoom}
+                disabled={loading}
                 sx={{ textTransform: 'none' }}
               >
                 Réinitialiser
@@ -648,6 +496,7 @@ const ConsumptionChart = () => {
                     onChange={(e) => setShowAnnotations(e.target.checked)}
                     size="small"
                     color="primary"
+                    disabled={loading}
                   />
                 }
                 label={
@@ -657,36 +506,26 @@ const ConsumptionChart = () => {
                 }
                 sx={{ ml: 1 }}
               />
-              
-              {(loading || isReloading) && <CircularProgress size={24} />}
             </Box>
           }
         />
+        {loading && (
+          <LinearProgress 
+            variant="determinate" 
+            value={loadingProgress} 
+            sx={{ 
+              height: 2,
+              backgroundColor: 'rgba(0, 0, 0, 0.05)',
+            }} 
+          />
+        )}
         <CardContent>
           <Box sx={{ height: 400, mb: 3, position: 'relative' }}>
-            {isReloading && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: 8,
-                  right: 8,
-                  zIndex: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                  padding: '4px 12px',
-                  borderRadius: 1,
-                  boxShadow: 1,
-                }}
-              >
-                <CircularProgress size={16} />
-                <Typography variant="caption" color="text.secondary">
-                  Rechargement...
-                </Typography>
-              </Box>
-            )}
-            <Line ref={chartRef} data={chartData} options={options} />
+            <Line 
+              ref={chartRef} 
+              data={chartData} 
+              options={options}
+            />
           </Box>
 
           {getLegendItems().length > 0 && (
@@ -743,11 +582,6 @@ const ConsumptionChart = () => {
           onSignatureSaved={() => {
             setShowSignatureModal(false);
             setSelectedRange(null);
-            // Optionnellement, refetch les data pour voir les changements
-            // Recharger les 7 derniers jours
-            const now = new Date();
-            const sevenDaysAgo = new Date(now.getTime() - 168 * 60 * 60 * 1000);
-            fetchHistory(sevenDaysAgo.toISOString(), now.toISOString());
           }}
         />
       )}

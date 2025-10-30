@@ -398,31 +398,70 @@ ORDER BY total_wh DESC;
 
 ## Recent Changes
 
-- **Interactive Chart Zoom with Optimized Data Loading** (October 2025):
-  - **chartjs-plugin-zoom**: Mouse wheel zoom, drag to pan on time axis
-  - **Smart loading strategy** (rewritten Oct 29, 2025):
-    - Zoom < 6h: load 48h centered range with optimal interval
-    - Zoom 6-24h: load 72h centered range
-    - Zoom > 24h: load full 168h (7 days)
-    - Only reload when interval change is needed (not on every zoom)
-    - Debounce: 1s delay before analyzing if reload needed
-  - **Dynamic data granularity** based on visible range:
-    - < 1h: raw data (no aggregation)
-    - 1-6h: 1 minute intervals
-    - 6-24h: 5 minutes intervals
-    - 24-72h: 15 minutes intervals
-    - > 72h: 1 hour intervals
-  - **Absolute-only API**: `/api/consumption/history` requires `start_time` and `end_time` (ISO format)
-  - **Zoom preservation**: Automatically restores zoom position after data reload
-  - **Performance**: Faster responses (load proportional data), reduced backend load
-  - **Reset button**: Restore initial 48h view on 7-day data
-  - **Visual feedback**: Loading indicator during data refresh
-  - **No animations**: Disabled Chart.js animations for instant visual updates
-  - **Removed time range selector**: Chart now loads all available data (max 168h = 7 days) and displays last 48h by default
-  - Users can zoom out to see all available data from linky_realtime table
-  - Updated UI with clear instructions: "Utilisez la molette pour zoomer et glisser-déposer pour naviguer"
-  - Configuration: zoom/pan restricted to X-axis only, with limits set to original data bounds
-  - Initial zoom automatically set to last 48h window on chart load
+- **Optimized Data Loading with Decimation** (October 30, 2025):
+  - **Problem**: Loading 360k raw points caused slow page load and rendering issues
+  - **Solution**: Smart compromise with decimation
+    - Load data with **10 seconds interval** (~36k points instead of 360k)
+    - Added **Chart.js Decimation plugin** with LTTB algorithm
+    - LTTB (Largest-Triangle-Three-Buckets) preserves peaks and valleys
+    - Default display: 1000 samples, full precision available on zoom
+  - **Frontend changes**:
+    - Import and register `Decimation` from Chart.js
+    - Added `decimation` plugin config with `algorithm: 'lttb'` and `samples: 1000`
+    - Progress bar during load (10% → 30% → 70% → 100%)
+    - Removed problematic `parsing: false` and `normalized: true` flags
+  - **Benefits**:
+    - Fast loading (~36k points vs 360k)
+    - Smooth rendering with automatic downsampling
+    - Better UX with progress feedback
+    - Chart.js handles zoom/pan efficiently
+  - **Performance**: 10s interval = good detail level + Chart.js decimation for fluid display
+
+- **Fix Model Loading for Detection** (October 30, 2025):
+  - **Problem**: Detection failed with "Aucun modèle FiLM disponible" error
+  - **Root causes**: 
+    1. Model was never loaded before detection, only checked in database
+    2. Loss function `asymmetric_loss()` returned anonymous closure that couldn't be serialized by Keras
+  - **Solution**:
+    - Added automatic model loading in `detect_cnn_appliances` task
+    - Fixed model compilation to use `asymmetric_loss` directly instead of calling it as constructor
+    - Keras can now properly serialize/deserialize the registered loss function
+    - Model loads correctly with full compilation (no need for `compile=False`)
+  - Modified files:
+    - `nilm-cnn-service/src/tasks.py`: Added `nilm_manager.load_model()` call with proper error handling
+    - `nilm-cnn-service/src/seq2point_nilm.py`: Changed `loss=asymmetric_loss(...)` to `loss=asymmetric_loss` for proper serialization
+  - **Impact**: Models can now be saved/loaded with their loss function intact, enabling proper inference without recompilation hacks
+
+- **Client-Side Zoom with Full Data Loading** (October 30, 2025) - **REPLACED by Raw Data Loading**:
+  - **Complete architecture redesign** for consumption chart zoom
+  - **Single data load**: All available data loaded once at component mount
+  - **Backend changes**:
+    - `/api/consumption/history` now accepts optional `start_time`/`end_time`
+    - If omitted, returns ALL data from `linky_realtime` table
+    - `interval='auto'` adapts aggregation to total data range
+    - New `get_consumption_time_range()` function to get min/max timestamps
+  - **Frontend changes**:
+    - Load all data once: `getConsumptionHistory(null, null, '1 minute')`
+    - **Smart interval selection**: 1 minute aggregation = ~10k points (359k raw would be too much)
+    - Initial view: last 48h (zoom applied after data load)
+    - Zoom/pan handled 100% by Chart.js without backend requests
+    - Reset button restores full data view
+  - **Benefits**:
+    - Zero network requests during zoom/pan
+    - Instant zoom response
+    - Good detail level with 1-minute aggregation
+    - Better UX (no loading indicators during zoom)
+  - **Data volume**: 359k raw points → 10.5k points at 1-minute intervals
+  - **Fix Oct 30 PM**: Removed displayData/visibleRange states that were blocking pan/zoom
+    - Chart.js now handles all 10k points natively (no client-side sampling needed)
+    - Pan/zoom fully functional with modifierKey: null
+
+- **Interactive Chart Zoom with Optimized Data Loading** (October 2025) - **REPLACED Oct 30**:
+
+- **Interactive Chart Zoom with Optimized Data Loading** (October 2025) - **REPLACED Oct 30**:
+  - ~~Smart loading strategy with dynamic intervals~~ → **Replaced by client-side zoom**
+  - ~~Reload when interval changes~~ → **No more reloads**
+  - ~~Dynamic data granularity based on visible range~~ → **Client-side sampling**
 
 - **Time Series Cross-Validation** (October 2025) ✅ **IN PRODUCTION**:
   - **Replaced random train/val split** with temporal cross-validation

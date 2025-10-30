@@ -23,13 +23,20 @@ export const apiService = {
   },
 
   // Récupérer l'historique de consommation
-  getConsumptionHistory: async (startTime, endTime, interval = '5 minutes') => {
+  getConsumptionHistory: async (startTime, endTime, interval = 'auto') => {
     try {
-      const params = {
-        start_time: startTime,
-        end_time: endTime,
-        interval: interval
-      };
+      const params = {};
+      
+      // N'ajouter les paramètres que s'ils sont fournis
+      if (startTime !== null && startTime !== undefined) {
+        params.start_time = startTime;
+      }
+      if (endTime !== null && endTime !== undefined) {
+        params.end_time = endTime;
+      }
+      if (interval) {
+        params.interval = interval;
+      }
       
       const response = await api.get('/api/consumption/history', { params });
       return response.data;

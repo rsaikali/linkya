@@ -463,11 +463,13 @@ class Seq2PointFiLMModel:
         )
         
         # Compile avec loss asymétrique
-        loss_fn = asymmetric_loss(false_positive_penalty=2.5)
-        
+        # Note: On passe directement la fonction enregistrée avec Keras
+        # au lieu d'appeler asymmetric_loss() qui retournerait une closure
+        # non-sérialisable. La fonction utilise false_positive_penalty=2.5
+        # par défaut.
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=0.001),
-            loss=loss_fn,
+            loss=asymmetric_loss,
             metrics=['mae', 'mse']
         )
         
@@ -973,7 +975,7 @@ class Seq2PointFiLMModel:
     
     def load(self, filepath: str):
         """Charge le modèle FiLM."""
-        # Charger le modèle Keras
+        # Charger le modèle Keras avec les objets personnalisés
         custom_objects = {
             'FiLMLayer': FiLMLayer,
             'asymmetric_loss': asymmetric_loss,
