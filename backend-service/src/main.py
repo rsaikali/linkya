@@ -192,28 +192,6 @@ async def get_all_appliances():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.get("/api/appliances/{appliance_id}/signatures")
-async def get_appliance_signatures(appliance_id: int):
-    """
-    Retrieves all signatures for a specific appliance.
-
-    Args:
-        appliance_id: Appliance ID
-
-    Returns:
-        List of signatures with their details
-    """
-    try:
-        signatures = db_manager.get_appliance_signatures(appliance_id)
-        return {
-            "appliance_id": appliance_id,
-            "total": len(signatures),
-            "signatures": signatures,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-
 @app.get("/api/signatures")
 async def get_all_signatures(
     page: int = Query(default=1, ge=1, description="Page number"),
@@ -254,6 +232,27 @@ async def get_all_signatures(
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+@app.delete("/api/signatures")
+async def delete_all_signatures():
+    """
+    Supprime toutes les signatures de la base de données.
+
+    Returns:
+        Message de confirmation avec le nombre de signatures supprimées
+    """
+    try:
+        result = db_manager.delete_all_signatures()
+        
+        return {
+            "status": "success",
+            "message": f"{result['signatures_deleted']} signature(s) supprimée(s)",
+            "signatures_deleted": result['signatures_deleted']
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression des signatures: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
 @app.delete("/api/signatures/{signature_id}")
 async def delete_signature(signature_id: int):
     """
@@ -279,110 +278,6 @@ async def delete_signature(signature_id: int):
         raise
     except Exception as e:
         logger.error(f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-
-class ApplianceUpdate(BaseModel):
-    """Model for updating an appliance."""
-    name: Optional[str] = None
-    description: Optional[str] = None
-
-
-@app.patch("/api/appliances/{appliance_id}")
-async def update_appliance(
-    appliance_id: int,
-    update_data: ApplianceUpdate
-):
-    """
-    Updates the name and/or description of an appliance.
-
-    Args:
-        appliance_id: ID of the appliance to modify
-        update_data: Data to update (name and/or description)
-
-    Returns:
-        Updated appliance
-    """
-    try:
-        # Valider qu'au moins un champ est fourni
-        if update_data.name is None and update_data.description is None:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Au moins un champ (name ou description) "
-                    "doit être fourni"
-                )
-            )
-        
-        # Valider le nom s'il est fourni
-        if update_data.name is not None and not update_data.name.strip():
-            raise HTTPException(
-                status_code=422,
-                detail="Le nom ne peut pas être vide"
-            )
-        
-        # Nettoyer les données
-        name = update_data.name.strip() if update_data.name else None
-        description = (
-            update_data.description.strip()
-            if update_data.description
-            else None
-        )
-        
-        result = db_manager.update_appliance(
-            appliance_id,
-            name=name,
-            description=description
-        )
-        
-        if not result:
-            raise HTTPException(
-                status_code=404,
-                detail="Appareil non trouvé"
-            )
-        
-        return {
-            "status": "success",
-            "message": "Appareil mis à jour",
-            "appliance": result
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            f"Erreur lors de la mise à jour de l'appareil "
-            f"{appliance_id}: {str(e)}"
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
-
-
-@app.delete("/api/appliances/{appliance_id}")
-async def delete_appliance(appliance_id: int):
-    """
-    Deletes an appliance and all its associated signatures/detections.
-
-    Args:
-        appliance_id: ID of the appliance to delete
-
-    Returns:
-        Confirmation message
-    """
-    try:
-        result = db_manager.delete_appliance(appliance_id)
-        if not result:
-            raise HTTPException(status_code=404, detail="Appareil non trouvé")
-        
-        return {
-            "status": "success",
-            "message": f"Appareil supprimé (signatures: {result['signatures_deleted']}, détections: {result['detections_deleted']})"
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erreur lors de la suppression de l'appareil {appliance_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -758,46 +653,6 @@ async def trigger_nilm_detection():
         
     except Exception as e:
         logger.error(f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
-
-
-@app.post("/api/nilm/enrich")
-async def trigger_signature_enrichment():
-    """
-    Lance l'enrichissement manuel des signatures avec les cycles détectés.
-    
-    Envoie une tâche Celery pour enrichir toutes les signatures existantes
-    avec les cycles/états détectés par le modèle S2P actif.
-    
-    Returns:
-        Status de la tâche Celery
-    """
-    try:
-        from .config import get_celery_app
-        
-        celery_app = get_celery_app()
-        logger.info("Lancement de l'enrichissement des signatures")
-        
-        # Envoyer la tâche à la queue NILM-CNN
-        task = celery_app.send_task(
-            'enrich_cnn_signatures',
-            queue='nilm_cnn',
-            routing_key='nilm_cnn.enrich_cnn_signatures'
-        )
-        
-        logger.info(f"Tâche d'enrichissement créée: {task.id}")
-        
-        return {
-            "status": "pending",
-            "message": "Enrichissement des signatures lancé",
-            "task_id": str(task.id),
-        }
-        
-    except Exception as e:
-        logger.error(f"Erreur lors du lancement de l'enrichissement: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Erreur serveur: {str(e)}"

@@ -64,6 +64,9 @@ detections-clean: ## Vide la table des détections (les signatures négatives so
 		SELECT 'Toutes les détections ont été supprimées. Les signatures négatives sont préservées.' AS status;"
 	@echo "✅ Nettoyage terminé. Vous pouvez relancer make detect pour générer de nouvelles détections."
 
+init-sync: ## Initialise la synchronisation des données
+
+
 model-compare: ## Compare les métriques du modèle current vs backup
 	@echo "📊 Comparaison Current vs Backup..."
 	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\

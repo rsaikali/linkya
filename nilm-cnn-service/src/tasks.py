@@ -778,36 +778,6 @@ def get_cnn_stats() -> Dict[str, Any]:
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='enrich_cnn_signatures')
-def enrich_cnn_signatures() -> Dict[str, Any]:
-    """
-    Enrichit toutes les signatures avec les cycles détectés par S2P
-    
-    Returns:
-        Statut et nombre de signatures enrichies
-    """
-    try:
-        logger.info("🔍 Enrichissement des signatures avec cycles...")
-        
-        # NOTE: Fonctionnalité désactivée avec architecture FiLM
-        # L'enrichissement par cycles n'est plus nécessaire car FiLM
-        # apprend directement les patterns temporels
-        logger.warning(
-            "Enrichissement des signatures désactivé avec architecture FiLM"
-        )
-        
-        return {
-            'status': 'success',
-            'enriched_count': 0,
-            'message': 'Enrichissement désactivé (architecture FiLM)',
-            'timestamp': datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Erreur enrichissement: {e}", exc_info=True)
-        return {'status': 'error', 'message': str(e)}
-
-
 # Configuration des tâches périodiques
 celery_app.conf.beat_schedule = {
     'train-cnn-model': {

@@ -89,42 +89,6 @@ export const apiService = {
     }
   },
 
-  // Modifier un appareil (nom et/ou description)
-  updateAppliance: async (applianceId, { name, description }) => {
-    try {
-      const response = await api.patch(`/api/appliances/${applianceId}`, {
-        name,
-        description,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la modification de l\'appareil:', error);
-      throw error;
-    }
-  },
-
-  // Supprimer un appareil
-  deleteAppliance: async (applianceId) => {
-    try {
-      const response = await api.delete(`/api/appliances/${applianceId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la suppression de l\'appareil:', error);
-      throw error;
-    }
-  },
-
-  // Récupérer les signatures d'un appareil
-  getApplianceSignatures: async (applianceId) => {
-    try {
-      const response = await api.get(`/api/appliances/${applianceId}/signatures`);
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la récupération des signatures:', error);
-      throw error;
-    }
-  },
-
   // Supprimer une détection
   deleteDetection: async (detectionId) => {
     try {
