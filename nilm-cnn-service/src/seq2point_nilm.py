@@ -1862,50 +1862,50 @@ class Seq2PointNILMManager:
                 )
                 
                 # DEBUG: Log détaillé de la comparaison
-                logger.info(
+                logger.debug(
                     f"  vs signature négative #{neg['id']}: "
                     f"{neg['duration_seconds']:.0f}s, "
                     f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
                 )
-                logger.info(
+                logger.debug(
                     f"    Ratios: durée={duration_ratio:.2f}, "
                     f"seuils=[0.50, 1.50]"
                 )
                 
                 if not (0.50 <= duration_ratio <= 1.50):
-                    logger.info(f"    ✗ Durée hors limite")
+                    logger.debug(f"    ✗ Durée hors limite")
                     continue
-                
-                logger.info(f"    ✓ Durée OK")
-                
+
+                logger.debug(f"    ✓ Durée OK")
+
                 # Critère 2: Puissance moyenne similaire (±5% strict!)
                 if neg['avg_power'] > 0:
                     power_ratio = det['avg_power'] / neg['avg_power']
-                    logger.info(
+                    logger.debug(
                         f"    Puissance: ratio={power_ratio:.2f}, "
                         f"seuils=[0.95, 1.05]"
                     )
                     if not (0.95 <= power_ratio <= 1.05):
-                        logger.info(f"    ✗ Puissance hors limite")
+                        logger.debug(f"    ✗ Puissance hors limite")
                         continue
-                    logger.info(f"    ✓ Puissance OK")
+                    logger.debug(f"    ✓ Puissance OK")
                 
                 # Critère 3: Énergie similaire (±10%)
                 det_energy = det.get('energy_wh', 0)
                 if neg['energy_wh'] > 0 and det_energy > 0:
                     energy_ratio = det_energy / neg['energy_wh']
-                    logger.info(
+                    logger.debug(
                         f"    Énergie: ratio={energy_ratio:.2f}, "
                         f"seuils=[0.90, 1.10]"
                     )
                     if not (0.90 <= energy_ratio <= 1.10):
-                        logger.info(f"    ✗ Énergie hors limite")
+                        logger.debug(f"    ✗ Énergie hors limite")
                         continue
-                    logger.info(f"    ✓ Énergie OK")
+                    logger.debug(f"    ✓ Énergie OK")
                 
                 # Tous les critères correspondent → faux positif
                 is_false_positive = True
-                logger.info(
+                logger.debug(
                     f"❌ Détection rejetée (similaire à signature "
                     f"négative #{neg['id']}): {det.get('appliance_name')} - "
                     f"{det['duration_seconds']}s, "
