@@ -32,13 +32,13 @@ class TrainingLogsWebSocket {
    * Connect to WebSocket server
    */
   connect() {
-    // If already connected, don't create a new connection
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    // If already connected or connecting, don't create a new connection
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
     
-    // Close existing connection if any
-    if (this.ws) {
+    // Close existing connection if any (only if CLOSING or CLOSED)
+    if (this.ws && this.ws.readyState > WebSocket.OPEN) {
       this.ws.close();
     }
     
@@ -225,11 +225,13 @@ class GenericWebSocket {
   }
 
   connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    // If already connected or connecting, don't create a new connection
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
     
-    if (this.ws) {
+    // Close existing connection if any (only if CLOSING or CLOSED)
+    if (this.ws && this.ws.readyState > WebSocket.OPEN) {
       this.ws.close();
     }
     

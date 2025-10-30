@@ -81,7 +81,6 @@ const ConsumptionChart = () => {
         // Charger toutes les données avec intervalle de 10 secondes
         // Bon compromis : ~36k points pour 360k points bruts (1/10)
         // Chart.js peut gérer cela + decimation LTTB pour affichage fluide
-        console.log('📥 Loading all data from database (10s interval)...');
         setLoadingProgress(30);
         
         const result = await apiService.getConsumptionHistory(null, null, '30 seconds');
@@ -90,8 +89,6 @@ const ConsumptionChart = () => {
         setRawData(result);
         setLoadingProgress(100);
         
-        console.log(`📊 Loaded ${result.data_points} data points (interval: ${result.interval})`);
-        console.log(`📅 From ${result.start_time} to ${result.end_time}`);
         setError(null);
       } catch (err) {
         setError('Impossible de récupérer les données');
@@ -117,10 +114,7 @@ const ConsumptionChart = () => {
     // Charger les signatures
     const fetchSignatures = async () => {
       try {
-        console.log('🔄 Fetching signatures from API...');
         const result = await apiService.getSignatures(1, 100); // Page 1, 100 signatures max (backend limit)
-        console.log('📝 Signatures API response:', result);
-        console.log('📝 Signatures loaded:', result.signatures?.length || 0, result.signatures);
         setSignatures(result.signatures || []);
       } catch (err) {
         console.error('❌ Failed to fetch signatures:', err);
@@ -132,7 +126,6 @@ const ConsumptionChart = () => {
     };
 
     const handleDetectionComplete = async (data) => {
-      console.log('✅ Detection job completed:', data);
       try {
         const result = await apiService.getDetections(0, null, 100);
         setDetections(result.detections || []);
@@ -142,12 +135,10 @@ const ConsumptionChart = () => {
     };
 
     const handleDetectionDeleted = (data) => {
-      console.log('🗑️ Detection deleted:', data.detection_id);
       setDetections(prev => prev.filter(d => d.id !== data.detection_id));
     };
 
     const handleDetectionsCleared = (data) => {
-      console.log('🧹 All detections cleared:', data.deleted_count);
       setDetections([]);
     };
 
@@ -328,7 +319,6 @@ const ConsumptionChart = () => {
       const visibleMax = Math.min(rawData.data.length - 1, Math.ceil(xScale.max || rawData.data.length - 1));
       
       const visibleCount = visibleMax - visibleMin + 1;
-      console.log(`👁️ Visible: ${visibleCount} points [${visibleMin}, ${visibleMax}]`);
     }
   }, [rawData]);
 
@@ -442,10 +432,8 @@ const ConsumptionChart = () => {
           }
         });
     } else if (annotationMode === 'signatures') {
-      console.log('🎨 Creating signature annotations:', signatures.length, 'signatures');
       // Créer les annotations pour chaque signature (lignes verticales avec labels)
       const filteredSignatures = signatures.filter(s => s.start_time && s.end_time && s.appliance_name);
-      console.log('✅ Filtered signatures:', filteredSignatures.length);
       
       filteredSignatures.forEach(s => {
           const startTime = new Date(s.start_time).getTime();
@@ -472,7 +460,6 @@ const ConsumptionChart = () => {
             }
           });
           
-          console.log(`📌 Signature ${s.id} (${s.appliance_name}): start=${startIndex}, end=${endIndex}, startDiff=${minStartDiff}ms, endDiff=${minEndDiff}ms`);
           
           if (startIndex !== -1 && endIndex !== -1) {
             const colors = getApplianceColor(s.appliance_name);
@@ -497,15 +484,10 @@ const ConsumptionChart = () => {
               clip: true,
             };
             
-            console.log(`✅ Added annotation for signature ${s.id} [${finalStartIndex} -> ${finalEndIndex}] (negative: ${isNegative})`);
-          } else {
-            console.log(`❌ Signature ${s.id} not found in data range`);
-          }
+          } 
         });
-      console.log(`📊 Total annotations created: ${Object.keys(annotations).length}`);
     }
 
-    console.log(`📋 Annotation mode: ${annotationMode}, Total annotations: ${Object.keys(annotations).length}`);
     return { annotations, maxRows: 0 };
   }, [annotationMode, detections, signatures, rawData, getApplianceColor]);
 
@@ -519,8 +501,6 @@ const ConsumptionChart = () => {
     const minIndex48h = rawData.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
     const maxIndex48h = rawData.data.length - 1;
     const initialMin = minIndex48h !== -1 ? minIndex48h : 0;
-    
-    console.log(`📊 Creating options with initial zoom: [${initialMin}, ${maxIndex48h}]`);
     
     return {
       responsive: true,
@@ -633,13 +613,11 @@ const ConsumptionChart = () => {
     
     // Ne pas update pendant une interaction utilisateur (zoom/pan)
     if (isInteractingRef.current) {
-      console.log('⏸️ Skipping annotation update during user interaction');
       return;
     }
     
     const chart = chartRef.current;
     if (chart.options?.plugins?.annotation) {
-      console.log(`🎨 Updating ${Object.keys(annotationsData.annotations).length} annotations without re-rendering chart`);
       chart.options.plugins.annotation.annotations = annotationsData.annotations;
       // update('none') = mise à jour sans animation ni reset du zoom
       chart.update('none');

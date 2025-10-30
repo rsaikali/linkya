@@ -6,14 +6,11 @@ import {
   Box,
   Chip,
   Tooltip,
-  IconButton,
   keyframes,
 } from '@mui/material';
 import {
   ElectricBolt,
   ThermostatAuto,
-  SignalCellularAlt,
-  Info,
   AccessTime,
   FiberManualRecord,
 } from '@mui/icons-material';
@@ -34,7 +31,6 @@ const pulse = keyframes`
 
 const Header = () => {
   const [data, setData] = useState(null);
-  const [wsConnected, setWsConnected] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const updateTimeoutRef = useRef(null);
 
@@ -69,17 +65,14 @@ const Header = () => {
 
     const handleConnected = () => {
       console.log('✅ Consumption WebSocket connected');
-      setWsConnected(true);
     };
 
     const handleDisconnected = () => {
       console.log('🔌 Consumption WebSocket disconnected');
-      setWsConnected(false);
     };
 
     const handleError = (errorData) => {
       console.error('WebSocket error:', errorData);
-      setWsConnected(false);
     };
 
     // Register event handlers
@@ -90,10 +83,6 @@ const Header = () => {
 
     // Connect to WebSocket
     consumptionWS.connect();
-
-    // Check initial connection state
-    const status = consumptionWS.getStatus();
-    setWsConnected(status.isConnected);
 
     // Cleanup on unmount
     return () => {
@@ -228,46 +217,6 @@ const Header = () => {
                   }}
                 />
               </Box>
-            </Tooltip>
-
-            {/* Statut WebSocket */}
-            <Tooltip title={wsConnected ? 'Connecté en temps réel' : 'Reconnexion...'}>
-              <Chip
-                icon={<SignalCellularAlt sx={{ fontSize: 16 }} />}
-                label={wsConnected ? 'Live' : 'Loading'}
-                size="small"
-                variant="filled"
-                color={wsConnected ? 'success' : 'warning'}
-                sx={{ 
-                  fontSize: '0.75rem',
-                  height: 24,
-                }}
-              />
-            </Tooltip>
-
-            {/* Info détaillée */}
-            <Tooltip title={
-              <Box sx={{ p: 0.5 }}>
-                <Typography variant="caption" display="block">
-                  Tarif: {data.libelle_tarif || 'N/A'}
-                </Typography>
-                <Typography variant="caption" display="block">
-                  HP: {(data.hchp / 1000).toFixed(2)} kWh
-                </Typography>
-                <Typography variant="caption" display="block">
-                  HC: {(data.hchc / 1000).toFixed(2)} kWh
-                </Typography>
-              </Box>
-            }>
-              <IconButton 
-                size="small" 
-                sx={{ 
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  '&:hover': { color: 'white' }
-                }}
-              >
-                <Info fontSize="small" />
-              </IconButton>
             </Tooltip>
           </Box>
         )}
