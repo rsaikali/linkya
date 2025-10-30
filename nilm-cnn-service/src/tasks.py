@@ -7,7 +7,7 @@ import warnings
 import os
 import redis
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from zoneinfo import ZoneInfo
 
 # Filtrer les warnings Celery root avant les imports
@@ -597,7 +597,6 @@ def add_cnn_signature(
     appliance_name: str,
     start_time_str: str,
     end_time_str: str,
-    description: Optional[str] = None,
     is_negative: bool = False
 ) -> Dict[str, Any]:
     """
@@ -607,7 +606,6 @@ def add_cnn_signature(
         appliance_name: Nom de l'appareil
         start_time_str: Timestamp de début (ISO format)
         end_time_str: Timestamp de fin (ISO format)
-        description: Description (ignoré, conservé pour compatibilité)
         is_negative: True si c'est une signature négative (faux positif)
 
     Returns:
@@ -645,11 +643,11 @@ def add_cnn_signature(
                 result = session.execute(
                     text("""
                         INSERT INTO cnn_appliances
-                        (name, description, created_at, updated_at)
-                        VALUES (:name, :description, NOW(), NOW())
+                        (name, created_at, updated_at)
+                        VALUES (:name, NOW(), NOW())
                         RETURNING id
                     """),
-                    {'name': appliance_name, 'description': description}
+                    {'name': appliance_name}
                 )
                 appliance_id = result.scalar()
                 logger.info(

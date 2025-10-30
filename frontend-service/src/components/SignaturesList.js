@@ -480,7 +480,7 @@ function SignaturesList() {
           <DialogContentText sx={{ mb: 2 }}>
             Sélectionnez un fichier CSV contenant les signatures à importer.
             <br />
-            Format attendu: appliance_name, appliance_description, start_time, end_time
+            Format attendu: appliance_name, start_time, end_time
           </DialogContentText>
 
           <input

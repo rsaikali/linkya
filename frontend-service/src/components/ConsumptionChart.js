@@ -64,6 +64,11 @@ const ConsumptionChart = () => {
   const chartRef = useRef(null);
   const isInteractingRef = useRef(false);
   const interactionTimeoutRef = useRef(null);
+  // Sélection par clic droit + drag
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState(null);
+  const [selectionEnd, setSelectionEnd] = useState(null);
+  const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
 
   // Charger TOUTES les données disponibles au montage
   useEffect(() => {
@@ -153,6 +158,132 @@ const ConsumptionChart = () => {
       }
     };
   }, []);
+
+  // Plus de useEffect pour le zoom initial - on le fait directement dans les scales
+
+  // Gestion de la sélection par clic droit + drag
+  useEffect(() => {
+    const canvas = chartRef.current?.canvas;
+    if (!canvas || !rawData?.data) return;
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleMouseDown = (e) => {
+      if (e.button !== 2) return; // Seulement clic droit
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      
+      selectionRef.current = {
+        isSelecting: true,
+        startX: x,
+        endX: x,
+      };
+      setIsSelecting(true);
+      setSelectionStart(x);
+      setSelectionEnd(x);
+    };
+
+    const handleMouseMove = (e) => {
+      if (!selectionRef.current.isSelecting) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      
+      selectionRef.current.endX = x;
+      setSelectionEnd(x);
+    };
+
+    const handleMouseUp = (e) => {
+      // Toujours bloquer le clic droit, même si pas en sélection
+      if (e.button === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+      
+      if (!selectionRef.current.isSelecting || e.button !== 2) {
+        selectionRef.current.isSelecting = false;
+        setIsSelecting(false);
+        return;
+      }
+      
+      const rect = canvas.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const startX = selectionRef.current.startX;
+      
+      // Annuler si la sélection est trop petite (< 10px)
+      if (Math.abs(endX - startX) < 10) {
+        selectionRef.current.isSelecting = false;
+        setIsSelecting(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        return;
+      }
+      
+      // Convertir les positions pixel en indices de données
+      const chart = chartRef.current;
+      if (!chart?.scales?.x) {
+        selectionRef.current.isSelecting = false;
+        setIsSelecting(false);
+        return;
+      }
+      
+      const xScale = chart.scales.x;
+      const minX = Math.min(startX, endX);
+      const maxX = Math.max(startX, endX);
+      
+      // Convertir pixel → valeur d'échelle (index)
+      const startIndex = Math.round(xScale.getValueForPixel(minX));
+      const endIndex = Math.round(xScale.getValueForPixel(maxX));
+      
+      // Vérifier les indices valides
+      if (startIndex >= 0 && endIndex >= 0 && 
+          startIndex < rawData.data.length && endIndex < rawData.data.length) {
+        
+        const startTime = new Date(rawData.data[startIndex].time);
+        const endTime = new Date(rawData.data[endIndex].time);
+        
+        // Utiliser setTimeout pour ouvrir la modal après que tous les events soient traités
+        setTimeout(() => {
+          setSelectedRange({ startTime, endTime });
+          setShowSignatureModal(true);
+        }, 0);
+      }
+      
+      // Reset de la sélection
+      selectionRef.current.isSelecting = false;
+      setIsSelecting(false);
+      setSelectionStart(null);
+      setSelectionEnd(null);
+    };
+
+    const handleMouseLeave = () => {
+      if (selectionRef.current.isSelecting) {
+        selectionRef.current.isSelecting = false;
+        setIsSelecting(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+      }
+    };
+
+    canvas.addEventListener('contextmenu', handleContextMenu);
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+
+    return () => {
+      canvas.removeEventListener('contextmenu', handleContextMenu);
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [rawData]);
 
   // Plus de useEffect pour le zoom initial - on le fait directement dans les scales
 
@@ -474,7 +605,7 @@ const ConsumptionChart = () => {
           subheader={
             loading 
               ? `Chargement des données (${loadingProgress}%)...`
-              : `${rawData.data_points.toLocaleString('fr-FR')} points (${rawData.interval}) • ${new Date(rawData.start_time).toLocaleDateString('fr-FR')} → ${new Date(rawData.end_time).toLocaleDateString('fr-FR')} • Molette: zoom • Glisser: naviguer`
+              : `${rawData.data_points.toLocaleString('fr-FR')} points (${rawData.interval}) • ${new Date(rawData.start_time).toLocaleDateString('fr-FR')} → ${new Date(rawData.end_time).toLocaleDateString('fr-FR')} • Molette: zoom • Glisser: naviguer • Clic droit + glisser: créer signature`
           }
           avatar={<ShowChart />}
           action={
@@ -520,12 +651,31 @@ const ConsumptionChart = () => {
           />
         )}
         <CardContent>
-          <Box sx={{ height: 400, mb: 3, position: 'relative' }}>
+          <Box 
+            sx={{ height: 400, mb: 3, position: 'relative' }}
+            onContextMenu={(e) => e.preventDefault()}
+          >
             <Line 
               ref={chartRef} 
               data={chartData} 
               options={options}
             />
+            {/* Overlay de sélection */}
+            {isSelecting && selectionStart !== null && selectionEnd !== null && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: Math.min(selectionStart, selectionEnd),
+                  width: Math.abs(selectionEnd - selectionStart),
+                  height: '100%',
+                  backgroundColor: 'rgba(33, 150, 243, 0.2)',
+                  border: '2px solid rgba(33, 150, 243, 0.6)',
+                  pointerEvents: 'none',
+                  zIndex: 1000,
+                }}
+              />
+            )}
           </Box>
 
           {getLegendItems().length > 0 && (

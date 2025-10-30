@@ -18,3 +18,4 @@ For JavaScript/TypeScript, follow Airbnb style guide.
 For CSS, follow BEM methodology.
 No emojis in the codebase.
 Do not create unnecessary scripts, or delete them once they are no longer needed.
+When modifying a service, ensure that all related services are also updated accordingly.

@@ -44,7 +44,6 @@ class DatabaseManager:
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
             Column('name', String(255), nullable=False),
-            Column('description', String(1000)),
             Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
             Column('updated_at', DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index('idx_cnn_appliances_name', 'name')

@@ -174,7 +174,6 @@ class DatabaseManager:
                 cd.id AS detection_id,
                 cd.appliance_id,
                 ca.name AS appliance_name,
-                ca.description AS appliance_description,
                 cd.start_time AS detection_start,
                 cd.end_time AS detection_end,
                 (
@@ -212,7 +211,6 @@ class DatabaseManager:
                     "id": m["detection_id"],
                     "appliance_id": m["appliance_id"],
                     "name": m["appliance_name"],
-                    "description": m["appliance_description"],
                     "start_time": format_datetime(m["detection_start"]),
                     "end_time": format_datetime(m["detection_end"]),
                     "avg_power": float(m["avg_power"]) if m["avg_power"] is not None else None,
@@ -243,7 +241,6 @@ class DatabaseManager:
             SELECT
                 ca.id,
                 ca.name,
-                ca.description,
                 ca.created_at,
                 ca.updated_at,
                 -- Calculer avg_power depuis linky_realtime
@@ -309,17 +306,16 @@ class DatabaseManager:
                 appliance = {
                     "id": row[0],
                     "name": row[1],
-                    "description": row[2],
-                    "created_at": format_datetime(row[3]),
-                    "updated_at": format_datetime(row[4]),
-                    "avg_power": float(row[5]) if row[5] is not None else None,
-                    "power_std": float(row[6]) if row[6] is not None else None,
-                    "avg_duration": float(row[7]) if row[7] is not None else None,
-                    "num_signatures": int(row[8]) if row[8] is not None else 0,
-                    "last_signature_start": format_datetime(row[9]),
-                    "last_signature_end": format_datetime(row[10]),
-                    "signature_count": int(row[8]) if row[8] is not None else 0,  # Même que num_signatures
-                    "detection_count": int(row[11]) if row[11] is not None else 0,
+                    "created_at": format_datetime(row[2]),
+                    "updated_at": format_datetime(row[3]),
+                    "avg_power": float(row[4]) if row[4] is not None else None,
+                    "power_std": float(row[5]) if row[5] is not None else None,
+                    "avg_duration": float(row[6]) if row[6] is not None else None,
+                    "num_signatures": int(row[7]) if row[7] is not None else 0,
+                    "last_signature_start": format_datetime(row[8]),
+                    "last_signature_end": format_datetime(row[9]),
+                    "signature_count": int(row[7]) if row[7] is not None else 0,  # Même que num_signatures
+                    "detection_count": int(row[10]) if row[10] is not None else 0,
                 }
                 
                 appliances_list.append(appliance)
@@ -397,16 +393,14 @@ class DatabaseManager:
     def update_appliance(
         self,
         appliance_id: int,
-        name: str | None = None,
-        description: str | None = None
+        name: str | None = None
     ) -> dict[str, Any] | None:
         """
-        Updates the name and/or description of an appliance.
+        Updates the name of an appliance.
 
         Args:
             appliance_id: Appliance ID
             name: New name (optional)
-            description: New description (optional)
 
         Returns:
             Updated appliance or None if not found
@@ -419,14 +413,10 @@ class DatabaseManager:
             set_clauses.append("name = :name")
             params["name"] = name
         
-        if description is not None:
-            set_clauses.append("description = :description")
-            params["description"] = description
-        
         if not set_clauses:
             # Rien à mettre à jour, récupérer l'appareil actuel
             select_query = text("""
-                SELECT id, name, description, created_at, updated_at
+                SELECT id, name, created_at, updated_at
                 FROM cnn_appliances
                 WHERE id = :appliance_id
             """)
@@ -436,9 +426,8 @@ class DatabaseManager:
                     return {
                         "id": result[0],
                         "name": result[1],
-                        "description": result[2],
-                        "created_at": format_datetime(result[3]),
-                        "updated_at": format_datetime(result[4]),
+                        "created_at": format_datetime(result[2]),
+                        "updated_at": format_datetime(result[3]),
                     }
                 return None
         
@@ -447,7 +436,7 @@ class DatabaseManager:
             UPDATE cnn_appliances
             SET {", ".join(set_clauses)}
             WHERE id = :appliance_id
-            RETURNING id, name, description, created_at, updated_at
+            RETURNING id, name, created_at, updated_at
         """)
 
         with self.engine.connect() as conn:
@@ -458,9 +447,8 @@ class DatabaseManager:
                 return {
                     "id": result[0],
                     "name": result[1],
-                    "description": result[2],
-                    "created_at": format_datetime(result[3]),
-                    "updated_at": format_datetime(result[4]),
+                    "created_at": format_datetime(result[2]),
+                    "updated_at": format_datetime(result[3]),
                 }
             return None
 
@@ -970,7 +958,6 @@ class DatabaseManager:
                 a.name as appliance_name,
                 s.start_time,
                 s.end_time,
-                s.avg_power,
                 s.is_negative,
                 s.created_at
             FROM cnn_signatures s
@@ -1000,9 +987,8 @@ class DatabaseManager:
                 "appliance_name": result[2],
                 "start_time": format_datetime(result[3]),
                 "end_time": format_datetime(result[4]),
-                "avg_power": float(result[5]) if result[5] else None,
-                "is_negative": result[6],
-                "created_at": format_datetime(result[7]),
+                "is_negative": result[5],
+                "created_at": format_datetime(result[6]),
             }
 
             # Supprimer la signature
@@ -1016,7 +1002,7 @@ class DatabaseManager:
         Retrieves all signatures with associated appliance information.
 
         Returns:
-            List of signatures with appliance_name, appliance_description,
+            List of signatures with appliance_name,
             start_time, end_time, is_negative
         """
         query = text("""
@@ -1024,7 +1010,6 @@ class DatabaseManager:
                 cs.id,
                 ca.id as appliance_id,
                 ca.name as appliance_name,
-                ca.description as appliance_description,
                 cs.start_time,
                 cs.end_time,
                 (
@@ -1052,13 +1037,12 @@ class DatabaseManager:
                     "id": row[0],
                     "appliance_id": row[1],
                     "appliance_name": row[2],
-                    "appliance_description": row[3] if row[3] else "",
-                    "start_time": format_datetime(row[4]),
-                    "end_time": format_datetime(row[5]),
-                    "avg_power": float(row[6]) if row[6] is not None else None,
-                    "energy_consumed": float(row[7]) if row[7] is not None else None,
-                    "duration_seconds": float(row[8]) if row[8] is not None else None,
-                    "is_negative": row[9] if row[9] is not None else False,
+                    "start_time": format_datetime(row[3]),
+                    "end_time": format_datetime(row[4]),
+                    "avg_power": float(row[5]) if row[5] is not None else None,
+                    "energy_consumed": float(row[6]) if row[6] is not None else None,
+                    "duration_seconds": float(row[7]) if row[7] is not None else None,
+                    "is_negative": row[8] if row[8] is not None else False,
                 }
                 for row in result
             ]

@@ -784,7 +784,7 @@ async def export_signatures():
     Exporte toutes les signatures au format CSV.
 
     Returns:
-        Fichier CSV avec colonnes: appliance_name, appliance_description, start_time, end_time
+        Fichier CSV avec colonnes: appliance_name, start_time, end_time, is_negative
     """
     import csv
     from io import StringIO
@@ -800,7 +800,6 @@ async def export_signatures():
         # Header
         writer.writerow([
             "appliance_name",
-            "appliance_description",
             "start_time",
             "end_time",
             "is_negative"
@@ -810,7 +809,6 @@ async def export_signatures():
         for sig in signatures:
             writer.writerow([
                 sig["appliance_name"],
-                sig["appliance_description"],
                 sig["start_time"],
                 sig["end_time"],
                 sig.get("is_negative", False)
@@ -842,7 +840,8 @@ async def import_signatures(file: UploadFile):
     """
     Importe des signatures depuis un fichier CSV.
 
-    Le CSV doit contenir les colonnes: appliance_name, appliance_description, start_time, end_time
+    Le CSV doit contenir les colonnes:
+    appliance_name, start_time, end_time, is_negative (optionnel)
 
     Args:
         file: Fichier CSV uploadé (multipart/form-data)
@@ -862,7 +861,6 @@ async def import_signatures(file: UploadFile):
         # Valider les colonnes requises
         required_columns = {
             "appliance_name",
-            "appliance_description",
             "start_time",
             "end_time"
         }
@@ -892,16 +890,19 @@ async def import_signatures(file: UploadFile):
             try:
                 # Valider les champs
                 appliance_name = row["appliance_name"].strip()
-                appliance_description = row["appliance_description"].strip()
                 start_time = row["start_time"].strip()
                 end_time = row["end_time"].strip()
                 
                 # is_negative est optionnel (par défaut False)
                 is_negative_str = row.get("is_negative", "False").strip()
-                is_negative = is_negative_str.lower() in ('true', '1', 'yes', 'oui')
+                is_negative = is_negative_str.lower() in (
+                    'true', '1', 'yes', 'oui'
+                )
 
                 if not appliance_name:
-                    raise ValueError("Le nom de l'appareil ne peut pas être vide")
+                    raise ValueError(
+                        "Le nom de l'appareil ne peut pas être vide"
+                    )
 
                 # Valider les timestamps
                 start_dt = datetime.fromisoformat(start_time)
@@ -918,8 +919,7 @@ async def import_signatures(file: UploadFile):
                     args=(
                         appliance_name,
                         start_time,
-                        end_time,
-                        appliance_description or ""
+                        end_time
                     ),
                     kwargs={'is_negative': is_negative},
                     queue='nilm_cnn',

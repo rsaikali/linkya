@@ -19,12 +19,10 @@ import { apiService } from '../services/api';
 const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
   const [applianceName, setApplianceName] = useState('');
   const [applianceOptions, setApplianceOptions] = useState([]);
-  const [description, setDescription] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [allowNewAppliance, setAllowNewAppliance] = useState(true);
 
   // Initialiser les times et charger les appareils
   useEffect(() => {
@@ -102,7 +100,6 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
     try {
       const response = await apiService.createSignature({
         appliance_name: applianceName,
-        description: description || null,
         start_time: startTime,
         end_time: endTime,
       });
@@ -122,7 +119,6 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
 
   const handleClose = () => {
     setApplianceName('');
-    setDescription('');
     setError(null);
     onClose();
   };
@@ -165,7 +161,7 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {/* Nom de l'appareil avec autocomplete */}
           <Autocomplete
-            freeSolo={allowNewAppliance}
+            freeSolo
             options={applianceOptions}
             value={applianceName}
             onChange={(event, newValue) => {
@@ -181,29 +177,9 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
                 placeholder="Ex: Lave-linge, Frigo, etc."
                 required
                 fullWidth
+                helperText="Sélectionnez un appareil existant ou créez-en un nouveau"
               />
             )}
-          />
-
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={allowNewAppliance}
-                onChange={(e) => setAllowNewAppliance(e.target.checked)}
-              />
-            }
-            label="Permettre la création d'un nouvel appareil"
-          />
-
-          {/* Description */}
-          <TextField
-            label="Description (optionnel)"
-            placeholder="Ex: Lave-linge Samsung, mode éco"
-            multiline
-            rows={2}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            fullWidth
           />
 
           {/* Plage horaire */}
