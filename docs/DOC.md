@@ -124,9 +124,12 @@ NILM_MODEL_TYPE=gru     # 'gru' or 'lstm'
 - **Training Control**: Manual training trigger + session history
 - **Metrics Visualization**: Training accuracy, loss, quality scores
 - **SSE Streaming**: No polling, instant updates on new data/detections
+- **Annotations Toggle**: Switch between displaying detections (default) or signatures on the graph
+  - Detections: Shows real-time appliance detections with colored zones
+  - Signatures: Shows training signatures with dashed borders and labels
 
 ### Key Components
-- `ConsumptionChart`: Interactive power consumption graph with signature selection
+- `ConsumptionChart`: Interactive power consumption graph with signature selection and annotations toggle
 - `SignaturesList`: Manage training signatures (positive/negative examples)
 - `DetectionsList`: Real-time appliance detection feed with validation
 - `CurrentModel`: Training session status and metrics dashboard

@@ -7,7 +7,6 @@ import {
   Box,
   CircularProgress,
   Alert,
-  FormControlLabel,
   Switch,
   Button,
   LinearProgress,
@@ -51,6 +50,8 @@ const ConsumptionChart = () => {
   const [rawData, setRawData] = useState(null);
   // Détections
   const [detections, setDetections] = useState([]);
+  // Signatures
+  const [signatures, setSignatures] = useState([]);
   // États de chargement et erreur
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -58,8 +59,8 @@ const ConsumptionChart = () => {
   // Modal de signature
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
-  // Affichage des annotations
-  const [showAnnotations, setShowAnnotations] = useState(true);
+  // Affichage des annotations: 'detections' ou 'signatures'
+  const [annotationMode, setAnnotationMode] = useState('detections');
   // Référence au graphique
   const chartRef = useRef(null);
   const isInteractingRef = useRef(false);
@@ -113,7 +114,19 @@ const ConsumptionChart = () => {
     };
     fetchDetections();
 
-    // Setup WebSocket pour les mises à jour en temps réel
+    // Charger les signatures
+    const fetchSignatures = async () => {
+      try {
+        console.log('🔄 Fetching signatures from API...');
+        const result = await apiService.getSignatures(1, 100); // Page 1, 100 signatures max (backend limit)
+        console.log('📝 Signatures API response:', result);
+        console.log('📝 Signatures loaded:', result.signatures?.length || 0, result.signatures);
+        setSignatures(result.signatures || []);
+      } catch (err) {
+        console.error('❌ Failed to fetch signatures:', err);
+      }
+    };
+    fetchSignatures();    // Setup WebSocket pour les mises à jour en temps réel
     const handleNewDetection = (detection) => {
       setDetections(prev => [...prev, detection]);
     };
@@ -335,28 +348,33 @@ const ConsumptionChart = () => {
     };
   }, []);
 
-  // Légende des appareils
+  // Légende des appareils (détections ou signatures selon le mode)
   const getLegendItems = useCallback(() => {
-    if (!detections || detections.length === 0) return [];
+    const items = annotationMode === 'detections' ? detections : signatures;
+    if (!items || items.length === 0) return [];
     
     const applianceMap = new Map();
-    detections.forEach(detection => {
-      if (!applianceMap.has(detection.name)) {
-        applianceMap.set(detection.name, {
-          name: detection.name,
-          color: getApplianceColor(detection.name).solid,
+    items.forEach(item => {
+      // Pour les détections: item.name, pour les signatures: item.appliance_name
+      const itemName = item.name || item.appliance_name;
+      if (!itemName) return;
+      
+      if (!applianceMap.has(itemName)) {
+        applianceMap.set(itemName, {
+          name: itemName,
+          color: getApplianceColor(itemName).solid,
           count: 1,
-          totalEnergy: detection.energy_consumed || 0,
+          totalEnergy: item.energy_consumed || 0,
         });
       } else {
-        const item = applianceMap.get(detection.name);
-        item.count += 1;
-        item.totalEnergy += detection.energy_consumed || 0;
+        const mapItem = applianceMap.get(itemName);
+        mapItem.count += 1;
+        mapItem.totalEnergy += item.energy_consumed || 0;
       }
     });
     
     return Array.from(applianceMap.values());
-  }, [detections, getApplianceColor]);
+  }, [annotationMode, detections, signatures, getApplianceColor]);
 
   // Préparer les données du graphique (useMemo pour éviter recalcul)
   const chartData = useMemo(() => {
@@ -389,42 +407,107 @@ const ConsumptionChart = () => {
 
   // Créer les annotations (useMemo) - calculer directement sans passer par createDetectionAnnotations
   const annotationsData = useMemo(() => {
-    if (!showAnnotations || !detections || detections.length === 0 || !rawData) {
+    if (annotationMode === 'none' || !rawData) {
       return { annotations: {}, maxRows: 0 };
     }
 
     const annotations = {};
     
-    // Créer les annotations pour chaque détection (zones colorées uniquement)
-    detections
-      .filter(d => d.start_time && d.end_time && d.name)
-      .forEach(d => {
-        const startTime = new Date(d.start_time).getTime();
-        const endTime = new Date(d.end_time).getTime();
-        const startIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
-        const endIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
-        
-        if (startIndex !== -1) {
-          const colors = getApplianceColor(d.name);
-          const finalEndIndex = endIndex !== -1 ? endIndex : rawData.data.length - 1;
+    if (annotationMode === 'detections') {
+      // Créer les annotations pour chaque détection (zones colorées uniquement)
+      detections
+        .filter(d => d.start_time && d.end_time && d.name)
+        .forEach(d => {
+          const startTime = new Date(d.start_time).getTime();
+          const endTime = new Date(d.end_time).getTime();
+          const startIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
+          const endIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
           
-          annotations[`detection-${d.id}`] = {
-            type: 'box',
-            xMin: startIndex,
-            xMax: finalEndIndex,
-            yMin: 'min',  // Du bas du graphique
-            yMax: 'max',  // Au haut du graphique
-            backgroundColor: colors.bg,
-            borderColor: colors.border,
-            borderWidth: 1,
-            drawTime: 'beforeDatasetsDraw',
-            clip: true,  // Clipper l'annotation dans la zone du graphique
-          };
-        }
-      });
+          if (startIndex !== -1) {
+            const colors = getApplianceColor(d.name);
+            const finalEndIndex = endIndex !== -1 ? endIndex : rawData.data.length - 1;
+            
+            annotations[`detection-${d.id}`] = {
+              type: 'box',
+              xMin: startIndex,
+              xMax: finalEndIndex,
+              yMin: 'min',  // Du bas du graphique
+              yMax: 'max',  // Au haut du graphique
+              backgroundColor: colors.bg,
+              borderColor: colors.border,
+              borderWidth: 1,
+              drawTime: 'beforeDatasetsDraw',
+              clip: true,  // Clipper l'annotation dans la zone du graphique
+            };
+          }
+        });
+    } else if (annotationMode === 'signatures') {
+      console.log('🎨 Creating signature annotations:', signatures.length, 'signatures');
+      // Créer les annotations pour chaque signature (lignes verticales avec labels)
+      const filteredSignatures = signatures.filter(s => s.start_time && s.end_time && s.appliance_name);
+      console.log('✅ Filtered signatures:', filteredSignatures.length);
+      
+      filteredSignatures.forEach(s => {
+          const startTime = new Date(s.start_time).getTime();
+          const endTime = new Date(s.end_time).getTime();
+          
+          // Trouver l'index le plus proche pour le début et la fin
+          let startIndex = -1;
+          let endIndex = -1;
+          let minStartDiff = Infinity;
+          let minEndDiff = Infinity;
+          
+          rawData.data.forEach((dt, idx) => {
+            const dtTime = new Date(dt.time).getTime();
+            const startDiff = Math.abs(dtTime - startTime);
+            const endDiff = Math.abs(dtTime - endTime);
+            
+            if (startDiff < minStartDiff) {
+              minStartDiff = startDiff;
+              startIndex = idx;
+            }
+            if (endDiff < minEndDiff) {
+              minEndDiff = endDiff;
+              endIndex = idx;
+            }
+          });
+          
+          console.log(`📌 Signature ${s.id} (${s.appliance_name}): start=${startIndex}, end=${endIndex}, startDiff=${minStartDiff}ms, endDiff=${minEndDiff}ms`);
+          
+          if (startIndex !== -1 && endIndex !== -1) {
+            const colors = getApplianceColor(s.appliance_name);
+            const finalStartIndex = Math.min(startIndex, endIndex);
+            const finalEndIndex = Math.max(startIndex, endIndex);
+            
+            // Pour les signatures négatives : bordure rouge, fond plus transparent, et bordure plus épaisse
+            const isNegative = s.is_negative === true;
+            
+            // Zone colorée pour la signature
+            annotations[`signature-box-${s.id}`] = {
+              type: 'box',
+              xMin: finalStartIndex,
+              xMax: finalEndIndex,
+              yMin: 'min',
+              yMax: 'max',
+              backgroundColor: colors.bg,
+              borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : colors.border,
+              borderWidth: 1,
+              borderDash: isNegative ? [10, 5] : undefined,  // Ligne pointillée seulement pour les négatives
+              drawTime: 'beforeDatasetsDraw',
+              clip: true,
+            };
+            
+            console.log(`✅ Added annotation for signature ${s.id} [${finalStartIndex} -> ${finalEndIndex}] (negative: ${isNegative})`);
+          } else {
+            console.log(`❌ Signature ${s.id} not found in data range`);
+          }
+        });
+      console.log(`📊 Total annotations created: ${Object.keys(annotations).length}`);
+    }
 
+    console.log(`📋 Annotation mode: ${annotationMode}, Total annotations: ${Object.keys(annotations).length}`);
     return { annotations, maxRows: 0 };
-  }, [showAnnotations, detections, rawData, getApplianceColor]);
+  }, [annotationMode, detections, signatures, rawData, getApplianceColor]);
 
   // Options TOTALEMENT stables - ne dépendent QUE de rawData et handleZoomPanComplete
   const options = useMemo(() => {
@@ -605,7 +688,7 @@ const ConsumptionChart = () => {
           subheader={
             loading 
               ? `Chargement des données (${loadingProgress}%)...`
-              : `${rawData.data_points.toLocaleString('fr-FR')} points (${rawData.interval}) • ${new Date(rawData.start_time).toLocaleDateString('fr-FR')} → ${new Date(rawData.end_time).toLocaleDateString('fr-FR')} • Molette: zoom • Glisser: naviguer • Clic droit + glisser: créer signature`
+              : `Molette: zoom • Glisser: naviguer • Clic droit + glisser: créer signature`
           }
           avatar={<ShowChart />}
           action={
@@ -620,23 +703,35 @@ const ConsumptionChart = () => {
               >
                 Réinitialiser
               </Button>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={showAnnotations}
-                    onChange={(e) => setShowAnnotations(e.target.checked)}
-                    size="small"
-                    color="primary"
-                    disabled={loading}
-                  />
-                }
-                label={
-                  <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
-                    Détections
-                  </Typography>
-                }
-                sx={{ ml: 1 }}
-              />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    fontSize: '0.75rem',
+                    color: annotationMode === 'signatures' ? 'primary.main' : 'text.secondary',
+                    fontWeight: annotationMode === 'signatures' ? 600 : 400,
+                  }}
+                >
+                  Signatures
+                </Typography>
+                <Switch
+                  checked={annotationMode === 'detections'}
+                  onChange={(e) => setAnnotationMode(e.target.checked ? 'detections' : 'signatures')}
+                  size="small"
+                  color="primary"
+                  disabled={loading}
+                />
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    fontSize: '0.75rem',
+                    color: annotationMode === 'detections' ? 'primary.main' : 'text.secondary',
+                    fontWeight: annotationMode === 'detections' ? 600 : 400,
+                  }}
+                >
+                  Détections
+                </Typography>
+              </Box>
             </Box>
           }
         />
@@ -681,7 +776,7 @@ const ConsumptionChart = () => {
           {getLegendItems().length > 0 && (
             <Box>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 600 }}>
-                Légende des appareils détectés
+                Légende des appareils {annotationMode === 'detections' ? 'détectés' : 'en signatures'}
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                 {getLegendItems().map((item) => (
@@ -711,7 +806,7 @@ const ConsumptionChart = () => {
                       {item.name}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      ({item.count} détection{item.count > 1 ? 's' : ''}, {item.totalEnergy.toFixed(0)} Wh)
+                      ({item.count} {annotationMode === 'detections' ? 'détection' : 'signature'}{item.count > 1 ? 's' : ''}{item.totalEnergy > 0 ? `, ${item.totalEnergy.toFixed(0)} Wh` : ''})
                     </Typography>
                   </Box>
                 ))}

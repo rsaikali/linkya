@@ -78,6 +78,22 @@ export const apiService = {
     }
   },
 
+  // Récupérer les signatures avec pagination
+  getSignatures: async (page = 1, perPage = 20) => {
+    try {
+      const params = {
+        page: page,
+        per_page: perPage,
+      };
+      
+      const response = await api.get('/api/signatures', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des signatures:', error);
+      throw error;
+    }
+  },
+
   // Créer une nouvelle signature d'appareil
   createSignature: async (signatureData) => {
     try {
