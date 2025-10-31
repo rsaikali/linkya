@@ -206,14 +206,14 @@ const Header = () => {
                   height: 32,
                   borderRadius: '50%',
                   bgcolor: 'transparent',
-                  animation: isUpdating ? `${pulse} 0.6s ease-in-out infinite` : 'none',
+                  animation: isUpdating ? `${pulse} 0.5s ease-in-out` : 'none',
                 }}
               >
                 <FiberManualRecord
                   sx={{
                     fontSize: 16,
                     color: isUpdating ? 'white' : 'transparent',
-                    transition: 'color 0.1s linear',
+                    transition: 'color 0.5s ease-in-out',
                   }}
                 />
               </Box>
