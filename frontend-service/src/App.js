@@ -18,15 +18,15 @@ function App() {
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
           <Header />
 
-        <Box sx={{ px: 3, py: 3, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-          <Grid container spacing={2} sx={{ flexGrow: 1 }}>
+        <Box sx={{ px: 3, py: 3, flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Grid container spacing={2} sx={{ flexGrow: 1, height: 0 }}>
             {/* Colonne 1 - Signatures (3/12) */}
-            <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column' }}>
-              <SignaturesList compact />
+            <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <SignaturesList />
             </Grid>
 
             {/* Colonnes 2 et 3 - Modèle et Graphique (6/12) */}
-            <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column' }}>
+            <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <Box sx={{ mb: 2 }}>
                 <CurrentModel />
               </Box>
@@ -34,8 +34,8 @@ function App() {
             </Grid>
 
             {/* Colonne 4 - Détections (3/12) */}
-            <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column' }}>
-              <DetectionsList compact />
+            <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <DetectionsList />
             </Grid>
           </Grid>
         </Box>

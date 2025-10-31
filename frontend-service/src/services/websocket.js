@@ -367,7 +367,6 @@ const detectionsWS = new GenericWebSocket('/ws/detections', [
   'new_detection',
   'detection_start',
   'detection_complete',
-  'detection_deleted',
   'detections_cleared'
 ]);
 const importProgressWS = new GenericWebSocket('/ws/import', [

@@ -302,51 +302,6 @@ async def delete_all_detections():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.delete("/api/detections/{detection_id}")
-async def delete_detection(detection_id: int):
-    """
-    Supprime une détection spécifique.
-
-    Args:
-        detection_id: ID de la détection à supprimer
-
-    Returns:
-        Message de confirmation avec informations de la détection supprimée
-    """
-    try:
-        result = db_manager.delete_detection(detection_id)
-        if not result:
-            raise HTTPException(status_code=404, detail="Détection non trouvée")
-        
-        # Publish detection_deleted event to Redis for WebSocket streaming
-        if redis_client:
-            try:
-                import json
-                message = json.dumps({
-                    "event": "detection_deleted",
-                    "data": {
-                        "detection_id": detection_id,
-                        "appliance_name": result.get('appliance_name')
-                    },
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-                redis_client.publish("detections:updates", message)
-                logger.info(f"📢 Published detection_deleted to Redis (ID: {detection_id})")
-            except Exception as e:
-                logger.error(f"Failed to publish detection_deleted: {e}")
-
-        return {
-            "status": "success",
-            "message": f"Détection supprimée: {result['appliance_name']}",
-            "detection": result
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la détection {detection_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-
 @app.patch("/api/detections/{detection_id}/validate")
 async def validate_detection(detection_id: int):
     """

@@ -12,22 +12,17 @@ import {
   Alert,
   LinearProgress,
   CircularProgress,
-  Paper,
   Snackbar,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogContentText,
   DialogActions,
-  IconButton,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
   ModelTraining as ModelIcon,
-  PlayArrow as TrainIcon,
   Delete as DeleteIcon,
-  Close as CloseIcon,
-  Search as DetectIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
 import websocket from '../services/websocket';
@@ -39,7 +34,6 @@ const CurrentModel = () => {
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [logs, setLogs] = useState([]);
-  const [trainLoading, setTrainLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const logsEndRef = useRef(null);
@@ -90,50 +84,6 @@ const CurrentModel = () => {
   useEffect(() => {
     scrollToBottom();
   }, [logs]);
-
-  // Lancer l'entraînement
-  const handleTrain = async () => {
-    setTrainLoading(true);
-    try {
-      await api.post('/api/nilm/train');
-      setSnackbar({
-        open: true,
-        message: 'Entraînement lancé avec succès',
-        severity: 'success',
-      });
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: `Erreur: ${error.response?.data?.detail || error.message}`,
-        severity: 'error',
-      });
-    } finally {
-      setTrainLoading(false);
-    }
-  };
-
-  // Lancer la détection
-  const [detectLoading, setDetectLoading] = useState(false);
-  
-  const handleDetect = async () => {
-    setDetectLoading(true);
-    try {
-      const response = await api.post('/api/nilm/detect');
-      setSnackbar({
-        open: true,
-        message: `Détection lancée (Task ID: ${response.data.task_id})`,
-        severity: 'success',
-      });
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: `Erreur: ${error.response?.data?.detail || error.message}`,
-        severity: 'error',
-      });
-    } finally {
-      setDetectLoading(false);
-    }
-  };
 
   // Supprimer le modèle
   const handleDelete = async () => {
@@ -275,28 +225,8 @@ const CurrentModel = () => {
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
             <Alert severity="info" sx={{ flex: 1, mb: 0 }}>
-              Aucun modèle NILM entraîné. Lancez un entraînement.
+              Aucun modèle NILM entraîné. Lancez un entraînement depuis les signatures.
             </Alert>
-            <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={trainLoading ? <CircularProgress size={20} color="inherit" /> : <TrainIcon />}
-                onClick={handleTrain}
-                disabled={trainLoading}
-              >
-                {trainLoading ? 'Lancement...' : 'Entraîner'}
-              </Button>
-              <Button
-                variant="contained"
-                color="secondary"
-                startIcon={detectLoading ? <CircularProgress size={20} color="inherit" /> : <DetectIcon />}
-                onClick={handleDetect}
-                disabled={detectLoading}
-              >
-                {detectLoading ? 'Détection...' : 'Détecter'}
-              </Button>
-            </Box>
           </Box>
 
           {/* Accordion: Logs d'entraînement */}
@@ -489,24 +419,6 @@ const CurrentModel = () => {
           
           {/* Boutons d'action */}
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={trainLoading ? <CircularProgress size={20} color="inherit" /> : <TrainIcon />}
-              onClick={handleTrain}
-              disabled={trainLoading || isTraining}
-            >
-              {trainLoading ? 'Lancement...' : 'Entraîner'}
-            </Button>
-            <Button
-              variant="contained"
-              color="secondary"
-              startIcon={detectLoading ? <CircularProgress size={20} color="inherit" /> : <DetectIcon />}
-              onClick={handleDetect}
-              disabled={detectLoading || isTraining}
-            >
-              {detectLoading ? 'Détection...' : 'Détecter'}
-            </Button>
             <Button
               variant="outlined"
               color="error"

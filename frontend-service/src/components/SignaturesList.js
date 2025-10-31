@@ -12,7 +12,6 @@ import {
   LinearProgress,
   Alert,
   Typography,
-  Chip,
   IconButton,
   Tooltip,
   Dialog,
@@ -23,15 +22,16 @@ import {
   Button,
   Snackbar,
   Box,
+  CircularProgress,
 } from '@mui/material';
-import { Delete, DeleteSweep, FileDownload, FileUpload, Assignment } from '@mui/icons-material';
+import { Delete, DeleteSweep, FileDownload, FileUpload, Assignment, ModelTraining } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
 
 /**
  * Composant affichant la liste des signatures
  */
-function SignaturesList({ compact = false }) {
+function SignaturesList() {
   const [signatures, setSignatures] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -52,9 +52,22 @@ function SignaturesList({ compact = false }) {
     errorCount: 0,
     progressPercent: 0
   });
+  const [trainLoading, setTrainLoading] = useState(false);
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
+  };
+
+  const handleTrain = async () => {
+    setTrainLoading(true);
+    try {
+      await api.post('/api/nilm/train');
+      showSnackbar('Entraînement lancé avec succès', 'success');
+    } catch (error) {
+      showSnackbar(`Erreur: ${error.response?.data?.detail || error.message}`, 'error');
+    } finally {
+      setTrainLoading(false);
+    }
   };
 
   const fetchSignatures = useCallback(async () => {
@@ -351,22 +364,25 @@ function SignaturesList({ compact = false }) {
     });
   };
 
-  const formatDuration = (seconds) => {
+  const formatDurationFull = (seconds) => {
     if (!seconds) return 'N/A';
     const minutes = Math.round(seconds / 60);
     
     if (minutes < 60) {
-      return `${minutes}m`;
+      return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
     } else {
       const hours = Math.floor(minutes / 60);
       const remainingMinutes = minutes % 60;
-      return `${hours}h ${remainingMinutes}m`;
+      if (remainingMinutes === 0) {
+        return `${hours} ${hours === 1 ? 'heure' : 'heures'}`;
+      }
+      return `${hours} ${hours === 1 ? 'heure' : 'heures'} et ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`;
     }
   };
 
   const formatPower = (watts) => {
     if (watts === null || watts === undefined) return 'N/A';
-    return `${watts.toFixed(0)} W`;
+    return `${Math.round(watts / 100) * 100} W`;
   };
 
   const getRowBackgroundColor = (isNegative) => {
@@ -390,47 +406,54 @@ function SignaturesList({ compact = false }) {
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardHeader 
-        title={compact ? "Signatures" : "Signatures d'appareils"}
-        titleTypographyProps={{ variant: compact ? 'h6' : 'h5' }}
+        title="Signatures d'appareils"
+        titleTypographyProps={{ variant: 'h5' }}
         subheader={`${totalSignatures} signature(s)`}
         avatar={<Assignment />}
         action={
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Tooltip title="Entraîner le modèle">
+              <span>
+                <IconButton
+                  color="primary"
+                  onClick={handleTrain}
+                  disabled={trainLoading || totalSignatures === 0}
+                >
+                  {trainLoading ? <CircularProgress size={24} /> : <ModelTraining />}
+                </IconButton>
+              </span>
+            </Tooltip>
             <Tooltip title="Exporter les signatures en CSV">
               <IconButton
-                onClick={handleExportCSV}
                 color="primary"
-                size={compact ? "small" : "medium"}
+                onClick={handleExportCSV}
               >
                 <FileDownload />
               </IconButton>
             </Tooltip>
             <Tooltip title="Importer des signatures depuis un CSV">
               <IconButton
-                onClick={handleImportClick}
                 color="primary"
-                size={compact ? "small" : "medium"}
+                onClick={handleImportClick}
               >
                 <FileUpload />
               </IconButton>
             </Tooltip>
-            {!compact && (
-              <Tooltip title="Supprimer toutes les signatures">
-                <span>
-                  <IconButton
-                    color="error"
-                    onClick={handleDeleteAllClick}
-                    disabled={totalSignatures === 0}
-                  >
-                    <DeleteSweep />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
+            <Tooltip title="Supprimer toutes les signatures">
+              <span>
+                <IconButton
+                  color="error"
+                  onClick={handleDeleteAllClick}
+                  disabled={deleteAllLoading || totalSignatures === 0}
+                >
+                  {deleteAllLoading ? <CircularProgress size={24} /> : <DeleteSweep />}
+                </IconButton>
+              </span>
+            </Tooltip>
           </Box>
         }
       />
-      <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: compact ? 1 : 2 }}>
+      <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
@@ -512,17 +535,14 @@ function SignaturesList({ compact = false }) {
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                 <TableCell>Appareil</TableCell>
-                {!compact && <TableCell align="right">Plage horaire</TableCell>}
-                {compact && <TableCell align="right">Heure</TableCell>}
-                <TableCell align="right">Durée</TableCell>
-                {!compact && <TableCell align="right">Puissance moy.</TableCell>}
-                <TableCell align="center">Actions</TableCell>
+                <TableCell align="right">Plage horaire</TableCell>
+                <TableCell align="right" sx={{ width: '60px', padding: '6px 16px' }}></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {signatures.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={compact ? 4 : 5} align="center">
+                  <TableCell colSpan={3} align="center">
                     <Typography variant="body2" color="text.secondary">
                       Aucune signature enregistrée
                     </Typography>
@@ -541,51 +561,27 @@ function SignaturesList({ compact = false }) {
                   }}
                 >
                   <TableCell>
-                    {compact ? (
-                      <Tooltip title={signature.appliance_name}>
-                        <Typography 
-                          variant="body2" 
-                          fontWeight="medium"
-                          sx={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '120px',
-                          }}
-                        >
-                          {signature.appliance_name}
-                        </Typography>
-                      </Tooltip>
-                    ) : (
-                      <Typography variant="body2" fontWeight="medium">
+                    <Box>
+                      <Typography variant="body2" fontWeight="medium" component="div">
                         {signature.appliance_name}
                       </Typography>
-                    )}
-                  </TableCell>
-                  {!compact && (
-                    <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
-                      {`${formatDateTime(signature.start_time)} -> ${formatTimeOnly(signature.end_time)}`}
-                    </TableCell>
-                  )}
-                  {compact && (
-                    <TableCell align="right" sx={{ fontSize: 'x-small', whiteSpace: 'nowrap' }}>
-                      {formatTimeOnly(signature.start_time)}
-                    </TableCell>
-                  )}
-                  <TableCell align="right">
-                    <Typography variant="body2" fontSize={compact ? 'x-small' : 'small'}>
-                      {formatDuration(signature.duration_seconds)}
-                    </Typography>
-                  </TableCell>
-                  {!compact && (
-                    <TableCell align="right">
-                      <Typography variant="body2" fontWeight="medium">
+                      <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
                         {formatPower(signature.avg_power)}
                       </Typography>
-                    </TableCell>
-                  )}
-                  <TableCell align="center">
-                    <Tooltip title={compact ? `${formatPower(signature.avg_power)} - Supprimer` : "Supprimer"}>
+                    </Box>
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+                    <Box>
+                      <Typography variant="body2" component="div">
+                        {`${formatDateTime(signature.start_time)} -> ${formatTimeOnly(signature.end_time)}`}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
+                        {formatDurationFull(signature.duration_seconds)}
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                  <TableCell align="right" sx={{ width: '60px', padding: '6px 16px' }}>
+                    <Tooltip title="Supprimer">
                       <IconButton
                         color="error"
                         size="small"

@@ -12,7 +12,6 @@ import {
   LinearProgress,
   Alert,
   Typography,
-  Chip,
   CircularProgress,
   Box,
   IconButton,
@@ -25,7 +24,7 @@ import {
   Button,
   Snackbar,
 } from '@mui/material';
-import { Timeline, Delete, Search as DetectIcon, CheckCircle, Cancel, DeleteSweep } from '@mui/icons-material';
+import { Timeline, DeleteSweep, CheckCircle, Cancel, Search } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import { useChart } from '../context/ChartContext';
@@ -33,18 +32,16 @@ import { useChart } from '../context/ChartContext';
 /**
  * Composant affichant les détections d'appareils récentes
  */
-function DetectionsList({ compact = false }) {
+function DetectionsList() {
   const { visibleTimeRange } = useChart();
   const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [totalDetections, setTotalDetections] = useState(0);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [detectionToDelete, setDetectionToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [detectLoading, setDetectLoading] = useState(false);
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
+  const [detectLoading, setDetectLoading] = useState(false);
 
   const fetchDetections = useCallback(async () => {
     try {
@@ -124,68 +121,8 @@ function DetectionsList({ compact = false }) {
     };
   }, [fetchDetections]);
 
-  const handleDeleteClick = (detection) => {
-    setDetectionToDelete(detection);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!detectionToDelete) return;
-
-    try {
-      await apiService.deleteDetection(detectionToDelete.id);
-      setSnackbar({
-        open: true,
-        message: `Détection supprimée: ${detectionToDelete.name}`,
-        severity: 'success',
-      });
-      
-      // Rafraîchir la liste
-      fetchDetections();
-    } catch (err) {
-      console.error('Erreur lors de la suppression:', err);
-      setSnackbar({
-        open: true,
-        message: 'Erreur lors de la suppression de la détection',
-        severity: 'error',
-      });
-    } finally {
-      setDeleteDialogOpen(false);
-      setDetectionToDelete(null);
-    }
-  };
-
-  const handleDeleteCancel = () => {
-    setDeleteDialogOpen(false);
-    setDetectionToDelete(null);
-  };
-
   const handleSnackbarClose = () => {
     setSnackbar({ ...snackbar, open: false });
-  };
-
-  const handleDetect = async () => {
-    setDetectLoading(true);
-    try {
-      const response = await api.post('/api/nilm/detect');
-      setSnackbar({
-        open: true,
-        message: `Détection lancée (Task ID: ${response.data.task_id})`,
-        severity: 'success',
-      });
-      
-      // List will refresh automatically via WebSocket detection_complete event
-    } catch (error) {
-      console.error('Erreur lors du lancement de la détection:', error);
-      const errorMsg = error.response?.data?.detail || 'Erreur lors du lancement de la détection';
-      setSnackbar({
-        open: true,
-        message: errorMsg,
-        severity: 'error',
-      });
-    } finally {
-      setDetectLoading(false);
-    }
   };
 
   const handleValidate = async (detection) => {
@@ -257,6 +194,26 @@ function DetectionsList({ compact = false }) {
     }
   };
 
+  const handleDetect = async () => {
+    setDetectLoading(true);
+    try {
+      const response = await api.post('/api/nilm/detect');
+      setSnackbar({
+        open: true,
+        message: `Détection lancée (Task ID: ${response.data.task_id})`,
+        severity: 'success',
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `Erreur: ${error.response?.data?.detail || error.message}`,
+        severity: 'error',
+      });
+    } finally {
+      setDetectLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <Card>
@@ -275,55 +232,38 @@ function DetectionsList({ compact = false }) {
     <>
       <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <CardHeader
-          title={compact ? "Détections" : "Détections d'appareils"}
-          titleTypographyProps={{ variant: compact ? 'h6' : 'h5' }}
+          title="Détections d'appareils"
+          titleTypographyProps={{ variant: 'h5' }}
           subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} dans la période visible`}
           avatar={<Timeline />}
           action={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: compact ? 0.5 : 1.5, flexWrap: 'wrap' }}>
-              {!compact && (
-                <>
-                  <Button
-                    variant="outlined"
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Tooltip title="Lancer la détection des appareils">
+                <span>
+                  <IconButton
+                    color="success"
+                    onClick={handleDetect}
+                    disabled={detectLoading}
+                  >
+                    {detectLoading ? <CircularProgress size={24} /> : <Search />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Supprimer toutes les détections">
+                <span>
+                  <IconButton
                     color="error"
-                    size="small"
-                    startIcon={deleteAllLoading ? <CircularProgress size={16} /> : <DeleteSweep />}
                     onClick={handleOpenDeleteAllDialog}
                     disabled={deleteAllLoading || totalDetections === 0}
-                    sx={{ whiteSpace: 'nowrap' }}
                   >
-                    Tout supprimer
-                  </Button>
-                  <Button
-                    variant="contained"
-                    color="secondary"
-                    size="small"
-                    startIcon={detectLoading ? <CircularProgress size={16} /> : <DetectIcon />}
-                    onClick={handleDetect}
-                    disabled={detectLoading}
-                    sx={{ whiteSpace: 'nowrap' }}
-                  >
-                    {detectLoading ? 'Détection...' : 'Lancer détection'}
-                  </Button>
-                </>
-              )}
-              {compact && (
-                <Tooltip title="Lancer détection">
-                  <IconButton
-                    color="secondary"
-                    size="small"
-                    onClick={handleDetect}
-                    disabled={detectLoading}
-                  >
-                    {detectLoading ? <CircularProgress size={16} /> : <DetectIcon />}
+                    {deleteAllLoading ? <CircularProgress size={24} /> : <DeleteSweep />}
                   </IconButton>
-                </Tooltip>
-              )}
-              {loading && <CircularProgress size={24} />}
+                </span>
+              </Tooltip>
             </Box>
           }
         />
-        <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: compact ? 1 : 2 }}>
+        <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 2, display: 'flex', flexDirection: 'column' }}>
           {loading && detections.length === 0 && <LinearProgress />}
 
           {totalDetections === 0 && !loading && (
@@ -334,17 +274,13 @@ function DetectionsList({ compact = false }) {
 
           {totalDetections > 0 && (
             <>
-              <TableContainer sx={{ maxHeight: compact ? '100%' : 600 }}>
+              <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                 <Table stickyHeader size="small">
                   <TableHead>
                     <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                       <TableCell>Appareil</TableCell>
-                      {!compact && <TableCell align="right">Plage horaire</TableCell>}
-                      {compact && <TableCell align="right">Heure</TableCell>}
-                      <TableCell align="right">Durée</TableCell>
-                      {!compact && <TableCell align="right">Puissance</TableCell>}
-                      {!compact && <TableCell align="center">Confiance</TableCell>}
-                      <TableCell align="center">Actions</TableCell>
+                      <TableCell align="right">Plage horaire</TableCell>
+                      <TableCell align="right" sx={{ width: '100px', padding: '6px 16px' }}></TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -352,15 +288,13 @@ function DetectionsList({ compact = false }) {
                       <DetectionRow
                         key={detection.id}
                         detection={detection}
-                        onDelete={handleDeleteClick}
                         onValidate={handleValidate}
                         onInvalidate={handleInvalidate}
-                        compact={compact}
                       />
                     ))}
                     {loading && (
                       <TableRow>
-                        <TableCell colSpan={compact ? 4 : 6} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
                           <CircularProgress size={32} />
                         </TableCell>
                       </TableRow>
@@ -372,33 +306,6 @@ function DetectionsList({ compact = false }) {
           )}
         </CardContent>
       </Card>
-
-      {/* Dialog de confirmation de suppression */}
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={handleDeleteCancel}
-        aria-labelledby="delete-dialog-title"
-      >
-        <DialogTitle id="delete-dialog-title">
-          Confirmer la suppression
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Êtes-vous sûr de vouloir supprimer cette détection de{' '}
-            <strong>{detectionToDelete?.name}</strong> ?
-            <br />
-            Cette action est irréversible.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleDeleteCancel} color="inherit">
-            Annuler
-          </Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
-            Supprimer
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Dialog de confirmation de suppression de toutes les détections */}
       <Dialog
@@ -468,7 +375,7 @@ function DetectionsList({ compact = false }) {
 /**
  * Ligne de tableau pour une détection
  */
-function DetectionRow({ detection, onDelete, onValidate, onInvalidate, compact = false }) {
+function DetectionRow({ detection, onValidate, onInvalidate }) {
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
   const durationMinutes = Math.round((endTime - startTime) / 60000);
@@ -493,38 +400,43 @@ function DetectionRow({ detection, onDelete, onValidate, onInvalidate, compact =
     });
   };
 
-  const getConfidenceColor = (score) => {
-    if (score >= 0.8) return 'success';
-    if (score >= 0.6) return 'warning';
-    return 'error';
+  const formatDuration = (minutes) => {
+    if (minutes < 60) {
+      return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+    } else {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      if (remainingMinutes === 0) {
+        return `${hours} ${hours === 1 ? 'heure' : 'heures'}`;
+      }
+      return `${hours} ${hours === 1 ? 'heure' : 'heures'} et ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`;
+    }
   };
 
-  const getConfidenceLabel = (score) => {
-    if (score >= 0.8) return 'Élevée';
-    if (score >= 0.6) return 'Moyenne';
-    return 'Faible';
-  };
-
-  const getConfidenceBackgroundColor = (score) => {
-    if (score >= 0.8) return 'rgba(76, 175, 80, 0.08)'; // Vert
-    if (score >= 0.6) return 'rgba(255, 152, 0, 0.08)'; // Orange
-    return 'rgba(244, 67, 54, 0.08)'; // Rouge
-  };
-
-  const getConfidenceHoverColor = (score) => {
-    if (score >= 0.8) return 'rgba(76, 175, 80, 0.15)';
-    if (score >= 0.6) return 'rgba(255, 152, 0, 0.15)';
-    return 'rgba(244, 67, 54, 0.15)';
-  };
-
-  // En mode compact, utiliser la confiance pour la couleur de fond
-  const backgroundColor = compact 
-    ? (isValidated ? 'rgba(76, 175, 80, 0.12)' : isInvalidated ? 'rgba(244, 67, 54, 0.12)' : getConfidenceBackgroundColor(detection.confidence_score || 0))
-    : (isValidated ? 'rgba(76, 175, 80, 0.08)' : isInvalidated ? 'rgba(244, 67, 54, 0.08)' : 'inherit');
-
-  const hoverColor = compact
-    ? (isValidated ? 'rgba(76, 175, 80, 0.18)' : isInvalidated ? 'rgba(244, 67, 54, 0.18)' : getConfidenceHoverColor(detection.confidence_score || 0))
-    : (isValidated ? 'rgba(76, 175, 80, 0.15)' : isInvalidated ? 'rgba(244, 67, 54, 0.15)' : 'rgba(0, 0, 0, 0.04)');
+  // Background selon la confiance : rouge si < 0.6, orange si >= 0.6 et < 0.8
+  const confidenceScore = detection.confidence_score || 0;
+  const hasLowConfidence = confidenceScore < 0.6;
+  const hasMediumConfidence = confidenceScore >= 0.6 && confidenceScore < 0.8;
+  
+  const backgroundColor = isValidated 
+    ? 'rgba(76, 175, 80, 0.08)' 
+    : isInvalidated 
+    ? 'rgba(244, 67, 54, 0.08)' 
+    : hasLowConfidence 
+    ? 'rgba(244, 67, 54, 0.05)' 
+    : hasMediumConfidence
+    ? 'rgba(255, 152, 0, 0.05)'
+    : 'inherit';
+    
+  const hoverColor = isValidated 
+    ? 'rgba(76, 175, 80, 0.15)' 
+    : isInvalidated 
+    ? 'rgba(244, 67, 54, 0.15)' 
+    : hasLowConfidence 
+    ? 'rgba(244, 67, 54, 0.1)' 
+    : hasMediumConfidence
+    ? 'rgba(255, 152, 0, 0.1)'
+    : 'rgba(0, 0, 0, 0.04)';
 
   return (
     <TableRow
@@ -549,100 +461,53 @@ function DetectionRow({ detection, onDelete, onValidate, onInvalidate, compact =
               <Cancel fontSize="small" color="error" />
             </Tooltip>
           )}
-          {compact ? (
-            <Tooltip title={`${detection.name || 'Inconnu'} - Confiance: ${getConfidenceLabel(detection.confidence_score || 0)}`}>
-              <Typography
-                variant="body2"
-                sx={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  maxWidth: '120px',
-                }}
-              >
-                {detection.name || 'Inconnu'}
-              </Typography>
-            </Tooltip>
-          ) : (
-            <span>{detection.name || 'Inconnu'}</span>
-          )}
+          <Box>
+            <Typography variant="body2" component="div" fontWeight="medium">
+              {detection.name || 'Inconnu'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
+              {detection.avg_power ? `${Math.round(detection.avg_power / 100) * 100} W` : 'N/A'}
+            </Typography>
+          </Box>
         </Box>
       </TableCell>
-      {!compact && (
-        <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
-          {`${formatDateTime(startTime)} -> ${formatTimeOnly(endTime)}`}
-        </TableCell>
-      )}
-      {compact && (
-        <TableCell align="right" sx={{ fontSize: 'x-small', whiteSpace: 'nowrap' }}>
-          {formatTimeOnly(startTime)}
-        </TableCell>
-      )}
-      <TableCell align="right">
-        <Typography variant="body2" fontSize={compact ? 'x-small' : 'small'}>
-          {durationMinutes < 60
-            ? `${durationMinutes}m`
-            : `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`}
-        </Typography>
+      <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+        <Box>
+          <Typography variant="body2" component="div">
+            {`${formatDateTime(startTime)} -> ${formatTimeOnly(endTime)}`}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
+            {formatDuration(durationMinutes)}
+          </Typography>
+        </Box>
       </TableCell>
-      {!compact && (
-        <>
-          <TableCell align="right">
-            <Typography variant="body2">
-              {detection.avg_power?.toFixed(1) || 'N/A'}
-            </Typography>
-          </TableCell>
-          <TableCell align="center">
-            <Chip
-              label={getConfidenceLabel(detection.confidence_score || 0)}
-              color={getConfidenceColor(detection.confidence_score || 0)}
-              size="small"
-              variant="outlined"
-            />
-          </TableCell>
-        </>
-      )}
-      <TableCell align="center">
-        <Box sx={{ display: 'flex', gap: compact ? 0 : 0.5, justifyContent: 'center' }}>
-          {!compact && (
-            <>
-              <Tooltip title={isValidated ? "Déjà validée" : "Marquer comme correcte"}>
-                <span>
-                  <IconButton
-                    size="small"
-                    color="success"
-                    onClick={() => onValidate(detection)}
-                    aria-label="valider"
-                    disabled={isValidated}
-                  >
-                    <CheckCircle fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title={isInvalidated ? "Déjà invalidée" : "Marquer comme incorrecte"}>
-                <span>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => onInvalidate(detection)}
-                    aria-label="invalider"
-                    disabled={isInvalidated}
-                  >
-                    <Cancel fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </>
-          )}
-          <Tooltip title={compact ? `${detection.avg_power?.toFixed(1) || 'N/A'} W - Supprimer` : "Supprimer cette détection"}>
-            <IconButton
-              size="small"
-              color="error"
-              onClick={() => onDelete(detection)}
-              aria-label="supprimer"
-            >
-              <Delete fontSize="small" />
-            </IconButton>
+      <TableCell align="right" sx={{ width: '100px', padding: '6px 16px' }}>
+        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+          <Tooltip title={isValidated ? "Déjà validée" : "Marquer comme correcte"}>
+            <span>
+              <IconButton
+                size="small"
+                color="success"
+                onClick={() => onValidate(detection)}
+                aria-label="valider"
+                disabled={isValidated}
+              >
+                <CheckCircle fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={isInvalidated ? "Déjà invalidée" : "Marquer comme incorrecte"}>
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                onClick={() => onInvalidate(detection)}
+                aria-label="invalider"
+                disabled={isInvalidated}
+              >
+                <Cancel fontSize="small" />
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
       </TableCell>

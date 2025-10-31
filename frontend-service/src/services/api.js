@@ -98,17 +98,6 @@ export const apiService = {
     }
   },
 
-  // Supprimer une détection
-  deleteDetection: async (detectionId) => {
-    try {
-      const response = await api.delete(`/api/detections/${detectionId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Erreur lors de la suppression de la détection:', error);
-      throw error;
-    }
-  },
-
   // Valider une détection (marquer comme correcte)
   validateDetection: async (detectionId) => {
     try {

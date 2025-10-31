@@ -8,7 +8,8 @@ import {
   CircularProgress,
   Alert,
   Switch,
-  Button,
+  IconButton,
+  Tooltip as MuiTooltip,
   LinearProgress,
 } from '@mui/material';
 import {
@@ -154,10 +155,6 @@ const ConsumptionChart = () => {
       }
     };
 
-    const handleDetectionDeleted = (data) => {
-      setDetections(prev => prev.filter(d => d.id !== data.detection_id));
-    };
-
     const handleDetectionsCleared = (data) => {
       setDetections([]);
     };
@@ -165,7 +162,6 @@ const ConsumptionChart = () => {
     // Enregistrer les handlers
     detectionsWS.on('new_detection', handleNewDetection);
     detectionsWS.on('detection_complete', handleDetectionComplete);
-    detectionsWS.on('detection_deleted', handleDetectionDeleted);
     detectionsWS.on('detections_cleared', handleDetectionsCleared);
     detectionsWS.connect();
 
@@ -173,7 +169,6 @@ const ConsumptionChart = () => {
     return () => {
       detectionsWS.off('new_detection', handleNewDetection);
       detectionsWS.off('detection_complete', handleDetectionComplete);
-      detectionsWS.off('detection_deleted', handleDetectionDeleted);
       detectionsWS.off('detections_cleared', handleDetectionsCleared);
       
       // Nettoyer le timeout d'interaction
@@ -349,21 +344,67 @@ const ConsumptionChart = () => {
     }
   }, [rawData, setVisibleTimeRange]);
 
-  // Palette de couleurs par appareil
+  // Palette de couleurs pour les annotations des appareils
+  const APPLIANCE_COLORS = [
+    "#f94144",
+    "#f3722c",
+    "#f8961e",
+    "#f9844a",
+    "#f9c74f",
+    "#90be6d",
+    "#43aa8b",
+    "#4d908e",
+    "#577590",
+    "#277da1"
+  ];
+
+  // Obtenir la liste unique des noms d'appareils
+  const uniqueApplianceNames = useMemo(() => {
+    const items = annotationMode === 'detections' ? detections : signatures;
+    if (!items || items.length === 0) return [];
+    
+    const names = new Set();
+    items.forEach(item => {
+      const itemName = item.name || item.appliance_name;
+      if (itemName) names.add(itemName);
+    });
+    
+    return Array.from(names).sort();
+  }, [annotationMode, detections, signatures]);
+
   const getApplianceColor = useCallback((applianceName) => {
     const name = applianceName || 'Unknown';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    const totalAppliances = uniqueApplianceNames.length;
+    
+    if (totalAppliances === 0) {
+      return {
+        bg: `${APPLIANCE_COLORS[0]}26`,
+        border: `${APPLIANCE_COLORS[0]}99`,
+        solid: APPLIANCE_COLORS[0],
+        dark: APPLIANCE_COLORS[0],
+      };
     }
-    const hue = Math.abs(hash % 360);
+    
+    const applianceIndex = uniqueApplianceNames.indexOf(name);
+    let colorIndex;
+    
+    if (totalAppliances === 1) {
+      colorIndex = 0;
+    } else {
+      // Répartir uniformément sur toute la palette
+      const position = applianceIndex / (totalAppliances - 1);
+      colorIndex = Math.round(position * (APPLIANCE_COLORS.length - 1));
+    }
+    
+    const baseColor = APPLIANCE_COLORS[colorIndex];
+    
     return {
-      bg: `hsla(${hue}, 70%, 60%, 0.15)`,
-      border: `hsla(${hue}, 70%, 60%, 0.6)`,
-      solid: `hsl(${hue}, 70%, 60%)`,
-      dark: `hsl(${hue}, 70%, 35%)`,
+      bg: `${baseColor}26`,
+      border: `${baseColor}99`,
+      solid: baseColor,
+      dark: baseColor,
     };
-  }, []);
+  }, [uniqueApplianceNames]);
 
   // Légende des appareils (détections ou signatures selon le mode)
   const getLegendItems = useCallback(() => {
@@ -690,6 +731,7 @@ const ConsumptionChart = () => {
       <Card>
         <CardHeader
           title="Historique de consommation"
+          titleTypographyProps={{ variant: 'h5' }}
           subheader={
             loading 
               ? `Chargement des données (${loadingProgress}%)...`
@@ -697,17 +739,18 @@ const ConsumptionChart = () => {
           }
           avatar={<ShowChart />}
           action={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<ZoomOutMap />}
-                onClick={handleResetZoom}
-                disabled={loading}
-                sx={{ textTransform: 'none' }}
-              >
-                Réinitialiser
-              </Button>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <MuiTooltip title="Réinitialiser le zoom">
+                <span>
+                  <IconButton
+                    color="primary"
+                    onClick={handleResetZoom}
+                    disabled={loading}
+                  >
+                    <ZoomOutMap />
+                  </IconButton>
+                </span>
+              </MuiTooltip>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <Typography 
                   variant="caption" 
@@ -810,9 +853,7 @@ const ConsumptionChart = () => {
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
                       {item.name}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      ({item.count} {annotationMode === 'detections' ? 'détection' : 'signature'}{item.count > 1 ? 's' : ''}{item.totalEnergy > 0 ? `, ${item.totalEnergy.toFixed(0)} Wh` : ''})
-                    </Typography>
+                    
                   </Box>
                 ))}
               </Box>
