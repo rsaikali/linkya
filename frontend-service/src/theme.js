@@ -16,7 +16,7 @@ const theme = createTheme({
       contrastText: '#fff',
     },
     background: {
-      default: '#B2BEBF', // Big-Machine-3 (gris clair)
+      default: '#ebebebff', // Big-Machine-3 (gris clair)
       paper: '#fff',
     },
     text: {

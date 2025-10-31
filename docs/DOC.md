@@ -127,12 +127,14 @@ NILM_MODEL_TYPE=gru     # 'gru' or 'lstm'
 - **Annotations Toggle**: Switch between displaying detections (default) or signatures on the graph
   - Detections: Shows real-time appliance detections with colored zones
   - Signatures: Shows training signatures with dashed borders and labels
+- **Synchronized Views**: Detection list automatically syncs with the visible time range in the consumption chart
 
 ### Key Components
-- `ConsumptionChart`: Interactive power consumption graph with signature selection and annotations toggle
+- `ConsumptionChart`: Interactive power consumption graph with signature selection and annotations toggle. Updates global visible time range via ChartContext
 - `SignaturesList`: Manage training signatures (positive/negative examples)
-- `DetectionsList`: Real-time appliance detection feed with validation
+- `DetectionsList`: Real-time appliance detection feed with validation. Filters detections based on the visible time range from ConsumptionChart
 - `CurrentModel`: Training session status and metrics dashboard
+- `ChartContext`: React context that shares the visible time range between ConsumptionChart and DetectionsList
 
 ## API Endpoints
 

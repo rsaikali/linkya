@@ -370,6 +370,13 @@ const detectionsWS = new GenericWebSocket('/ws/detections', [
   'detection_deleted',
   'detections_cleared'
 ]);
+const importProgressWS = new GenericWebSocket('/ws/import', [
+  'import_start',
+  'import_progress',
+  'import_complete',
+  'import_error'
+]);
 
 export default trainingLogsWS;
-export { consumptionWS, detectionsWS };
+export { consumptionWS, detectionsWS, importProgressWS };
+

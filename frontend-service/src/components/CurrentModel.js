@@ -9,8 +9,6 @@ import {
   AccordionSummary,
   AccordionDetails,
   Chip,
-  Grid,
-  Tooltip,
   Alert,
   LinearProgress,
   CircularProgress,
@@ -21,17 +19,15 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  Collapse,
   IconButton,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
-  Info as InfoIcon,
   ModelTraining as ModelIcon,
-  Timer as TimerIcon,
   PlayArrow as TrainIcon,
   Delete as DeleteIcon,
   Close as CloseIcon,
+  Search as DetectIcon,
 } from '@mui/icons-material';
 import api from '../services/api';
 import websocket from '../services/websocket';
@@ -39,7 +35,6 @@ import websocket from '../services/websocket';
 const CurrentModel = () => {
   const [model, setModel] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [modelExpanded, setModelExpanded] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
@@ -114,6 +109,29 @@ const CurrentModel = () => {
       });
     } finally {
       setTrainLoading(false);
+    }
+  };
+
+  // Lancer la détection
+  const [detectLoading, setDetectLoading] = useState(false);
+  
+  const handleDetect = async () => {
+    setDetectLoading(true);
+    try {
+      const response = await api.post('/api/nilm/detect');
+      setSnackbar({
+        open: true,
+        message: `Détection lancée (Task ID: ${response.data.task_id})`,
+        severity: 'success',
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: `Erreur: ${error.response?.data?.detail || error.message}`,
+        severity: 'error',
+      });
+    } finally {
+      setDetectLoading(false);
     }
   };
 
@@ -238,51 +256,6 @@ const CurrentModel = () => {
     });
   };
 
-  // Obtenir le score de qualité
-  const getQualityScore = (model) => {
-    if (!model || !model.metrics) return null;
-    
-    const metrics = model.metrics.appliances?.[0]?.metrics || model.metrics;
-    
-    if (metrics.val_mae !== undefined && metrics.val_mae !== null) {
-      const mae = metrics.val_mae;
-      let color = 'error';
-      let label = 'Faible';
-      
-      if (mae <= 30) {
-        color = 'success';
-        label = 'Excellent';
-      } else if (mae <= 60) {
-        color = 'warning';
-        label = 'Bon';
-      } else if (mae <= 100) {
-        color = 'info';
-        label = 'Moyen';
-      }
-      
-      return { score: mae.toFixed(1), color, label, unit: 'W' };
-    }
-    
-    if (!metrics.val_accuracy) return null;
-    const score = metrics.val_accuracy * 100;
-    
-    let color = 'error';
-    let label = 'Faible';
-    
-    if (score >= 90) {
-      color = 'success';
-      label = 'Excellent';
-    } else if (score >= 75) {
-      color = 'warning';
-      label = 'Bon';
-    } else if (score >= 60) {
-      color = 'info';
-      label = 'Moyen';
-    }
-    
-    return { score: score.toFixed(1), color, label, unit: '%' };
-  };
-
   if (loading) {
     return (
       <Card>
@@ -304,16 +277,26 @@ const CurrentModel = () => {
             <Alert severity="info" sx={{ flex: 1, mb: 0 }}>
               Aucun modèle NILM entraîné. Lancez un entraînement.
             </Alert>
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={trainLoading ? <CircularProgress size={20} color="inherit" /> : <TrainIcon />}
-              onClick={handleTrain}
-              disabled={trainLoading}
-              sx={{ flexShrink: 0 }}
-            >
-              {trainLoading ? 'Lancement...' : 'Entraîner'}
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={trainLoading ? <CircularProgress size={20} color="inherit" /> : <TrainIcon />}
+                onClick={handleTrain}
+                disabled={trainLoading}
+              >
+                {trainLoading ? 'Lancement...' : 'Entraîner'}
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                startIcon={detectLoading ? <CircularProgress size={20} color="inherit" /> : <DetectIcon />}
+                onClick={handleDetect}
+                disabled={detectLoading}
+              >
+                {detectLoading ? 'Détection...' : 'Détecter'}
+              </Button>
+            </Box>
           </Box>
 
           {/* Accordion: Logs d'entraînement */}
@@ -486,9 +469,6 @@ const CurrentModel = () => {
     );
   }
 
-  const quality = getQualityScore(model);
-  const metrics = model.metrics.appliances?.[0]?.metrics || model.metrics;
-
   return (
     <>
     <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
@@ -519,6 +499,15 @@ const CurrentModel = () => {
               {trainLoading ? 'Lancement...' : 'Entraîner'}
             </Button>
             <Button
+              variant="contained"
+              color="secondary"
+              startIcon={detectLoading ? <CircularProgress size={20} color="inherit" /> : <DetectIcon />}
+              onClick={handleDetect}
+              disabled={detectLoading || isTraining}
+            >
+              {detectLoading ? 'Détection...' : 'Détecter'}
+            </Button>
+            <Button
               variant="outlined"
               color="error"
               startIcon={<DeleteIcon />}
@@ -530,197 +519,7 @@ const CurrentModel = () => {
           </Box>
         </Box>
 
-        {/* Accordion 1: Informations du modèle */}
-        <Accordion expanded={modelExpanded} onChange={() => setModelExpanded(!modelExpanded)} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 2 }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography variant="subtitle1" fontWeight="medium">
-              Métriques détaillées
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            {/* Statistiques principales déplacées ici */}
-            <Grid container spacing={2} sx={{ mb: 3 }}>
-              <Grid item xs={6} sm={3}>
-                <Paper elevation={0} sx={{ p: 2, bgcolor: 'white', textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Type
-                  </Typography>
-                  <Typography variant="h6" fontWeight="medium">
-                    {model.model_type || 'N/A'}
-                  </Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Paper elevation={0} sx={{ p: 2, bgcolor: 'white', textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Signatures
-                  </Typography>
-                  <Typography variant="h6" fontWeight="medium">
-                    {model.num_signatures}
-                  </Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Paper elevation={0} sx={{ p: 2, bgcolor: 'white', textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Appareils
-                  </Typography>
-                  <Typography variant="h6" fontWeight="medium">
-                    {model.num_classes}
-                  </Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Paper elevation={0} sx={{ p: 2, bgcolor: 'white', textAlign: 'center' }}>
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    Qualité
-                  </Typography>
-                  <Typography variant="h6" fontWeight="medium" color={quality ? `${quality.color}.main` : 'text.primary'}>
-                    {quality ? `${quality.score}${quality.unit}` : 'N/A'}
-                  </Typography>
-                </Paper>
-              </Grid>
-            </Grid>
-            
-            <Grid container spacing={2}>
-              {/* MAE Train */}
-              {metrics.train_mae !== undefined && (
-                <Grid item xs={12} sm={6} md={4} >
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      MAE (Train)
-                      <Tooltip title="Erreur Moyenne Absolue sur les données d'entraînement - Moyenne des écarts entre prédictions et valeurs réelles">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.train_mae.toFixed(2)} W
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* MAE Val */}
-              {metrics.val_mae !== undefined && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      MAE (Validation)
-                      <Tooltip title="Erreur Moyenne Absolue sur les données de validation - Indicateur principal de performance du modèle">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.val_mae.toFixed(2)} W
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* MSE Train */}
-              {metrics.train_mse !== undefined && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      MSE (Train)
-                      <Tooltip title="Erreur Quadratique Moyenne sur les données d'entraînement - Pénalise plus fortement les grandes erreurs">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.train_mse.toFixed(4)}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* MSE Val */}
-              {metrics.val_mse !== undefined && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      MSE (Validation)
-                      <Tooltip title="Erreur Quadratique Moyenne sur les données de validation">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.val_mse.toFixed(4)}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* Loss Train */}
-              {metrics.train_loss !== undefined && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      Loss (Train)
-                      <Tooltip title="Fonction de perte sur les données d'entraînement - Combine MAE et pénalités pour les faux positifs">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.train_loss.toFixed(4)}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* Loss Val */}
-              {metrics.val_loss !== undefined && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      Loss (Validation)
-                      <Tooltip title="Fonction de perte sur les données de validation - Utilisée pour détecter le surapprentissage">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.val_loss.toFixed(4)}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* Epochs */}
-              {metrics.epochs_trained !== undefined && (
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                      Epochs entraînés
-                      <Tooltip title="Nombre de passages complets sur l'ensemble des données d'entraînement">
-                        <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                      </Tooltip>
-                    </Typography>
-                    <Typography variant="body1" fontWeight="medium">
-                      {metrics.epochs_trained}
-                    </Typography>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* Durée d'entraînement */}
-              <Grid item xs={12} sm={6} md={4}>
-                <Box>
-                  <Typography variant="caption" color="text.secondary" display="flex" alignItems="center" gutterBottom>
-                    Durée d'entraînement
-                    <Tooltip title="Temps total nécessaire pour entraîner le modèle">
-                      <InfoIcon sx={{ ml: 0.5, fontSize: 16 }} />
-                    </Tooltip>
-                  </Typography>
-                  <Typography variant="body1" fontWeight="medium">
-                    {model.training_duration_seconds}s
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
-          </AccordionDetails>
-        </Accordion>
-
-        {/* Accordion 2: Logs d'entraînement */}
+        {/* Accordion: Logs d'entraînement */}
         <Accordion expanded={showTerminal} onChange={() => setShowTerminal(!showTerminal)} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

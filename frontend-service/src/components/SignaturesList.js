@@ -13,7 +13,6 @@ import {
   Alert,
   Typography,
   Chip,
-  TablePagination,
   IconButton,
   Tooltip,
   Dialog,
@@ -27,16 +26,15 @@ import {
 } from '@mui/material';
 import { Delete, DeleteSweep, FileDownload, FileUpload, Assignment } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
+import { importProgressWS } from '../services/websocket';
 
 /**
- * Composant affichant la liste des signatures avec pagination côté serveur
+ * Composant affichant la liste des signatures
  */
-function SignaturesList() {
+function SignaturesList({ compact = false }) {
   const [signatures, setSignatures] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(20);
   const [totalSignatures, setTotalSignatures] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [signatureToDelete, setSignatureToDelete] = useState(null);
@@ -47,6 +45,13 @@ function SignaturesList() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importProgress, setImportProgress] = useState({
+    status: 'idle',
+    totalLines: 0,
+    successCount: 0,
+    errorCount: 0,
+    progressPercent: 0
+  });
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
@@ -57,13 +62,8 @@ function SignaturesList() {
       setLoading(true);
       setError(null);
       
-      // Utiliser la pagination côté backend (page commence à 1 pour l'API)
-      const response = await api.get('/api/signatures', {
-        params: {
-          page: page + 1,
-          per_page: rowsPerPage
-        }
-      });
+      // Récupérer toutes les signatures
+      const response = await api.get('/api/signatures');
       
       const data = response.data;
       
@@ -80,10 +80,96 @@ function SignaturesList() {
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage]);
+  }, []);
 
   useEffect(() => {
     fetchSignatures();
+  }, [fetchSignatures]);
+
+  // Setup WebSocket for import progress
+  useEffect(() => {
+    const handleImportStart = (data) => {
+      console.log('✅ Import started:', data);
+      setImportProgress({
+        status: 'started',
+        totalLines: 0,
+        successCount: 0,
+        errorCount: 0,
+        progressPercent: 0
+      });
+    };
+
+    const handleImportProgress = (data) => {
+      console.log('📊 Import progress:', data);
+      setImportProgress({
+        status: 'processing',
+        totalLines: data.total_lines || 0,
+        successCount: data.success_count || 0,
+        errorCount: data.error_count || 0,
+        progressPercent: data.progress_percent || 0
+      });
+    };
+
+    const handleImportComplete = (data) => {
+      console.log('🎉 Import completed:', data);
+      setImportProgress({
+        status: 'completed',
+        totalLines: data.total_lines || 0,
+        successCount: data.success_count || 0,
+        errorCount: data.error_count || 0,
+        progressPercent: 100
+      });
+      
+      // Rafraîchir la liste après 2 secondes
+      setTimeout(() => {
+        console.log('🔄 Rafraîchissement de la liste (1/3)');
+        fetchSignatures();
+        // Rafraîchir encore 2 fois
+        setTimeout(() => {
+          console.log('🔄 Rafraîchissement de la liste (2/3)');
+          fetchSignatures();
+        }, 2000);
+        setTimeout(() => {
+          console.log('🔄 Rafraîchissement de la liste (3/3)');
+          fetchSignatures();
+        }, 4000);
+      }, 2000);
+    };
+
+    const handleImportError = (data) => {
+      console.error('❌ Import error:', data);
+      showSnackbar(data.error || 'Erreur lors de l\'import', 'error');
+    };
+
+    const handleConnected = () => {
+      console.log('🔌 WebSocket Import connecté');
+    };
+
+    const handleDisconnected = () => {
+      console.log('🔌 WebSocket Import déconnecté');
+    };
+
+    // Register WebSocket handlers
+    importProgressWS.on('import_start', handleImportStart);
+    importProgressWS.on('import_progress', handleImportProgress);
+    importProgressWS.on('import_complete', handleImportComplete);
+    importProgressWS.on('import_error', handleImportError);
+    importProgressWS.on('connected', handleConnected);
+    importProgressWS.on('disconnected', handleDisconnected);
+
+    // Connect to WebSocket
+    console.log('🚀 Connexion au WebSocket Import...');
+    importProgressWS.connect();
+
+    // Cleanup on unmount
+    return () => {
+      importProgressWS.off('import_start', handleImportStart);
+      importProgressWS.off('import_progress', handleImportProgress);
+      importProgressWS.off('import_complete', handleImportComplete);
+      importProgressWS.off('import_error', handleImportError);
+      importProgressWS.off('connected', handleConnected);
+      importProgressWS.off('disconnected', handleDisconnected);
+    };
   }, [fetchSignatures]);
 
   const handleExportCSV = async () => {
@@ -114,6 +200,13 @@ function SignaturesList() {
     setImportDialogOpen(true);
     setSelectedFile(null);
     setImportResult(null);
+    setImportProgress({
+      status: 'idle',
+      totalLines: 0,
+      successCount: 0,
+      errorCount: 0,
+      progressPercent: 0
+    });
   };
 
   const handleFileChange = (event) => {
@@ -134,13 +227,21 @@ function SignaturesList() {
     }
 
     setImportLoading(true);
+    setImportProgress({
+      status: 'uploading',
+      totalLines: 0,
+      successCount: 0,
+      errorCount: 0,
+      progressPercent: 0
+    });
+
     try {
       const result = await apiService.importSignatures(selectedFile);
       setImportResult(result);
 
       if (result.error_count === 0) {
         showSnackbar(`${result.success_count} signature(s) importée(s) avec succès`, 'success');
-        fetchSignatures(); // Rafraîchir la liste
+        setImportDialogOpen(false);
       } else {
         showSnackbar(
           `Import terminé: ${result.success_count} succès, ${result.error_count} erreur(s)`,
@@ -156,18 +257,16 @@ function SignaturesList() {
         error_count: 1,
         errors: [{ line: 0, error: error.message }]
       });
+      setImportProgress({
+        status: 'error',
+        totalLines: 0,
+        successCount: 0,
+        errorCount: 1,
+        progressPercent: 0
+      });
     } finally {
       setImportLoading(false);
     }
-  };
-
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
   };
 
   const handleDeleteClick = (signature) => {
@@ -270,32 +369,30 @@ function SignaturesList() {
     return `${watts.toFixed(0)} W`;
   };
 
-  const getTypeChip = (isNegative) => {
+  const getRowBackgroundColor = (isNegative) => {
     if (isNegative) {
-      return (
-        <Chip
-          label="Négative"
-          size="small"
-          color="error"
-          variant="outlined"
-        />
-      );
+      // Rouge très clair pour les signatures négatives
+      return 'rgba(244, 67, 54, 0.08)';
     }
-    return (
-      <Chip
-        label="Positive"
-        size="small"
-        color="success"
-        variant="outlined"
-      />
-    );
+    // Vert très clair pour les signatures positives
+    return 'rgba(76, 175, 80, 0.08)';
+  };
+
+  const getRowHoverBackgroundColor = (isNegative) => {
+    if (isNegative) {
+      // Rouge plus marqué au hover
+      return 'rgba(244, 67, 54, 0.15)';
+    }
+    // Vert plus marqué au hover
+    return 'rgba(76, 175, 80, 0.15)';
   };
 
   return (
-    <Card>
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardHeader 
-        title="Signatures d'appareils"
-        subheader={`${totalSignatures} signature(s) enregistrée(s)`}
+        title={compact ? "Signatures" : "Signatures d'appareils"}
+        titleTypographyProps={{ variant: compact ? 'h6' : 'h5' }}
+        subheader={`${totalSignatures} signature(s)`}
         avatar={<Assignment />}
         action={
           <Box sx={{ display: 'flex', gap: 1 }}>
@@ -303,6 +400,7 @@ function SignaturesList() {
               <IconButton
                 onClick={handleExportCSV}
                 color="primary"
+                size={compact ? "small" : "medium"}
               >
                 <FileDownload />
               </IconButton>
@@ -311,28 +409,99 @@ function SignaturesList() {
               <IconButton
                 onClick={handleImportClick}
                 color="primary"
+                size={compact ? "small" : "medium"}
               >
                 <FileUpload />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Supprimer toutes les signatures">
-              <span>
-                <IconButton
-                  color="error"
-                  onClick={handleDeleteAllClick}
-                  disabled={totalSignatures === 0}
-                >
-                  <DeleteSweep />
-                </IconButton>
-              </span>
-            </Tooltip>
+            {!compact && (
+              <Tooltip title="Supprimer toutes les signatures">
+                <span>
+                  <IconButton
+                    color="error"
+                    onClick={handleDeleteAllClick}
+                    disabled={totalSignatures === 0}
+                  >
+                    <DeleteSweep />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
           </Box>
         }
       />
-      <CardContent>
+      <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: compact ? 1 : 2 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
+          </Alert>
+        )}
+
+        {/* Section de progression d'importation */}
+        {importProgress.status !== 'idle' && importProgress.status !== 'completed' && (
+          <Box sx={{ mb: 2 }}>
+            <Alert 
+              severity="info" 
+              icon={false}
+              sx={{ 
+                py: 2,
+                backgroundColor: 'primary.50',
+                borderLeft: 4,
+                borderColor: 'primary.main'
+              }}
+            >
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Typography variant="subtitle2" fontWeight="600" color="primary">
+                    {importProgress.status === 'uploading' && '📤 Upload du fichier...'}
+                    {importProgress.status === 'started' && '🚀 Initialisation de l\'import...'}
+                    {importProgress.status === 'processing' && '⚙️ Traitement des signatures...'}
+                  </Typography>
+                  {importProgress.progressPercent > 0 && (
+                    <Typography variant="body2" fontWeight="600" color="primary">
+                      {importProgress.progressPercent}%
+                    </Typography>
+                  )}
+                </Box>
+                
+                <LinearProgress 
+                  variant={importProgress.progressPercent > 0 ? 'determinate' : 'indeterminate'}
+                  value={importProgress.progressPercent}
+                  sx={{ height: 8, borderRadius: 1 }}
+                />
+                
+                {importProgress.totalLines > 0 && (
+                  <Box sx={{ display: 'flex', gap: 3, mt: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      📊 Lignes: <strong>{importProgress.totalLines}</strong>
+                    </Typography>
+                    <Typography variant="caption" color="success.main">
+                      ✅ Succès: <strong>{importProgress.successCount}</strong>
+                    </Typography>
+                    {importProgress.errorCount > 0 && (
+                      <Typography variant="caption" color="error.main">
+                        ❌ Erreurs: <strong>{importProgress.errorCount}</strong>
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              </Box>
+            </Alert>
+          </Box>
+        )}
+
+        {/* Message de succès après import terminé */}
+        {importProgress.status === 'completed' && importProgress.errorCount === 0 && (
+          <Alert 
+            severity="success" 
+            onClose={() => setImportProgress({ ...importProgress, status: 'idle' })}
+            sx={{ mb: 2 }}
+          >
+            <Typography variant="body2">
+              🎉 Import terminé avec succès ! {importProgress.successCount} signature(s) importée(s).
+              <br />
+              <em>La liste se met à jour automatiquement...</em>
+            </Typography>
           </Alert>
         )}
 
@@ -343,17 +512,17 @@ function SignaturesList() {
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                 <TableCell>Appareil</TableCell>
-                <TableCell align="right">Plage horaire</TableCell>
+                {!compact && <TableCell align="right">Plage horaire</TableCell>}
+                {compact && <TableCell align="right">Heure</TableCell>}
                 <TableCell align="right">Durée</TableCell>
-                <TableCell align="right">Puissance moy.</TableCell>
-                <TableCell align="center">Type</TableCell>
+                {!compact && <TableCell align="right">Puissance moy.</TableCell>}
                 <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {signatures.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
+                  <TableCell colSpan={compact ? 4 : 5} align="center">
                     <Typography variant="body2" color="text.secondary">
                       Aucune signature enregistrée
                     </Typography>
@@ -361,30 +530,62 @@ function SignaturesList() {
                 </TableRow>
               )}
               {signatures.map((signature) => (
-                <TableRow key={signature.id} hover>
+                <TableRow 
+                  key={signature.id}
+                  sx={{
+                    backgroundColor: getRowBackgroundColor(signature.is_negative),
+                    '&:hover': {
+                      backgroundColor: getRowHoverBackgroundColor(signature.is_negative),
+                    },
+                    transition: 'background-color 0.2s ease',
+                  }}
+                >
                   <TableCell>
-                    <Typography variant="body2" fontWeight="medium">
-                      {signature.appliance_name}
-                    </Typography>
+                    {compact ? (
+                      <Tooltip title={signature.appliance_name}>
+                        <Typography 
+                          variant="body2" 
+                          fontWeight="medium"
+                          sx={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '120px',
+                          }}
+                        >
+                          {signature.appliance_name}
+                        </Typography>
+                      </Tooltip>
+                    ) : (
+                      <Typography variant="body2" fontWeight="medium">
+                        {signature.appliance_name}
+                      </Typography>
+                    )}
                   </TableCell>
-                  <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
-                    {`${formatDateTime(signature.start_time)} -> ${formatTimeOnly(signature.end_time)}`}
-                  </TableCell>
+                  {!compact && (
+                    <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+                      {`${formatDateTime(signature.start_time)} -> ${formatTimeOnly(signature.end_time)}`}
+                    </TableCell>
+                  )}
+                  {compact && (
+                    <TableCell align="right" sx={{ fontSize: 'x-small', whiteSpace: 'nowrap' }}>
+                      {formatTimeOnly(signature.start_time)}
+                    </TableCell>
+                  )}
                   <TableCell align="right">
-                    <Typography variant="body2">
+                    <Typography variant="body2" fontSize={compact ? 'x-small' : 'small'}>
                       {formatDuration(signature.duration_seconds)}
                     </Typography>
                   </TableCell>
-                  <TableCell align="right">
-                    <Typography variant="body2" fontWeight="medium">
-                      {formatPower(signature.avg_power)}
-                    </Typography>
-                  </TableCell>
+                  {!compact && (
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight="medium">
+                        {formatPower(signature.avg_power)}
+                      </Typography>
+                    </TableCell>
+                  )}
                   <TableCell align="center">
-                    {getTypeChip(signature.is_negative)}
-                  </TableCell>
-                  <TableCell align="center">
-                    <Tooltip title="Supprimer">
+                    <Tooltip title={compact ? `${formatPower(signature.avg_power)} - Supprimer` : "Supprimer"}>
                       <IconButton
                         color="error"
                         size="small"
@@ -400,19 +601,6 @@ function SignaturesList() {
           </Table>
         </TableContainer>
 
-        <TablePagination
-          component="div"
-          count={totalSignatures}
-          page={page}
-          onPageChange={handleChangePage}
-          rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-          rowsPerPageOptions={[10, 20, 50, 100]}
-          labelRowsPerPage="Signatures par page:"
-          labelDisplayedRows={({ from, to, count }) =>
-            `${from}-${to} sur ${count !== -1 ? count : `plus de ${to}`}`
-          }
-        />
       </CardContent>
 
       {/* Dialog de confirmation de suppression */}
@@ -501,7 +689,41 @@ function SignaturesList() {
             </Button>
           </label>
 
-          {importResult && (
+          {/* Barre de progression en temps réel */}
+          {importLoading && importProgress.status !== 'idle' && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {importProgress.status === 'uploading' && 'Upload du fichier...'}
+                {importProgress.status === 'started' && 'Initialisation de l\'import...'}
+                {importProgress.status === 'processing' && 'Traitement des signatures...'}
+                {importProgress.status === 'completed' && 'Import terminé !'}
+              </Typography>
+              
+              <LinearProgress 
+                variant={importProgress.progressPercent > 0 ? 'determinate' : 'indeterminate'}
+                value={importProgress.progressPercent}
+                sx={{ mb: 1 }}
+              />
+              
+              {importProgress.totalLines > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Lignes traitées: {importProgress.totalLines}
+                  </Typography>
+                  <Typography variant="caption" color="success.main">
+                    Succès: {importProgress.successCount}
+                  </Typography>
+                  {importProgress.errorCount > 0 && (
+                    <Typography variant="caption" color="error.main">
+                      Erreurs: {importProgress.errorCount}
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {importResult && !importLoading && (
             <Box sx={{ mt: 2 }}>
               <Alert severity={importResult.error_count === 0 ? 'success' : 'warning'}>
                 <Typography variant="body2">
@@ -530,7 +752,7 @@ function SignaturesList() {
             onClick={() => setImportDialogOpen(false)}
             disabled={importLoading}
           >
-            Annuler
+            {importLoading ? 'Fermer' : 'Annuler'}
           </Button>
           <Button
             onClick={handleImportConfirm}
@@ -562,3 +784,4 @@ function SignaturesList() {
 }
 
 export default SignaturesList;
+

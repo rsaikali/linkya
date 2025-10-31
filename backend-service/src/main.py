@@ -1,6 +1,7 @@
 """Main FastAPI backend for Nilmia."""
 
 import asyncio
+import json
 import logging
 import redis
 import redis.asyncio as aioredis
@@ -193,43 +194,25 @@ async def get_all_appliances():
 
 
 @app.get("/api/signatures")
-async def get_all_signatures(
-    page: int = Query(default=1, ge=1, description="Page number"),
-    per_page: int = Query(default=20, ge=1, le=100, description="Signatures per page"),
-):
+async def get_all_signatures():
     """
-    Retrieves all signatures with pagination.
-
-    Args:
-        page: Page number (starts at 1)
-        per_page: Number of signatures per page (1-100)
+    Retrieves all signatures.
 
     Returns:
-        Paginated list of signatures with appliance information
+        List of all signatures with appliance information
     """
     try:
-        # Utiliser la fonction existante qui retourne toutes les signatures
-        all_signatures = db_manager.get_all_signatures_with_appliance()
-        
-        # Calculer la pagination
-        total = len(all_signatures)
-        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
-        
-        # Extraire la page demandée
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        signatures_page = all_signatures[start_idx:end_idx]
+        signatures = db_manager.get_all_signatures_with_appliance()
         
         return {
-            "page": page,
-            "per_page": per_page,
-            "total": total,
-            "total_pages": total_pages,
-            "signatures": signatures_page,
+            "total": len(signatures),
+            "signatures": signatures,
         }
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des signatures: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+        logger.error(f"Error retrieving signatures: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Server error: {str(e)}"
+        )
 
 
 @app.delete("/api/signatures")
@@ -422,22 +405,24 @@ async def invalidate_detection(detection_id: int):
 
 @app.get("/api/detections")
 async def get_detected_appliances(
-    hours: int = Query(default=None, description="Nombre d'heures d'historique (pour périodes longues)"),
-    minutes: int = Query(default=None, description="Nombre de minutes d'historique (pour courtes périodes)"),
-    page: int = Query(default=1, ge=1, description="Numéro de page (commence à 1)"),
-    per_page: int = Query(default=10, ge=1, le=100, description="Nombre d'éléments par page (max 100)"),
+    hours: int = Query(
+        default=None,
+        description="Nombre d'heures d'historique (pour périodes longues)"
+    ),
+    minutes: int = Query(
+        default=None,
+        description="Nombre de minutes d'historique (pour courtes périodes)"
+    ),
 ):
     """
-    Récupère les détections d'appareils par le NILM avec pagination.
+    Récupère les détections d'appareils par le NILM.
 
     Args:
         hours: Nombre d'heures d'historique à récupérer
         minutes: Nombre de minutes d'historique à récupérer
-        page: Numéro de page (commence à 1)
-        per_page: Nombre d'éléments par page (max 100)
 
     Returns:
-        Liste paginée des détections avec informations sur les appareils
+        Liste des détections avec informations sur les appareils
     """
     try:
         # Déterminer la période à récupérer
@@ -469,26 +454,18 @@ async def get_detected_appliances(
             start_time = end_time - delta
 
         detections = db_manager.get_detected_appliances(start_time, end_time)
-        
-        # Pagination
-        total = len(detections)
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        paginated_detections = detections[start_idx:end_idx]
-        
-        total_pages = (total + per_page - 1) // per_page
 
         return {
             "start_time": start_time.isoformat() if start_time else None,
             "end_time": end_time.isoformat() if end_time else None,
-            "total_detections": total,
-            "page": page,
-            "per_page": per_page,
-            "total_pages": total_pages,
-            "detections": paginated_detections,
+            "total_detections": len(detections),
+            "detections": detections,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
 
 
 @app.post("/api/signatures")
@@ -852,10 +829,36 @@ async def import_signatures(file: UploadFile):
     import csv
     from io import StringIO
 
+    # Helper function to publish progress to WebSocket
+    def publish_progress_sync(event: str, data: dict):
+        """Publish import progress to Redis for WebSocket streaming"""
+        try:
+            if redis_client:
+                message = json.dumps({
+                    "event": event,
+                    "data": data,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                redis_client.publish("import:progress", message)
+                logger.info(f"📢 Published {event} to Redis")
+        except Exception as e:
+            logger.error(f"Failed to publish progress to Redis: {e}")
+
     try:
+        # Publish import_start event
+        publish_progress_sync("import_start", {
+            "status": "started",
+            "filename": file.filename
+        })
+
         # Lire le contenu du CSV
         content = await file.read()
         content_str = content.decode('utf-8')
+        
+        # Premier passage : compter les lignes totales
+        lines = content_str.strip().split('\n')
+        total_lines_expected = len(lines) - 1  # -1 pour le header
+        
         csv_reader = csv.DictReader(StringIO(content_str))
 
         # Valider les colonnes requises
@@ -865,27 +868,38 @@ async def import_signatures(file: UploadFile):
             "end_time"
         }
         if not required_columns.issubset(csv_reader.fieldnames or []):
+            publish_progress_sync("import_error", {
+                "error": f"Colonnes requises: {', '.join(required_columns)}"
+            })
             raise HTTPException(
                 status_code=422,
                 detail=f"Colonnes requises: {', '.join(required_columns)}"
             )
 
         # Supprimer toutes les signatures existantes avant l'import
-        logger.info("Suppression de toutes les signatures existantes avant import...")
+        logger.info("Suppression de toutes les signatures existantes...")
         delete_result = db_manager.delete_all_signatures()
-        logger.info(f"{delete_result['signatures_deleted']} signature(s) supprimée(s)")
+        logger.info(
+            f"{delete_result['signatures_deleted']} signature(s) supprimée(s)"
+        )
+
+        publish_progress_sync("import_progress", {
+            "status": "deleted_old_signatures",
+            "count": delete_result['signatures_deleted'],
+            "total_expected": total_lines_expected
+        })
 
         # Importer ligne par ligne
         from .config import get_celery_app
         celery_app = get_celery_app()
 
-        total_lines = 0
+        processed_lines = 0
         success_count = 0
         error_count = 0
         errors = []
 
         for line_num, row in enumerate(csv_reader, start=2):
-            total_lines += 1
+            processed_lines += 1
 
             try:
                 # Valider les champs
@@ -928,6 +942,18 @@ async def import_signatures(file: UploadFile):
 
                 success_count += 1
 
+                # Publish progress every 5 lines
+                if processed_lines % 5 == 0:
+                    progress_percent = int(
+                        (processed_lines / total_lines_expected) * 100
+                    ) if total_lines_expected > 0 else 0
+                    publish_progress_sync("import_progress", {
+                        "total_lines": processed_lines,
+                        "success_count": success_count,
+                        "error_count": error_count,
+                        "progress_percent": progress_percent
+                    })
+
             except ValueError as e:
                 error_count += 1
                 errors.append({
@@ -941,10 +967,18 @@ async def import_signatures(file: UploadFile):
                     "error": f"Erreur inattendue: {str(e)}"
                 })
 
+        # Publish import_complete event
+        publish_progress_sync("import_complete", {
+            "status": "completed",
+            "total_lines": processed_lines,
+            "success_count": success_count,
+            "error_count": error_count
+        })
+
         return {
             "status": "completed",
             "signatures_deleted": delete_result["signatures_deleted"],
-            "total_lines": total_lines,
+            "total_lines": processed_lines,
             "success_count": success_count,
             "error_count": error_count,
             "errors": errors
@@ -1204,6 +1238,85 @@ class DetectionUpdatesManager:
 detection_updates_manager = DetectionUpdatesManager()
 
 
+# --- WebSocket Manager for Import Progress ---
+class ImportProgressManager:
+    """Manages WebSocket connections for real-time import progress."""
+    
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self.redis_client = None
+        self.pubsub = None
+        self.listener_task = None
+    
+    async def connect(self, websocket: WebSocket):
+        """Accept new WebSocket connection."""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"Import WS connected. Total: {len(self.active_connections)}")
+        
+        if not self.listener_task:
+            await self.start_redis_listener()
+    
+    def disconnect(self, websocket: WebSocket):
+        """Remove WebSocket connection."""
+        self.active_connections.discard(websocket)
+        logger.info(f"Import WS disconnected. Total: {len(self.active_connections)}")
+    
+    async def start_redis_listener(self):
+        """Start listening to Redis Pub/Sub channel."""
+        try:
+            redis_url = settings.celery_broker_url.replace('redis://', '')
+            host_port = redis_url.split('/')[0]
+            
+            self.redis_client = await aioredis.from_url(
+                f"redis://{host_port}",
+                decode_responses=True
+            )
+            self.pubsub = self.redis_client.pubsub()
+            await self.pubsub.subscribe("import:progress")
+            
+            logger.info("✅ Started Redis listener for import:progress")
+            self.listener_task = asyncio.create_task(self._listen_redis())
+            
+        except Exception as e:
+            logger.error(f"Failed to start import Redis listener: {e}")
+    
+    async def _listen_redis(self):
+        """Background task that listens to Redis and broadcasts to WebSockets."""
+        logger.info("🎧 Import Redis listener task started")
+        try:
+            async for message in self.pubsub.listen():
+                if message['type'] == 'message':
+                    data = message['data']
+                    logger.debug(f"📢 Broadcasting import progress to {len(self.active_connections)} clients")
+                    await self.broadcast(data)
+        except Exception as e:
+            logger.error(f"Error in import Redis listener: {e}", exc_info=True)
+        finally:
+            logger.info("🔚 Import Redis listener task ending")
+            if self.pubsub:
+                await self.pubsub.unsubscribe("import:progress")
+                await self.pubsub.close()
+            if self.redis_client:
+                await self.redis_client.close()
+    
+    async def broadcast(self, message: str):
+        """Broadcast message to all connected WebSocket clients."""
+        disconnected = set()
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.warning(f"Failed to send to import WebSocket: {e}")
+                disconnected.add(connection)
+        
+        for conn in disconnected:
+            self.disconnect(conn)
+
+
+import_progress_manager = ImportProgressManager()
+
+
 @app.websocket("/ws/training")
 async def websocket_training_logs(websocket: WebSocket):
     """
@@ -1281,3 +1394,29 @@ async def websocket_detection_updates(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Detection WebSocket error: {e}")
         detection_updates_manager.disconnect(websocket)
+
+
+@app.websocket("/ws/import")
+async def websocket_import_progress(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time import progress updates.
+    
+    Clients connect to receive live progress during CSV signature import.
+    Events include: import_start, import_progress, import_complete.
+    """
+    await import_progress_manager.connect(websocket)
+    try:
+        while True:
+            try:
+                data = await websocket.receive_text()
+                logger.debug(f"Received from import client: {data}")
+            except Exception as recv_error:
+                logger.debug(f"Import receive error: {recv_error}")
+                break
+    except WebSocketDisconnect:
+        logger.info("Import WebSocket client disconnected")
+        import_progress_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Import WebSocket error: {e}")
+        import_progress_manager.disconnect(websocket)
+

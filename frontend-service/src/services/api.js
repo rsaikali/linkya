@@ -57,8 +57,8 @@ export const apiService = {
     }
   },
 
-  // Récupérer les détections avec pagination optionnelle
-  getDetections: async (hours = 24, page = null, perPage = null) => {
+  // Récupérer les détections
+  getDetections: async (hours = 24) => {
     try {
       const params = {};
       // Si hours est null, on envoie 0 pour signifier "toutes"
@@ -67,8 +67,6 @@ export const apiService = {
       } else {
         params.hours = 0;
       }
-      if (page !== null) params.page = page;
-      if (perPage !== null) params.per_page = perPage;
       
       const response = await api.get('/api/detections', { params });
       return response.data;
@@ -78,15 +76,10 @@ export const apiService = {
     }
   },
 
-  // Récupérer les signatures avec pagination
-  getSignatures: async (page = 1, perPage = 20) => {
+  // Récupérer les signatures
+  getSignatures: async () => {
     try {
-      const params = {
-        page: page,
-        per_page: perPage,
-      };
-      
-      const response = await api.get('/api/signatures', { params });
+      const response = await api.get('/api/signatures');
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des signatures:', error);

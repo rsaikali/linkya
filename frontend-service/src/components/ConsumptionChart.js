@@ -30,6 +30,7 @@ import { ShowChart, ZoomOutMap } from '@mui/icons-material';
 import { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import SignatureModal from './SignatureModal';
+import { useChart } from '../context/ChartContext';
 
 ChartJS.register(
   CategoryScale,
@@ -46,6 +47,9 @@ ChartJS.register(
 );
 
 const ConsumptionChart = () => {
+  // Context pour partager la période visible
+  const { setVisibleTimeRange } = useChart();
+  
   // Données brutes complètes (chargées une seule fois)
   const [rawData, setRawData] = useState(null);
   // Détections
@@ -87,6 +91,22 @@ const ConsumptionChart = () => {
         setLoadingProgress(70);
         
         setRawData(result);
+        
+        // Initialiser la période visible pour les 48 dernières heures
+        if (result?.data && result.data.length > 0) {
+          const now = new Date();
+          const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+          const minIndex48h = result.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
+          const visibleMin = minIndex48h !== -1 ? minIndex48h : 0;
+          const visibleMax = result.data.length - 1;
+          
+          if (result.data[visibleMin] && result.data[visibleMax]) {
+            const startTime = new Date(result.data[visibleMin].time);
+            const endTime = new Date(result.data[visibleMax].time);
+            setVisibleTimeRange({ startTime, endTime });
+          }
+        }
+        
         setLoadingProgress(100);
         
         setError(null);
@@ -103,7 +123,7 @@ const ConsumptionChart = () => {
     // Charger les détections
     const fetchDetections = async () => {
       try {
-        const result = await apiService.getDetections(0, null, 100); // 0 = all detections, 100 per page (max)
+        const result = await apiService.getDetections(0); // 0 = all detections
         setDetections(result.detections || []);
       } catch (err) {
         console.error('Failed to fetch detections:', err);
@@ -114,7 +134,7 @@ const ConsumptionChart = () => {
     // Charger les signatures
     const fetchSignatures = async () => {
       try {
-        const result = await apiService.getSignatures(1, 100); // Page 1, 100 signatures max (backend limit)
+        const result = await apiService.getSignatures();
         setSignatures(result.signatures || []);
       } catch (err) {
         console.error('❌ Failed to fetch signatures:', err);
@@ -127,7 +147,7 @@ const ConsumptionChart = () => {
 
     const handleDetectionComplete = async (data) => {
       try {
-        const result = await apiService.getDetections(0, null, 100);
+        const result = await apiService.getDetections(0);
         setDetections(result.detections || []);
       } catch (err) {
         console.error('Failed to refresh detections:', err);
@@ -161,7 +181,7 @@ const ConsumptionChart = () => {
         clearTimeout(interactionTimeoutRef.current);
       }
     };
-  }, []);
+  }, [setVisibleTimeRange]);
 
   // Plus de useEffect pour le zoom initial - on le fait directement dans les scales
 
@@ -319,8 +339,15 @@ const ConsumptionChart = () => {
       const visibleMax = Math.min(rawData.data.length - 1, Math.ceil(xScale.max || rawData.data.length - 1));
       
       const visibleCount = visibleMax - visibleMin + 1;
+      
+      // Mettre à jour la période visible dans le contexte
+      if (rawData.data[visibleMin] && rawData.data[visibleMax]) {
+        const startTime = new Date(rawData.data[visibleMin].time);
+        const endTime = new Date(rawData.data[visibleMax].time);
+        setVisibleTimeRange({ startTime, endTime });
+      }
     }
-  }, [rawData]);
+  }, [rawData, setVisibleTimeRange]);
 
   // Palette de couleurs par appareil
   const getApplianceColor = useCallback((applianceName) => {
