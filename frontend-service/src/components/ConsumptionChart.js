@@ -378,7 +378,7 @@ const ConsumptionChart = () => {
     
     if (totalAppliances === 0) {
       return {
-        bg: `${APPLIANCE_COLORS[0]}26`,
+        bg: `${APPLIANCE_COLORS[0]}99`,
         border: `${APPLIANCE_COLORS[0]}99`,
         solid: APPLIANCE_COLORS[0],
         dark: APPLIANCE_COLORS[0],
@@ -399,7 +399,7 @@ const ConsumptionChart = () => {
     const baseColor = APPLIANCE_COLORS[colorIndex];
     
     return {
-      bg: `${baseColor}26`,
+      bg: `${baseColor}99`,
       border: `${baseColor}99`,
       solid: baseColor,
       dark: baseColor,
@@ -471,39 +471,98 @@ const ConsumptionChart = () => {
 
     const annotations = {};
     
+    // Fonction pour détecter les chevauchements et assigner des niveaux (rows)
+    const assignRowLevels = (items) => {
+      // Trier par heure de début
+      const sorted = [...items].sort((a, b) => a.startIndex - b.startIndex);
+      
+      // Tableau pour garder trace de la fin de chaque niveau (row)
+      const rowEndIndices = [];
+      
+      sorted.forEach(item => {
+        // Trouver le premier niveau disponible (en commençant par 0)
+        let assignedRow = -1;
+        
+        for (let i = 0; i < rowEndIndices.length; i++) {
+          // Si ce niveau est libre (la fin précédente < début actuel)
+          if (rowEndIndices[i] < item.startIndex) {
+            assignedRow = i;
+            rowEndIndices[i] = item.endIndex;
+            break;
+          }
+        }
+        
+        // Si aucun niveau existant n'est disponible, créer un nouveau niveau
+        if (assignedRow === -1) {
+          assignedRow = rowEndIndices.length;
+          rowEndIndices.push(item.endIndex);
+        }
+        
+        item.row = assignedRow;
+      });
+      
+      return Math.max(1, rowEndIndices.length);
+    };
+    
     if (annotationMode === 'detections') {
-      // Créer les annotations pour chaque détection (zones colorées uniquement)
-      detections
+      // Préparer les données avec indices
+      const detectionItems = detections
         .filter(d => d.start_time && d.end_time && d.name)
-        .forEach(d => {
+        .map(d => {
           const startTime = new Date(d.start_time).getTime();
           const endTime = new Date(d.end_time).getTime();
           const startIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
           const endIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
           
           if (startIndex !== -1) {
-            const colors = getApplianceColor(d.name);
-            const finalEndIndex = endIndex !== -1 ? endIndex : rawData.data.length - 1;
-            
-            annotations[`detection-${d.id}`] = {
-              type: 'box',
-              xMin: startIndex,
-              xMax: finalEndIndex,
-              yMin: 'min',  // Du bas du graphique
-              yMax: 'max',  // Au haut du graphique
-              backgroundColor: colors.bg,
-              borderColor: colors.border,
-              borderWidth: 1,
-              drawTime: 'beforeDatasetsDraw',
-              clip: true,  // Clipper l'annotation dans la zone du graphique
+            return {
+              ...d,
+              startIndex,
+              endIndex: endIndex !== -1 ? endIndex : rawData.data.length - 1,
             };
           }
-        });
-    } else if (annotationMode === 'signatures') {
-      // Créer les annotations pour chaque signature (lignes verticales avec labels)
-      const filteredSignatures = signatures.filter(s => s.start_time && s.end_time && s.appliance_name);
+          return null;
+        })
+        .filter(Boolean);
       
-      filteredSignatures.forEach(s => {
+      // Assigner les niveaux
+      const maxRows = assignRowLevels(detectionItems);
+      
+      // Créer les annotations avec décalage vertical
+      detectionItems.forEach(d => {
+        const colors = getApplianceColor(d.name);
+        const rowHeight = 0.045; // 4.5% de la hauteur par niveau (3% + 50%)
+        
+        annotations[`detection-${d.id}`] = {
+          type: 'box',
+          xMin: d.startIndex,
+          xMax: d.endIndex,
+          yMin: (ctx) => {
+            const yScale = ctx.chart.scales.y;
+            const range = yScale.max - yScale.min;
+            // Le niveau 0 est tout en haut, niveau 1 juste en dessous, etc.
+            const rowOffset = (d.row + 1) * rowHeight;
+            return yScale.max - (range * rowOffset);
+          },
+          yMax: (ctx) => {
+            const yScale = ctx.chart.scales.y;
+            const range = yScale.max - yScale.min;
+            // Haut de la barre = max - (niveau * hauteur)
+            const rowOffset = d.row * rowHeight;
+            return yScale.max - (range * rowOffset);
+          },
+          backgroundColor: colors.bg,
+          borderColor: colors.border,
+          borderWidth: 1,
+          drawTime: 'beforeDatasetsDraw',
+          clip: true,
+        };
+      });
+    } else if (annotationMode === 'signatures') {
+      // Préparer les données avec indices
+      const signatureItems = signatures
+        .filter(s => s.start_time && s.end_time && s.appliance_name)
+        .map(s => {
           const startTime = new Date(s.start_time).getTime();
           const endTime = new Date(s.end_time).getTime();
           
@@ -528,32 +587,53 @@ const ConsumptionChart = () => {
             }
           });
           
-          
           if (startIndex !== -1 && endIndex !== -1) {
-            const colors = getApplianceColor(s.appliance_name);
-            const finalStartIndex = Math.min(startIndex, endIndex);
-            const finalEndIndex = Math.max(startIndex, endIndex);
-            
-            // Pour les signatures négatives : bordure rouge, fond plus transparent, et bordure plus épaisse
-            const isNegative = s.is_negative === true;
-            
-            // Zone colorée pour la signature
-            annotations[`signature-box-${s.id}`] = {
-              type: 'box',
-              xMin: finalStartIndex,
-              xMax: finalEndIndex,
-              yMin: 'min',
-              yMax: 'max',
-              backgroundColor: colors.bg,
-              borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : colors.border,
-              borderWidth: 1,
-              borderDash: isNegative ? [10, 5] : undefined,  // Ligne pointillée seulement pour les négatives
-              drawTime: 'beforeDatasetsDraw',
-              clip: true,
+            return {
+              ...s,
+              startIndex: Math.min(startIndex, endIndex),
+              endIndex: Math.max(startIndex, endIndex),
             };
-            
-          } 
-        });
+          }
+          return null;
+        })
+        .filter(Boolean);
+      
+      // Assigner les niveaux
+      const maxRows = assignRowLevels(signatureItems);
+      
+      // Créer les annotations avec décalage vertical
+      signatureItems.forEach(s => {
+        const colors = getApplianceColor(s.appliance_name);
+        const isNegative = s.is_negative === true;
+        const rowHeight = 0.045; // 4.5% de la hauteur par niveau (3% + 50%)
+        
+        // Zone colorée pour la signature
+        annotations[`signature-box-${s.id}`] = {
+          type: 'box',
+          xMin: s.startIndex,
+          xMax: s.endIndex,
+          yMin: (ctx) => {
+            const yScale = ctx.chart.scales.y;
+            const range = yScale.max - yScale.min;
+            // Le niveau 0 est tout en haut, niveau 1 juste en dessous, etc.
+            const rowOffset = (s.row + 1) * rowHeight;
+            return yScale.max - (range * rowOffset);
+          },
+          yMax: (ctx) => {
+            const yScale = ctx.chart.scales.y;
+            const range = yScale.max - yScale.min;
+            // Haut de la barre = max - (niveau * hauteur)
+            const rowOffset = s.row * rowHeight;
+            return yScale.max - (range * rowOffset);
+          },
+          backgroundColor: colors.bg,
+          borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : colors.border,
+          borderWidth: 1,
+          borderDash: isNegative ? [10, 5] : undefined,
+          drawTime: 'beforeDatasetsDraw',
+          clip: true,
+        };
+      });
     }
 
     return { annotations, maxRows: 0 };
