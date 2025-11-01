@@ -49,6 +49,53 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           boxShadow: '0 2px 8px rgba(59, 57, 54, 0.1)',
+          borderRadius: '20px',
+        },
+      },
+    },
+    MuiCardHeader: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#BD2A2E',
+          color: '#fff',
+          '& .MuiIconButton-root': {
+            color: '#fff',
+            '&:hover': {
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+            '& .MuiSvgIcon-root': {
+              color: '#fff',
+            },
+          },
+          '& .MuiSvgIcon-root': {
+            color: '#fff',
+          },
+          '& .MuiSwitch-root': {
+            '& .MuiSwitch-switchBase': {
+              color: '#fff',
+              '&.Mui-checked': {
+                color: '#fff',
+              },
+            },
+            '& .MuiSwitch-track': {
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            },
+          },
+          '& .MuiTypography-caption': {
+            color: 'rgba(255, 255, 255, 0.9)',
+          },
+        },
+        title: {
+          color: '#fff',
+          fontWeight: 600,
+        },
+        subheader: {
+          color: 'rgba(255, 255, 255, 0.8)',
+        },
+        avatar: {
+          '& .MuiSvgIcon-root': {
+            color: '#fff',
+          },
         },
       },
     },

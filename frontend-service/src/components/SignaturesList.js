@@ -369,20 +369,50 @@ function SignaturesList() {
     const minutes = Math.round(seconds / 60);
     
     if (minutes < 60) {
-      return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+      return `${minutes}min`;
     } else {
       const hours = Math.floor(minutes / 60);
       const remainingMinutes = minutes % 60;
       if (remainingMinutes === 0) {
-        return `${hours} ${hours === 1 ? 'heure' : 'heures'}`;
+        return `${hours}h`;
       }
-      return `${hours} ${hours === 1 ? 'heure' : 'heures'} et ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`;
+      return `${hours}h${remainingMinutes}min`;
     }
   };
 
   const formatPower = (watts) => {
     if (watts === null || watts === undefined) return 'N/A';
     return `${Math.round(watts / 100) * 100} W`;
+  };
+
+  const formatHumanizedDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) {
+      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
+    } else if (diffMinutes < 60) {
+      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
+    } else if (diffDays < 7) {
+      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
+    } else if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30);
+      return `il y a ${months} mois`;
+    } else {
+      const years = Math.floor(diffDays / 365);
+      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
+    }
   };
 
   const getRowBackgroundColor = (isNegative) => {
@@ -535,7 +565,7 @@ function SignaturesList() {
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                 <TableCell>Appareil</TableCell>
-                <TableCell align="right">Plage horaire</TableCell>
+                <TableCell align="left">Détails</TableCell>
                 <TableCell align="right" sx={{ width: '60px', padding: '6px 16px' }}></TableCell>
               </TableRow>
             </TableHead>
@@ -565,18 +595,15 @@ function SignaturesList() {
                       <Typography variant="body2" fontWeight="medium" component="div">
                         {signature.appliance_name}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
-                        {formatPower(signature.avg_power)}
-                      </Typography>
                     </Box>
                   </TableCell>
-                  <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+                  <TableCell align="left" sx={{ fontSize: 'small' }}>
                     <Box>
                       <Typography variant="body2" component="div">
-                        {`${formatDateTime(signature.start_time)} -> ${formatTimeOnly(signature.end_time)}`}
+                        <strong>{formatPower(signature.avg_power)}</strong> pendant <strong>{formatDurationFull(signature.duration_seconds)}</strong>
                       </Typography>
                       <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
-                        {formatDurationFull(signature.duration_seconds)}
+                        {formatHumanizedDate(signature.start_time)} ({formatDateTime(signature.start_time)} - {formatTimeOnly(signature.end_time)})
                       </Typography>
                     </Box>
                   </TableCell>

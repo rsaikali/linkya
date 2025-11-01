@@ -279,7 +279,7 @@ function DetectionsList() {
                   <TableHead>
                     <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                       <TableCell>Appareil</TableCell>
-                      <TableCell align="right">Plage horaire</TableCell>
+                      <TableCell align="left">Détails</TableCell>
                       <TableCell align="right" sx={{ width: '100px', padding: '6px 16px' }}></TableCell>
                     </TableRow>
                   </TableHead>
@@ -378,7 +378,7 @@ function DetectionsList() {
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
-  const durationMinutes = Math.round((endTime - startTime) / 60000);
+  const durationSeconds = Math.round((endTime - startTime) / 1000);
 
   // Statut de validation
   const isValidated = detection.user_validated === true && detection.is_correct === true;
@@ -400,17 +400,58 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     });
   };
 
-  const formatDuration = (minutes) => {
-    if (minutes < 60) {
-      return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
-    } else {
-      const hours = Math.floor(minutes / 60);
-      const remainingMinutes = minutes % 60;
-      if (remainingMinutes === 0) {
-        return `${hours} ${hours === 1 ? 'heure' : 'heures'}`;
-      }
-      return `${hours} ${hours === 1 ? 'heure' : 'heures'} et ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`;
+  const formatDurationFull = (seconds) => {
+    if (!seconds) return 'N/A';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    const parts = [];
+    if (hours > 0) {
+      parts.push(`${hours}h`);
     }
+    if (minutes > 0) {
+      parts.push(`${minutes}min`);
+    }
+    if (secs > 0 || parts.length === 0) {
+      parts.push(`${secs}sec`);
+    }
+    
+    return parts.join(' ');
+  };
+
+  const formatHumanizedDate = (date) => {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) {
+      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
+    } else if (diffMinutes < 60) {
+      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
+    } else if (diffDays < 7) {
+      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
+    } else if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30);
+      return `il y a ${months} mois`;
+    } else {
+      const years = Math.floor(diffDays / 365);
+      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
+    }
+  };
+
+  const formatPower = (watts) => {
+    if (watts === null || watts === undefined) return 'N/A';
+    return `${Math.round(watts / 100) * 100} W`;
   };
 
   // Background selon la confiance : rouge si < 0.6, orange si >= 0.6 et < 0.8
@@ -465,19 +506,16 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
             <Typography variant="body2" component="div" fontWeight="medium">
               {detection.name || 'Inconnu'}
             </Typography>
-            <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
-              {detection.avg_power ? `${Math.round(detection.avg_power / 100) * 100} W` : 'N/A'}
-            </Typography>
           </Box>
         </Box>
       </TableCell>
-      <TableCell align="right" sx={{ fontSize: 'small', whiteSpace: 'nowrap' }}>
+      <TableCell align="left" sx={{ fontSize: 'small' }}>
         <Box>
           <Typography variant="body2" component="div">
-            {`${formatDateTime(startTime)} -> ${formatTimeOnly(endTime)}`}
+            <strong>{formatPower(detection.avg_power)}</strong> pendant <strong>{formatDurationFull(durationSeconds)}</strong>
           </Typography>
           <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
-            {formatDuration(durationMinutes)}
+            {formatHumanizedDate(startTime)} ({formatDateTime(startTime)} - {formatTimeOnly(endTime)})
           </Typography>
         </Box>
       </TableCell>

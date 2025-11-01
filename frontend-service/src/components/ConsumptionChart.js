@@ -452,10 +452,10 @@ const ConsumptionChart = () => {
           label: 'Puissance moyenne (VA)',
           data: powerData,
           borderColor: '#0d6e00ff',
-          backgroundColor: 'rgba(72, 105, 102, 0.1)',
+          backgroundColor: '#BD2A2E50',
           fill: true,
-          borderWidth: 1,
-          tension: 0,
+          borderWidth: 0,
+          tension: 0.4,
           pointRadius: 0,
           pointHoverRadius: 0,
         },
@@ -835,9 +835,9 @@ const ConsumptionChart = () => {
                 <Typography 
                   variant="caption" 
                   sx={{ 
-                    fontSize: '0.75rem',
+                    fontSize: '1rem',
                     color: annotationMode === 'signatures' ? 'primary.main' : 'text.secondary',
-                    fontWeight: annotationMode === 'signatures' ? 600 : 400,
+                    fontWeight: annotationMode === 'signatures' ? 700 : 400,
                   }}
                 >
                   Signatures
@@ -845,16 +845,16 @@ const ConsumptionChart = () => {
                 <Switch
                   checked={annotationMode === 'detections'}
                   onChange={(e) => setAnnotationMode(e.target.checked ? 'detections' : 'signatures')}
-                  size="small"
+                  size="medium"
                   color="primary"
                   disabled={loading}
                 />
                 <Typography 
                   variant="caption" 
                   sx={{ 
-                    fontSize: '0.75rem',
+                    fontSize: '1rem',
                     color: annotationMode === 'detections' ? 'primary.main' : 'text.secondary',
-                    fontWeight: annotationMode === 'detections' ? 600 : 400,
+                    fontWeight: annotationMode === 'detections' ? 700 : 400,
                   }}
                 >
                   Détections
