@@ -284,7 +284,7 @@ function DetectionsList() {
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
-                      <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>Détails</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 600, width: '100px' }}></TableCell>
                     </TableRow>
                   </TableHead>
@@ -522,7 +522,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           </Typography>
         </Box>
       </TableCell>
-      <TableCell align="left" sx={{ fontSize: 'small' }}>
+      <TableCell align="right" sx={{ fontSize: 'small' }}>
         <Box>
           <Typography variant="body2" component="div">
             <strong>{formatPower(detection.avg_power)}</strong> pendant <strong>{formatDurationFull(durationSeconds)}</strong>

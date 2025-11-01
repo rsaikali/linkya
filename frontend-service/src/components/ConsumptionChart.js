@@ -78,6 +78,14 @@ const ConsumptionChart = () => {
   const [selectionEnd, setSelectionEnd] = useState(null);
   const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
 
+  // Tooltip personnalisé
+  const [customTooltip, setCustomTooltip] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    content: null,
+  });
+
   // Charger TOUTES les données disponibles au montage
   useEffect(() => {
     const loadAllData = async () => {
@@ -306,6 +314,127 @@ const ConsumptionChart = () => {
     };
   }, [rawData]);
 
+  // Gestion du tooltip personnalisé
+  useEffect(() => {
+    const canvas = chartRef.current?.canvas;
+    if (!canvas || !rawData?.data) return;
+
+    const handleTooltipMove = (e) => {
+      // Ne pas afficher le tooltip pendant la sélection
+      if (selectionRef.current.isSelecting) {
+        setCustomTooltip({ visible: false, x: 0, y: 0, content: null });
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const chart = chartRef.current;
+      if (!chart?.scales?.x || !chart?.scales?.y) return;
+
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+      
+      // Convertir pixel → index de données
+      const dataIndex = Math.round(xScale.getValueForPixel(x));
+      
+      if (dataIndex >= 0 && dataIndex < rawData.data.length) {
+        const dataPoint = rawData.data[dataIndex];
+        
+        // Vérifier si on survole une annotation
+        let hoveredAnnotation = null;
+        const items = annotationMode === 'detections' ? detections : signatures;
+        
+        for (const item of items) {
+          const itemName = item.name || item.appliance_name;
+          if (!itemName) continue;
+          
+          const startTime = new Date(item.start_time).getTime();
+          const endTime = new Date(item.end_time).getTime();
+          const currentTime = new Date(dataPoint.time).getTime();
+          
+          if (currentTime >= startTime && currentTime <= endTime) {
+            // Vérifier si on est dans la zone verticale de l'annotation
+            const pixelY = yScale.getPixelForValue(0);
+            const range = yScale.max - yScale.min;
+            const annotationHeight = range * 0.045;
+            
+            // Trouver le niveau (row) de cette annotation
+            const annotationYMax = yScale.max;
+            const annotationYMin = yScale.max - annotationHeight;
+            
+            // Si la souris est dans la zone de l'annotation verticalement
+            const mouseValue = yScale.getValueForPixel(y);
+            if (mouseValue <= annotationYMax && mouseValue >= annotationYMin - (annotationHeight * 5)) {
+              hoveredAnnotation = item;
+              break;
+            }
+          }
+        }
+        
+        if (hoveredAnnotation) {
+          // Tooltip pour annotation
+          const isDetection = annotationMode === 'detections';
+          const itemName = hoveredAnnotation.name || hoveredAnnotation.appliance_name;
+          const startDate = new Date(hoveredAnnotation.start_time);
+          const endDate = new Date(hoveredAnnotation.end_time);
+          const duration = (endDate - startDate) / 1000 / 60; // en minutes
+          
+          setCustomTooltip({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY - 10,
+            content: {
+              type: isDetection ? 'detection' : 'signature',
+              name: itemName,
+              startTime: startDate.toLocaleString('fr-FR'),
+              endTime: endDate.toLocaleString('fr-FR'),
+              duration: duration.toFixed(1),
+              energy: hoveredAnnotation.energy_consumed?.toFixed(2) || 'N/A',
+              isNegative: hoveredAnnotation.is_negative === true,
+              validated: hoveredAnnotation.validated,
+            },
+          });
+        } else {
+          // Tooltip pour données normales
+          const date = new Date(dataPoint.time);
+          const power = dataPoint.avg_papp;
+          
+          setCustomTooltip({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY - 10,
+            content: {
+              type: 'data',
+              time: date.toLocaleString('fr-FR', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                day: '2-digit',
+                month: '2-digit',
+                year: '2-digit'
+              }),
+              power: power.toFixed(0),
+            },
+          });
+        }
+      }
+    };
+
+    const handleTooltipLeave = () => {
+      setCustomTooltip({ visible: false, x: 0, y: 0, content: null });
+    };
+
+    canvas.addEventListener('mousemove', handleTooltipMove);
+    canvas.addEventListener('mouseleave', handleTooltipLeave);
+
+    return () => {
+      canvas.removeEventListener('mousemove', handleTooltipMove);
+      canvas.removeEventListener('mouseleave', handleTooltipLeave);
+    };
+  }, [rawData, detections, signatures, annotationMode]);
+
   // Plus de useEffect pour le zoom initial - on le fait directement dans les scales
 
   // Réinitialiser le zoom
@@ -405,7 +534,7 @@ const ConsumptionChart = () => {
       labels,
       datasets: [
         {
-          label: 'Puissance moyenne (VA)',
+          label: 'Puissance moyenne (W)',
           data: powerData,
           borderColor: '#0d6e00ff',
           backgroundColor: '#BD2A2E50',
@@ -622,28 +751,7 @@ const ConsumptionChart = () => {
         legend: { display: false },
         title: { display: false },
         tooltip: {
-          callbacks: {
-            title: (context) => {
-              // Formater le timestamp uniquement dans le tooltip
-              if (context[0] && rawData?.data) {
-                const index = context[0].parsed.x;
-                const dataPoint = rawData.data[index];
-                if (dataPoint) {
-                  const date = new Date(dataPoint.time);
-                  return date.toLocaleString('fr-FR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: '2-digit'
-                  });
-                }
-              }
-              return '';
-            },
-            label: (context) => `${context.dataset.label}: ${context.parsed.y.toFixed(0)} VA`,
-          },
+          enabled: false, // Désactiver le tooltip par défaut
         },
         zoom: {
           zoom: {
@@ -680,7 +788,7 @@ const ConsumptionChart = () => {
       scales: {
         y: {
           beginAtZero: true,
-          title: { display: true, text: 'Puissance (VA)' },
+          title: { display: true, text: 'Puissance (W)' },
         },
         x: {
           min: initialMin,  // Zoom initial sur 48h
@@ -688,20 +796,20 @@ const ConsumptionChart = () => {
           type: 'linear',  // Utiliser échelle linéaire pour les indices
           title: { display: false },
           ticks: { 
-            maxRotation: 45, 
-            minRotation: 45,
+            maxRotation: 0, 
+            minRotation: 0,
             autoSkip: true,
             maxTicksLimit: 20,
             callback: (value, index) => {
-              // Formater uniquement les ticks visibles
+              // Formater uniquement les ticks visibles sur deux lignes: Jour DD.MM et HH:mm
               if (rawData?.data && rawData.data[value]) {
                 const date = new Date(rawData.data[value].time);
-                return date.toLocaleString('fr-FR', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  day: '2-digit',
-                  month: '2-digit',
-                });
+                const dayName = date.toLocaleDateString('fr-FR', { weekday: 'long' });
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return [`${dayName} ${day}.${month}`, `${hours}:${minutes}`];
               }
               return '';
             },
@@ -856,47 +964,111 @@ const ConsumptionChart = () => {
               />
             )}
           </Box>
+        </CardContent>
+      </Card>
 
-          {getLegendItems().length > 0 && (
+      {/* Tooltip personnalisé */}
+      {customTooltip.visible && customTooltip.content && (
+        <Box
+          sx={{
+            position: 'fixed',
+            left: customTooltip.x,
+            top: customTooltip.y,
+            transform: 'translate(-50%, -100%)',
+            backgroundColor: 'rgba(255, 255, 255, 0.98)',
+            border: '1px solid rgba(0, 0, 0, 0.12)',
+            borderRadius: 2,
+            boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.15)',
+            padding: 1.5,
+            pointerEvents: 'none',
+            zIndex: 10000,
+            minWidth: 200,
+            maxWidth: 350,
+          }}
+        >
+          {customTooltip.content.type === 'data' ? (
+            // Tooltip pour données normales
             <Box>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5, fontWeight: 600 }}>
-                Légende des appareils {annotationMode === 'detections' ? 'détectés' : 'en signatures'}
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                {customTooltip.content.time}
               </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                {getLegendItems().map((item) => (
-                  <Box
-                    key={item.name}
+              <Typography variant="body1" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                {customTooltip.content.power} W
+              </Typography>
+            </Box>
+          ) : (
+            // Tooltip pour annotation (détection ou signature)
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 0.5,
+                    backgroundColor: getApplianceColor(
+                      customTooltip.content.name,
+                      null
+                    ).solid,
+                  }}
+                />
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {customTooltip.content.name}
+                </Typography>
+                {customTooltip.content.isNegative && (
+                  <Typography
+                    variant="caption"
                     sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      px: 1.5,
-                      py: 0.75,
-                      borderRadius: 1,
-                      backgroundColor: 'background.paper',
-                      border: '1px solid',
-                      borderColor: 'divider',
+                      backgroundColor: 'error.main',
+                      color: 'white',
+                      px: 0.5,
+                      borderRadius: 0.5,
+                      fontWeight: 600,
                     }}
                   >
-                    <Box
-                      sx={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: 0.5,
-                        backgroundColor: item.color,
-                      }}
-                    />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {item.name}
-                    </Typography>
-                    
-                  </Box>
-                ))}
+                    NÉGATIF
+                  </Typography>
+                )}
+              </Box>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Début: {customTooltip.content.startTime}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Fin: {customTooltip.content.endTime}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Durée: {customTooltip.content.duration} min
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Énergie: {customTooltip.content.energy} Wh
+                </Typography>
+                
+                {customTooltip.content.type === 'detection' && customTooltip.content.validated !== undefined && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: customTooltip.content.validated === true
+                        ? 'success.main'
+                        : customTooltip.content.validated === false
+                        ? 'error.main'
+                        : 'warning.main',
+                      fontWeight: 600,
+                      mt: 0.5,
+                    }}
+                  >
+                    {customTooltip.content.validated === true
+                      ? '✓ Validé'
+                      : customTooltip.content.validated === false
+                      ? '✗ Rejeté'
+                      : '⏳ En attente'}
+                  </Typography>
+                )}
               </Box>
             </Box>
           )}
-        </CardContent>
-      </Card>
+        </Box>
+      )}
 
       {selectedRange && (
         <SignatureModal

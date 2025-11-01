@@ -571,7 +571,7 @@ function SignaturesList() {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
-                <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600 }}>Détails</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 600, width: '60px' }}></TableCell>
               </TableRow>
             </TableHead>
@@ -612,7 +612,7 @@ function SignaturesList() {
                       </Typography>
                     </Box>
                   </TableCell>
-                  <TableCell align="left" sx={{ fontSize: 'small' }}>
+                  <TableCell align="right" sx={{ fontSize: 'small' }}>
                     <Box>
                       <Typography variant="body2" component="div">
                         <strong>{formatPower(signature.avg_power)}</strong> pendant <strong>{formatDurationFull(signature.duration_seconds)}</strong>
