@@ -24,7 +24,8 @@ import {
   Box,
   CircularProgress,
 } from '@mui/material';
-import { Delete, DeleteSweep, FileDownload, FileUpload, Assignment, ModelTraining } from '@mui/icons-material';
+import { Delete, DeleteSweep, FileDownload, FileUpload, ModelTraining } from '@mui/icons-material';
+import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
@@ -441,7 +442,7 @@ function SignaturesList() {
         title="Signatures d'appareils"
         titleTypographyProps={{ variant: 'h5' }}
         subheader={`${totalSignatures} signature(s)`}
-        avatar={<Assignment />}
+        avatar={<TrackChangesIcon />}
         action={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             <Tooltip title="Entraîner le modèle">

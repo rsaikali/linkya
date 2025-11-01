@@ -27,7 +27,8 @@ import {
 import annotationPlugin from 'chartjs-plugin-annotation';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { Line } from 'react-chartjs-2';
-import { ShowChart, ZoomOutMap } from '@mui/icons-material';
+import { ZoomOutMap } from '@mui/icons-material';
+import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import SignatureModal from './SignatureModal';
@@ -881,7 +882,7 @@ const ConsumptionChart = () => {
               ? `Chargement des données (${loadingProgress}%)...`
               : `Molette: zoom • Glisser: naviguer • Clic droit + glisser: créer signature`
           }
-          avatar={<ShowChart />}
+          avatar={<QueryStatsIcon />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               <MuiTooltip title="Réinitialiser le zoom">

@@ -22,6 +22,7 @@ import {
   Popover,
 } from '@mui/material';
 import { Edit, Close, Palette } from '@mui/icons-material';
+import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
 import { SketchPicker } from 'react-color';
 import api from '../services/api';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
@@ -152,7 +153,11 @@ function AppliancesList() {
   if (loading) {
     return (
       <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <CardHeader title="Appliances" />
+        <CardHeader 
+          title="Mes appareils électriques"
+          titleTypographyProps={{ variant: 'h5' }}
+          avatar={<ElectricalServicesIcon />}
+        />
         <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
           <LinearProgress />
         </CardContent>
@@ -163,7 +168,11 @@ function AppliancesList() {
   if (error) {
     return (
       <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <CardHeader title="Appliances" />
+        <CardHeader 
+          title="Mes appareils électriques"
+          titleTypographyProps={{ variant: 'h5' }}
+          avatar={<ElectricalServicesIcon />}
+        />
         <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
           <Alert severity="error">{error}</Alert>
         </CardContent>
@@ -175,7 +184,9 @@ function AppliancesList() {
     <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       <CardHeader
         title="Mes appareils électriques"
+        titleTypographyProps={{ variant: 'h5' }}
         subheader={`${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} disponibles`}
+        avatar={<ElectricalServicesIcon />}
       />
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
         {appliances.length === 0 ? (

@@ -24,7 +24,8 @@ import {
   Button,
   Snackbar,
 } from '@mui/material';
-import { Timeline, DeleteSweep, CheckCircle, Cancel, Search } from '@mui/icons-material';
+import { DeleteSweep, CheckCircle, Cancel, Search } from '@mui/icons-material';
+import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import { useChart } from '../context/ChartContext';
@@ -220,7 +221,7 @@ function DetectionsList() {
       <Card>
         <CardHeader
           title="Détections IA d'appareils"
-          avatar={<Timeline />}
+          avatar={<InsightsIcon />}
         />
         <CardContent>
           <Alert severity="error">{error}</Alert>
@@ -236,7 +237,7 @@ function DetectionsList() {
           title="Détections IA d'appareils"
           titleTypographyProps={{ variant: 'h5' }}
           subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} dans la période visible`}
-          avatar={<Timeline />}
+          avatar={<InsightsIcon />}
           action={
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               <Tooltip title="Lancer la détection des appareils">
