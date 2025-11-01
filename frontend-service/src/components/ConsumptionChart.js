@@ -32,6 +32,7 @@ import { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import SignatureModal from './SignatureModal';
 import { useChart } from '../context/ChartContext';
+import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 ChartJS.register(
   CategoryScale,
@@ -50,6 +51,7 @@ ChartJS.register(
 const ConsumptionChart = () => {
   // Context pour partager la période visible
   const { setVisibleTimeRange } = useChart();
+  const { getApplianceColor: getApplianceColorFromContext, applianceColors } = useApplianceColors();
   
   // Données brutes complètes (chargées une seule fois)
   const [rawData, setRawData] = useState(null);
@@ -333,8 +335,6 @@ const ConsumptionChart = () => {
       const visibleMin = Math.max(0, Math.floor(xScale.min || 0));
       const visibleMax = Math.min(rawData.data.length - 1, Math.ceil(xScale.max || rawData.data.length - 1));
       
-      const visibleCount = visibleMax - visibleMin + 1;
-      
       // Mettre à jour la période visible dans le contexte
       if (rawData.data[visibleMin] && rawData.data[visibleMax]) {
         const startTime = new Date(rawData.data[visibleMin].time);
@@ -344,67 +344,22 @@ const ConsumptionChart = () => {
     }
   }, [rawData, setVisibleTimeRange]);
 
-  // Palette de couleurs pour les annotations des appareils
-  const APPLIANCE_COLORS = [
-    "#f94144",
-    "#f3722c",
-    "#f8961e",
-    "#f9844a",
-    "#f9c74f",
-    "#90be6d",
-    "#43aa8b",
-    "#4d908e",
-    "#577590",
-    "#277da1"
-  ];
-
-  // Obtenir la liste unique des noms d'appareils
-  const uniqueApplianceNames = useMemo(() => {
-    const items = annotationMode === 'detections' ? detections : signatures;
-    if (!items || items.length === 0) return [];
+  // Fonction pour obtenir la couleur d'un appareil en utilisant le Context
+  // On cherche l'appliance_id ou on utilise le nom si l'ID n'est pas disponible
+  const getApplianceColor = useCallback((applianceNameOrId, applianceId = null) => {
+    // Si on a un ID d'appareil, l'utiliser directement
+    const id = applianceId || applianceNameOrId;
     
-    const names = new Set();
-    items.forEach(item => {
-      const itemName = item.name || item.appliance_name;
-      if (itemName) names.add(itemName);
-    });
-    
-    return Array.from(names).sort();
-  }, [annotationMode, detections, signatures]);
-
-  const getApplianceColor = useCallback((applianceName) => {
-    const name = applianceName || 'Unknown';
-    const totalAppliances = uniqueApplianceNames.length;
-    
-    if (totalAppliances === 0) {
-      return {
-        bg: `${APPLIANCE_COLORS[0]}99`,
-        border: `${APPLIANCE_COLORS[0]}99`,
-        solid: APPLIANCE_COLORS[0],
-        dark: APPLIANCE_COLORS[0],
-      };
-    }
-    
-    const applianceIndex = uniqueApplianceNames.indexOf(name);
-    let colorIndex;
-    
-    if (totalAppliances === 1) {
-      colorIndex = 0;
-    } else {
-      // Répartir uniformément sur toute la palette
-      const position = applianceIndex / (totalAppliances - 1);
-      colorIndex = Math.round(position * (APPLIANCE_COLORS.length - 1));
-    }
-    
-    const baseColor = APPLIANCE_COLORS[colorIndex];
+    // Récupérer la couleur depuis le Context
+    const baseColor = getApplianceColorFromContext(id);
     
     return {
-      bg: `${baseColor}99`,
-      border: `${baseColor}99`,
-      solid: baseColor,
-      dark: baseColor,
+      bg: `${baseColor}99`,      // 60% d'opacité pour le fond
+      border: `${baseColor}99`,   // 60% d'opacité pour la bordure
+      solid: baseColor,           // Couleur pleine
+      dark: baseColor,            // Couleur foncée (même que solid)
     };
-  }, [uniqueApplianceNames]);
+  }, [getApplianceColorFromContext, applianceColors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Légende des appareils (détections ou signatures selon le mode)
   const getLegendItems = useCallback(() => {
@@ -415,12 +370,13 @@ const ConsumptionChart = () => {
     items.forEach(item => {
       // Pour les détections: item.name, pour les signatures: item.appliance_name
       const itemName = item.name || item.appliance_name;
+      const itemId = item.appliance_id;
       if (!itemName) return;
       
       if (!applianceMap.has(itemName)) {
         applianceMap.set(itemName, {
           name: itemName,
-          color: getApplianceColor(itemName).solid,
+          color: getApplianceColor(itemName, itemId).solid,
           count: 1,
           totalEnergy: item.energy_consumed || 0,
         });
@@ -525,12 +481,12 @@ const ConsumptionChart = () => {
         })
         .filter(Boolean);
       
-      // Assigner les niveaux
-      const maxRows = assignRowLevels(detectionItems);
+      // Assigner les niveaux pour éviter les chevauchements
+      assignRowLevels(detectionItems);
       
       // Créer les annotations avec décalage vertical
       detectionItems.forEach(d => {
-        const colors = getApplianceColor(d.name);
+        const colors = getApplianceColor(d.name, d.appliance_id);
         const rowHeight = 0.045; // 4.5% de la hauteur par niveau (3% + 50%)
         
         annotations[`detection-${d.id}`] = {
@@ -598,12 +554,12 @@ const ConsumptionChart = () => {
         })
         .filter(Boolean);
       
-      // Assigner les niveaux
-      const maxRows = assignRowLevels(signatureItems);
+      // Assigner les niveaux pour éviter les chevauchements
+      assignRowLevels(signatureItems);
       
       // Créer les annotations avec décalage vertical
       signatureItems.forEach(s => {
-        const colors = getApplianceColor(s.appliance_name);
+        const colors = getApplianceColor(s.appliance_name, s.appliance_id);
         const isNegative = s.is_negative === true;
         const rowHeight = 0.045; // 4.5% de la hauteur par niveau (3% + 50%)
         

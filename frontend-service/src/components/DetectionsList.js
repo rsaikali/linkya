@@ -28,6 +28,7 @@ import { Timeline, DeleteSweep, CheckCircle, Cancel, Search } from '@mui/icons-m
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import { useChart } from '../context/ChartContext';
+import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 /**
  * Composant affichant les détections d'appareils récentes
@@ -263,13 +264,17 @@ function DetectionsList() {
             </Box>
           }
         />
-        <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 2, display: 'flex', flexDirection: 'column' }}>
-          {loading && detections.length === 0 && <LinearProgress />}
+        <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 0, display: 'flex', flexDirection: 'column' }}>
+          {((loading && detections.length === 0) || totalDetections === 0) && (
+            <Box sx={{ p: 2 }}>
+              {loading && detections.length === 0 && <LinearProgress />}
 
-          {totalDetections === 0 && !loading && (
-            <Typography color="textSecondary" align="center" variant="body2">
-              Aucune détection
-            </Typography>
+              {totalDetections === 0 && !loading && (
+                <Typography color="textSecondary" align="center" variant="body2">
+                  Aucune détection
+                </Typography>
+              )}
+            </Box>
           )}
 
           {totalDetections > 0 && (
@@ -277,10 +282,10 @@ function DetectionsList() {
               <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                 <Table stickyHeader size="small">
                   <TableHead>
-                    <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                      <TableCell>Appareil</TableCell>
-                      <TableCell align="left">Détails</TableCell>
-                      <TableCell align="right" sx={{ width: '100px', padding: '6px 16px' }}></TableCell>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
+                      <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600, width: '100px' }}></TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -376,6 +381,7 @@ function DetectionsList() {
  * Ligne de tableau pour une détection
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
+  const { getApplianceColor } = useApplianceColors();
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
   const durationSeconds = Math.round((endTime - startTime) / 1000);
@@ -492,6 +498,15 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     >
       <TableCell sx={{ fontWeight: 500 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Box
+            sx={{
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              backgroundColor: getApplianceColor(detection.appliance_id),
+              flexShrink: 0,
+            }}
+          />
           {isValidated && (
             <Tooltip title="Détection validée comme correcte">
               <CheckCircle fontSize="small" color="success" />
@@ -502,11 +517,9 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
               <Cancel fontSize="small" color="error" />
             </Tooltip>
           )}
-          <Box>
-            <Typography variant="body2" component="div" fontWeight="medium">
-              {detection.name || 'Inconnu'}
-            </Typography>
-          </Box>
+          <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(detection.appliance_id) }}>
+            {detection.name || 'Inconnu'}
+          </Typography>
         </Box>
       </TableCell>
       <TableCell align="left" sx={{ fontSize: 'small' }}>
@@ -519,7 +532,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           </Typography>
         </Box>
       </TableCell>
-      <TableCell align="right" sx={{ width: '100px', padding: '6px 16px' }}>
+      <TableCell align="right">
         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
           <Tooltip title={isValidated ? "Déjà validée" : "Marquer comme correcte"}>
             <span>

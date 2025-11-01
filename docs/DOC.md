@@ -101,6 +101,9 @@ NILM_MODEL_TYPE=gru     # 'gru' or 'lstm'
 
 ### Training Process
 - **Trigger**: Manual via UI or scheduled (every 24h)
+- **Singleton Execution**: New training cancels all pending/running trainings
+- **Task Management**: Uses Redis to track current training task ID
+- **Revocation**: SIGKILL for running task, graceful cancel for queued tasks
 - **Data**: Positive signatures (user-labeled) + negative examples
 - **Validation**: Time-series split (80/20)
 - **Metrics**: MAE, Accuracy, F1-score

@@ -193,6 +193,44 @@ async def get_all_appliances():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+@app.patch("/api/appliances/{appliance_id}")
+async def update_appliance(appliance_id: int, appliance_data: dict):
+    """
+    Updates an appliance name.
+
+    Args:
+        appliance_id: ID of the appliance to update
+        appliance_data: New appliance data (name)
+
+    Returns:
+        Updated appliance
+    """
+    try:
+        name = appliance_data.get("name")
+        
+        if not name:
+            raise HTTPException(
+                status_code=400, detail="Name is required"
+            )
+        
+        updated_appliance = db_manager.update_appliance(
+            appliance_id=appliance_id,
+            name=name
+        )
+        
+        if not updated_appliance:
+            raise HTTPException(
+                status_code=404, detail=f"Appliance {appliance_id} not found"
+            )
+        
+        return updated_appliance
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating appliance: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
 @app.get("/api/signatures")
 async def get_all_signatures():
     """
@@ -518,7 +556,8 @@ async def trigger_nilm_training():
     """
     Lance l'entraînement manuel du modèle NILM-CNN.
     
-    Envoie une tâche Celery pour entraîner le modèle CNN avec toutes les signatures disponibles.
+    Annule automatiquement tous les entraînements en cours ou en attente
+    avant de lancer le nouveau.
     
     Returns:
         Status de la tâche Celery
@@ -529,9 +568,26 @@ async def trigger_nilm_training():
         celery_app = get_celery_app()
         logger.info("Lancement de l'entraînement NILM-CNN")
         
-        # Envoyer la tâche à la queue NILM-CNN
+        # Incrémenter un compteur pour marquer ce training comme légitime
+        training_generation = 0
+        if redis_client:
+            try:
+                # Incrémenter atomiquement le compteur de génération
+                training_generation = redis_client.incr(
+                    "nilm:training:generation"
+                )
+                logger.info(
+                    f"Nouvelle génération de training: {training_generation}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Impossible d'incrémenter génération: {e}"
+                )
+        
+        # 4. Envoyer la nouvelle tâche avec la génération en argument
         task = celery_app.send_task(
             'train_cnn_model',
+            args=[2, training_generation],  # min_signatures, generation
             queue='nilm_cnn',
             routing_key='nilm_cnn.train_cnn_model'
         )
@@ -545,7 +601,10 @@ async def trigger_nilm_training():
         }
         
     except Exception as e:
-        logger.error(f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True)
+        logger.error(
+            f"Erreur lors du lancement de l'entraînement: {str(e)}",
+            exc_info=True
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Erreur serveur: {str(e)}"

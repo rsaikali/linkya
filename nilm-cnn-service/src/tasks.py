@@ -116,13 +116,15 @@ def init_cnn_database() -> Dict[str, Any]:
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='train_cnn_model')
-def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
+@celery_app.task(name='train_cnn_model', bind=True)
+def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[str, Any]:
     """
     Entraîne un nouveau modèle NILM (S2P) - remplace l'ancien modèle
 
     Args:
+        self: Instance de la tâche Celery (bind=True)
         min_signatures: Nombre minimum de signatures par appareil
+        generation: Numéro de génération du training (pour éviter doublons)
 
     Returns:
         Statut et métriques de l'entraînement
@@ -132,6 +134,34 @@ def train_cnn_model(min_signatures: int = 2) -> Dict[str, Any]:
         from sqlalchemy import text
         import json
         from pathlib import Path
+
+        # Vérification préventive : cette génération est-elle obsolète ?
+        if redis_client and generation > 0:
+            try:
+                current_generation = redis_client.get(
+                    "nilm:training:generation"
+                )
+                if current_generation:
+                    current_gen = int(current_generation)
+                    if generation < current_gen:
+                        logger.warning(
+                            f"Tâche génération {generation} annulée : "
+                            f"génération actuelle = {current_gen}"
+                        )
+                        return {
+                            'status': 'cancelled',
+                            'message': f'Training obsolète (gen {generation} < {current_gen})',
+                            'task_id': self.request.id,
+                            'generation': generation,
+                            'current_generation': current_gen
+                        }
+            except Exception as e:
+                logger.warning(f"Impossible de vérifier génération: {e}")
+
+        logger.info(
+            f"🎯 Training génération {generation} commence "
+            f"(task {self.request.id})"
+        )
 
         start_time = time.time()
 

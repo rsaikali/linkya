@@ -27,11 +27,13 @@ import {
 import { Delete, DeleteSweep, FileDownload, FileUpload, Assignment, ModelTraining } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
+import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 /**
  * Composant affichant la liste des signatures
  */
 function SignaturesList() {
+  const { getApplianceColor } = useApplianceColors();
   const [signatures, setSignatures] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -434,7 +436,7 @@ function SignaturesList() {
   };
 
   return (
-    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Card sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardHeader 
         title="Signatures d'appareils"
         titleTypographyProps={{ variant: 'h5' }}
@@ -483,90 +485,94 @@ function SignaturesList() {
           </Box>
         }
       />
-      <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+      <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
+        {(error || importProgress.status !== 'idle' || loading) && (
+          <Box sx={{ p: 2 }}>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
 
-        {/* Section de progression d'importation */}
-        {importProgress.status !== 'idle' && importProgress.status !== 'completed' && (
-          <Box sx={{ mb: 2 }}>
-            <Alert 
-              severity="info" 
-              icon={false}
-              sx={{ 
-                py: 2,
-                backgroundColor: 'primary.50',
-                borderLeft: 4,
-                borderColor: 'primary.main'
-              }}
-            >
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="subtitle2" fontWeight="600" color="primary">
-                    {importProgress.status === 'uploading' && '📤 Upload du fichier...'}
-                    {importProgress.status === 'started' && '🚀 Initialisation de l\'import...'}
-                    {importProgress.status === 'processing' && '⚙️ Traitement des signatures...'}
-                  </Typography>
-                  {importProgress.progressPercent > 0 && (
-                    <Typography variant="body2" fontWeight="600" color="primary">
-                      {importProgress.progressPercent}%
+            {/* Section de progression d'importation */}
+            {importProgress.status !== 'idle' && importProgress.status !== 'completed' && (
+            <Box sx={{ mb: 2 }}>
+              <Alert 
+                severity="info" 
+                icon={false}
+                sx={{ 
+                  py: 2,
+                  backgroundColor: 'primary.50',
+                  borderLeft: 4,
+                  borderColor: 'primary.main'
+                }}
+              >
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle2" fontWeight="600" color="primary">
+                      {importProgress.status === 'uploading' && '📤 Upload du fichier...'}
+                      {importProgress.status === 'started' && '🚀 Initialisation de l\'import...'}
+                      {importProgress.status === 'processing' && '⚙️ Traitement des signatures...'}
                     </Typography>
-                  )}
-                </Box>
-                
-                <LinearProgress 
-                  variant={importProgress.progressPercent > 0 ? 'determinate' : 'indeterminate'}
-                  value={importProgress.progressPercent}
-                  sx={{ height: 8, borderRadius: 1 }}
-                />
-                
-                {importProgress.totalLines > 0 && (
-                  <Box sx={{ display: 'flex', gap: 3, mt: 0.5 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      📊 Lignes: <strong>{importProgress.totalLines}</strong>
-                    </Typography>
-                    <Typography variant="caption" color="success.main">
-                      ✅ Succès: <strong>{importProgress.successCount}</strong>
-                    </Typography>
-                    {importProgress.errorCount > 0 && (
-                      <Typography variant="caption" color="error.main">
-                        ❌ Erreurs: <strong>{importProgress.errorCount}</strong>
+                    {importProgress.progressPercent > 0 && (
+                      <Typography variant="body2" fontWeight="600" color="primary">
+                        {importProgress.progressPercent}%
                       </Typography>
                     )}
                   </Box>
-                )}
-              </Box>
+                  
+                  <LinearProgress 
+                    variant={importProgress.progressPercent > 0 ? 'determinate' : 'indeterminate'}
+                    value={importProgress.progressPercent}
+                    sx={{ height: 8, borderRadius: 1 }}
+                  />
+                  
+                  {importProgress.totalLines > 0 && (
+                    <Box sx={{ display: 'flex', gap: 3, mt: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        📊 Lignes: <strong>{importProgress.totalLines}</strong>
+                      </Typography>
+                      <Typography variant="caption" color="success.main">
+                        ✅ Succès: <strong>{importProgress.successCount}</strong>
+                      </Typography>
+                      {importProgress.errorCount > 0 && (
+                        <Typography variant="caption" color="error.main">
+                          ❌ Erreurs: <strong>{importProgress.errorCount}</strong>
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              </Alert>
+            </Box>
+          )}
+
+          {/* Message de succès après import terminé */}
+          {importProgress.status === 'completed' && importProgress.errorCount === 0 && (
+            <Alert 
+              severity="success" 
+              onClose={() => setImportProgress({ ...importProgress, status: 'idle' })}
+              sx={{ mb: 2 }}
+            >
+              <Typography variant="body2">
+                🎉 Import terminé avec succès ! {importProgress.successCount} signature(s) importée(s).
+                <br />
+                <em>La liste se met à jour automatiquement...</em>
+              </Typography>
             </Alert>
+          )}
+
+          {loading && <LinearProgress sx={{ mb: 2 }} />}
           </Box>
         )}
-
-        {/* Message de succès après import terminé */}
-        {importProgress.status === 'completed' && importProgress.errorCount === 0 && (
-          <Alert 
-            severity="success" 
-            onClose={() => setImportProgress({ ...importProgress, status: 'idle' })}
-            sx={{ mb: 2 }}
-          >
-            <Typography variant="body2">
-              🎉 Import terminé avec succès ! {importProgress.successCount} signature(s) importée(s).
-              <br />
-              <em>La liste se met à jour automatiquement...</em>
-            </Typography>
-          </Alert>
-        )}
-
-        {loading && <LinearProgress sx={{ mb: 2 }} />}
 
         <TableContainer>
           <Table stickyHeader size="small">
             <TableHead>
-              <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                <TableCell>Appareil</TableCell>
-                <TableCell align="left">Détails</TableCell>
-                <TableCell align="right" sx={{ width: '60px', padding: '6px 16px' }}></TableCell>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
+                <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, width: '60px' }}></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -591,8 +597,17 @@ function SignaturesList() {
                   }}
                 >
                   <TableCell>
-                    <Box>
-                      <Typography variant="body2" fontWeight="medium" component="div">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: '50%',
+                          backgroundColor: getApplianceColor(signature.appliance_id),
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(signature.appliance_id) }}>
                         {signature.appliance_name}
                       </Typography>
                     </Box>
@@ -607,7 +622,7 @@ function SignaturesList() {
                       </Typography>
                     </Box>
                   </TableCell>
-                  <TableCell align="right" sx={{ width: '60px', padding: '6px 16px' }}>
+                  <TableCell align="right">
                     <Tooltip title="Supprimer">
                       <IconButton
                         color="error"

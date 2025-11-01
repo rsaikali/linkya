@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -6,6 +6,7 @@ import {
   Box,
   Chip,
   Tooltip,
+  LinearProgress,
   keyframes,
 } from '@mui/material';
 import {
@@ -13,9 +14,11 @@ import {
   ThermostatAuto,
   AccessTime,
   FiberManualRecord,
+  ModelTraining,
 } from '@mui/icons-material';
-import { apiService } from '../services/api';
+import api, { apiService } from '../services/api';
 import { consumptionWS } from '../services/websocket';
+import websocket from '../services/websocket';
 
 // Animation de pulsation douce
 const pulse = keyframes`
@@ -33,6 +36,63 @@ const Header = () => {
   const [data, setData] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const updateTimeoutRef = useRef(null);
+  
+  // États pour le modèle NILM
+  const [model, setModel] = useState(null);
+  const [isTraining, setIsTraining] = useState(false);
+  const [trainingProgress, setTrainingProgress] = useState(0);
+
+  // Charger le modèle actuel
+  const loadModel = useCallback(async () => {
+    try {
+      const response = await api.get('/api/nilm/models?page=1&per_page=1');
+      if (response.data.models.length > 0) {
+        const modelData = response.data.models[0];
+        console.log('Model loaded:', modelData);
+        setModel(modelData);
+      } else {
+        setModel(null);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement du modèle:', error);
+    }
+  }, []);
+
+  // Formater la date de manière humanisée
+  const formatHumanizedDate = (dateString) => {
+    if (!dateString) {
+      console.log('formatHumanizedDate: dateString is empty', dateString);
+      return 'N/A';
+    }
+    
+    const date = new Date(dateString);
+    
+    // Vérifier si la date est valide
+    if (isNaN(date.getTime())) {
+      console.log('formatHumanizedDate: invalid date', dateString);
+      return 'N/A';
+    }
+    
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffSeconds < 60) {
+      return 'il y a quelques secondes';
+    } else if (diffMinutes < 60) {
+      return `il y a ${diffMinutes} minute${diffMinutes > 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      return `il y a ${diffHours} heure${diffHours > 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      return `il y a ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
+    } else {
+      const diffMonths = Math.floor(diffDays / 30);
+      return `il y a ${diffMonths} mois`;
+    }
+  };
 
   useEffect(() => {
     // Fetch initial data
@@ -46,6 +106,7 @@ const Header = () => {
     };
 
     fetchLatestConsumption();
+    loadModel();
 
     // Setup WebSocket for real-time consumption updates
     const handleNewConsumption = (consumptionData) => {
@@ -96,7 +157,42 @@ const Header = () => {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, []);
+  }, [loadModel]);
+
+  // Gérer les événements WebSocket de training
+  useEffect(() => {
+    websocket.connect();
+
+    const handleTrainingStart = (data) => {
+      setIsTraining(true);
+      setTrainingProgress(0);
+    };
+
+    const handleEpochEnd = (data) => {
+      const progress = ((data.epoch + 1) / data.total_epochs) * 100;
+      setTrainingProgress(progress);
+    };
+
+    const handleTrainingComplete = (data) => {
+      setIsTraining(false);
+      setTrainingProgress(100);
+      
+      // Recharger le modèle après 2 secondes
+      setTimeout(() => {
+        loadModel();
+      }, 2000);
+    };
+
+    websocket.on('training_start', handleTrainingStart);
+    websocket.on('epoch_end', handleEpochEnd);
+    websocket.on('training_complete', handleTrainingComplete);
+
+    return () => {
+      websocket.off('training_start', handleTrainingStart);
+      websocket.off('epoch_end', handleEpochEnd);
+      websocket.off('training_complete', handleTrainingComplete);
+    };
+  }, [loadModel]);
 
   const formatDate = (isoString) => {
     if (!isoString) return 'N/A';
@@ -145,6 +241,58 @@ const Header = () => {
         {/* Informations en temps réel */}
         {data && (
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            {/* Informations NILM Model */}
+            {isTraining ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <ModelTraining sx={{ color: 'white', fontSize: 20 }} />
+                <Box sx={{ minWidth: 200 }}>
+                  <Typography variant="caption" sx={{ color: 'white', display: 'block', mb: 0.5 }}>
+                    Entraînement en cours... {Math.round(trainingProgress)}%
+                  </Typography>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={trainingProgress}
+                    sx={{
+                      height: 6,
+                      borderRadius: 1,
+                      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                      '& .MuiLinearProgress-bar': {
+                        backgroundColor: 'white',
+                      },
+                    }}
+                  />
+                </Box>
+              </Box>
+            ) : model ? (
+              <Tooltip title={`Modèle: ${model.model_name || 'N/A'}`}>
+                <Chip
+                  icon={<ModelTraining sx={{ fontSize: 18 }} />}
+                  label={`Dernier modèle entraîné ${formatHumanizedDate(model.training_date)}`}
+                  variant="filled"
+                  sx={{
+                    bgcolor: 'rgba(255, 255, 255, 0.15)',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    fontSize: '0.85rem',
+                    '& .MuiChip-icon': { color: 'white' },
+                  }}
+                />
+              </Tooltip>
+            ) : (
+              <Chip
+                icon={<ModelTraining sx={{ fontSize: 18 }} />}
+                label="Aucun modèle entraîné"
+                variant="filled"
+                sx={{
+                  bgcolor: 'rgba(255, 255, 255, 0.15)',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  fontSize: '0.85rem',
+                  '& .MuiChip-icon': { color: 'white' },
+                }}
+              />
+            )}
+
             {/* Date et heure */}
             <Tooltip title={`Dernière mise à jour: ${formatFullDate(data.time)}`}>
               <Chip
@@ -211,7 +359,7 @@ const Header = () => {
               >
                 <FiberManualRecord
                   sx={{
-                    fontSize: 16,
+                    fontSize: 32,
                     color: isUpdating ? 'white' : 'transparent',
                     transition: 'color 0.5s ease-in-out',
                   }}

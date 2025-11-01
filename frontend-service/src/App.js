@@ -4,36 +4,40 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Typography, Grid } from '@mui/material';
 import theme from './theme';
 import Header from './components/Header';
-import CurrentModel from './components/CurrentModel';
 import ConsumptionChart from './components/ConsumptionChart';
 import DetectionsList from './components/DetectionsList';
 import SignaturesList from './components/SignaturesList';
+import AppliancesList from './components/AppliancesList';
 import { ChartProvider } from './context/ChartContext';
+import { ApplianceColorsProvider } from './context/ApplianceColorsContext';
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <ChartProvider>
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Header />
+      <ApplianceColorsProvider>
+        <ChartProvider>
+          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            <Header />
 
         <Box sx={{ px: 3, py: 3, flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Grid container spacing={2} sx={{ flexGrow: 1, height: 0 }}>
-            {/* Colonne 1 - Signatures (3/12) */}
-            <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <SignaturesList />
+            {/* Colonne 1 - Appareils & Signatures (3/12) */}
+            <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
+              <Box sx={{ flex: '0 0 auto', minHeight: 0, maxHeight: '40%', display: 'flex', width: '100%' }}>
+                <AppliancesList />
+              </Box>
+              <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', width: '100%' }}>
+                <SignaturesList />
+              </Box>
             </Grid>
 
-            {/* Colonnes 2 et 3 - Modèle et Graphique (6/12) */}
+            {/* Colonne 2 - Graphique (6/12) */}
             <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <Box sx={{ mb: 2 }}>
-                <CurrentModel />
-              </Box>
               <ConsumptionChart />
             </Grid>
 
-            {/* Colonne 4 - Détections (3/12) */}
+            {/* Colonne 3 - Détections (3/12) */}
             <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <DetectionsList />
             </Grid>
@@ -56,7 +60,8 @@ function App() {
           </Typography>
         </Box>
       </Box>
-      </ChartProvider>
+        </ChartProvider>
+      </ApplianceColorsProvider>
     </ThemeProvider>
   );
 }
