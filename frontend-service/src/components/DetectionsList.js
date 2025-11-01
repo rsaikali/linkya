@@ -219,7 +219,7 @@ function DetectionsList() {
     return (
       <Card>
         <CardHeader
-          title="Détections"
+          title="Détections IA d'appareils"
           avatar={<Timeline />}
         />
         <CardContent>
@@ -233,7 +233,7 @@ function DetectionsList() {
     <>
       <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
         <CardHeader
-          title="Détections d'appareils"
+          title="Détections IA d'appareils"
           titleTypographyProps={{ variant: 'h5' }}
           subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} dans la période visible`}
           avatar={<Timeline />}
