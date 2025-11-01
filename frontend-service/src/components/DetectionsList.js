@@ -24,7 +24,7 @@ import {
   Button,
   Snackbar,
 } from '@mui/material';
-import { DeleteSweep, CheckCircle, Cancel, Search } from '@mui/icons-material';
+import { DeleteSweep, ThumbUp, ThumbDown, Search } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
@@ -510,12 +510,12 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           />
           {isValidated && (
             <Tooltip title="Détection validée comme correcte">
-              <CheckCircle fontSize="small" color="success" />
+              <ThumbUp fontSize="small" color="success" />
             </Tooltip>
           )}
           {isInvalidated && (
             <Tooltip title="Détection marquée comme incorrecte">
-              <Cancel fontSize="small" color="error" />
+              <ThumbDown fontSize="small" color="error" />
             </Tooltip>
           )}
           <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(detection.appliance_id) }}>
@@ -544,7 +544,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
                 aria-label="valider"
                 disabled={isValidated}
               >
-                <CheckCircle fontSize="small" />
+                <ThumbUp fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>
@@ -557,7 +557,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
                 aria-label="invalider"
                 disabled={isInvalidated}
               >
-                <Cancel fontSize="small" />
+                <ThumbDown fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>
