@@ -32,7 +32,7 @@ ChartJS.register(
   zoomPlugin
 );
 
-const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }) => {
+const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, isModalOpen }) => {
   const chartRef = useRef(null);
   const { zoomState, setZoomState, setVisibleTimeRange } = useChart();
   const { getApplianceColor } = useApplianceColors();
@@ -258,6 +258,13 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       }
     };
   }, [rawData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hide tooltip when modal is open
+  useEffect(() => {
+    if (isModalOpen && tooltipRef.current) {
+      tooltipRef.current.style.opacity = '0';
+    }
+  }, [isModalOpen]);
 
   // Synchronize zoom from context
   useEffect(() => {

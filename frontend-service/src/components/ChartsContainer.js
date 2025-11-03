@@ -258,6 +258,7 @@ const ChartsContainer = () => {
             detections={detections}
             signatures={signatures}
             onSignatureModalOpen={handleSignatureModalOpen}
+            isModalOpen={showSignatureModal}
           />
         </CardContent>
       </Card>
