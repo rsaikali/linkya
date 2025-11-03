@@ -817,18 +817,29 @@ function SignatureRow({
     <TableRow hover>
       <TableCell>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Box
-            sx={{
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              backgroundColor: getApplianceColor(signature.appliance_id),
-              flexShrink: 0,
-              ...(signature.is_negative && {
-                boxShadow: '0 0 0 3px white, 0 0 0 5px #ef5350',
-              }),
-            }}
-          />
+          <Tooltip
+            title={
+              signature.is_negative
+                ? "Signature négative : issue d'une mauvaise détection de l'IA. Elle est marquée comme erreur pour aider le modèle à apprendre et à ne plus se tromper à l'avenir."
+                : ""
+            }
+            placement="right"
+            arrow
+          >
+            <Box
+              sx={{
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                backgroundColor: getApplianceColor(signature.appliance_id),
+                flexShrink: 0,
+                ...(signature.is_negative && {
+                  boxShadow: '0 0 0 3px white, 0 0 0 5px #ef5350',
+                  cursor: 'help',
+                }),
+              }}
+            />
+          </Tooltip>
           <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(signature.appliance_id) }}>
             {signature.appliance_name}
           </Typography>
@@ -867,10 +878,12 @@ function SignatureRow({
         >
           <MenuItem onClick={handleDeleteClick}>
             <ListItemIcon>
-              <Delete fontSize="small" color="error" />
+              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#d32f2f' }}>
+                delete
+              </span>
             </ListItemIcon>
             <ListItemText>
-              Supprimer
+              Supprimer cette signature
             </ListItemText>
           </MenuItem>
         </Menu>

@@ -28,7 +28,7 @@ import {
   ListItemIcon,
   ListItemText,
 } from '@mui/material';
-import { DeleteSweep, ThumbUp, ThumbDown, Search, MoreVert } from '@mui/icons-material';
+import { DeleteSweep, Check, Close, Search, MoreVert } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
@@ -546,12 +546,12 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           />
           {isValidated && (
             <Tooltip title="Détection validée comme correcte">
-              <ThumbUp fontSize="small" color="success" />
+              <Check fontSize="small" color="success" />
             </Tooltip>
           )}
           {isInvalidated && (
             <Tooltip title="Détection marquée comme incorrecte">
-              <ThumbDown fontSize="small" color="error" />
+              <Close fontSize="small" color="error" />
             </Tooltip>
           )}
           <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(detection.appliance_id) }}>
@@ -592,18 +592,18 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
         >
           <MenuItem onClick={handleValidateClick} disabled={isValidated}>
             <ListItemIcon>
-              <ThumbUp fontSize="small" color={isValidated ? "disabled" : "success"} />
+              <Check fontSize="small" color={isValidated ? "disabled" : "success"} />
             </ListItemIcon>
             <ListItemText>
-              {isValidated ? "Déjà validée" : "Marquer comme correcte"}
+              {isValidated ? "Déjà validée" : "Cette détection est correcte"}
             </ListItemText>
           </MenuItem>
           <MenuItem onClick={handleInvalidateClick} disabled={isInvalidated}>
             <ListItemIcon>
-              <ThumbDown fontSize="small" color={isInvalidated ? "disabled" : "error"} />
+              <Close fontSize="small" color={isInvalidated ? "disabled" : "error"} />
             </ListItemIcon>
             <ListItemText>
-              {isInvalidated ? "Déjà invalidée" : "Marquer comme incorrecte"}
+              {isInvalidated ? "Déjà invalidée" : "Cette détection est incorrecte"}
             </ListItemText>
           </MenuItem>
         </Menu>
