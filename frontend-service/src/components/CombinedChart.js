@@ -39,8 +39,76 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectionEnd, setSelectionEnd] = useState(null);
+  const [hoveredAnnotation, setHoveredAnnotation] = useState(null);
   const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
   const isUpdatingZoomRef = useRef(false);
+
+  // Handle annotation hover
+  useEffect(() => {
+    const canvas = chartRef.current?.canvas;
+    if (!canvas) return;
+
+    const handleMouseMove = (e) => {
+      const chart = chartRef.current;
+      if (!chart) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Get the annotations
+      const annotations = chart.config.options.plugins.annotation.annotations;
+      let foundAnnotation = null;
+
+      // Check if mouse is over any annotation
+      for (const key in annotations) {
+        const annotation = annotations[key];
+        if (annotation.type === 'box') {
+          const xScale = chart.scales.x;
+          const yScale = chart.scales[annotation.yScaleID];
+          
+          if (xScale && yScale) {
+            const xMin = xScale.getPixelForValue(annotation.xMin);
+            const xMax = xScale.getPixelForValue(annotation.xMax);
+            const yMin = yScale.getPixelForValue(annotation.yMin);
+            const yMax = yScale.getPixelForValue(annotation.yMax);
+            
+            if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) {
+              foundAnnotation = key;
+              break;
+            }
+          }
+        }
+      }
+
+      if (foundAnnotation !== hoveredAnnotation) {
+        setHoveredAnnotation(foundAnnotation);
+      }
+    };
+
+    canvas.addEventListener('mousemove', handleMouseMove);
+    
+    return () => {
+      canvas.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [hoveredAnnotation]);
+
+  // Update annotations when hover changes
+  useEffect(() => {
+    if (!chartRef.current) return;
+    
+    const chart = chartRef.current;
+    const annotations = chart.config.options.plugins.annotation.annotations;
+    
+    // Update display state for all annotations
+    for (const key in annotations) {
+      if (annotations[key].label) {
+        annotations[key].label.display = (key === hoveredAnnotation);
+      }
+    }
+    
+    chart.update('none');
+  }, [hoveredAnnotation]);
 
   // Synchronize zoom from context
   useEffect(() => {
@@ -81,6 +149,56 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       }, 50);
     }
   }, [rawData, setVisibleTimeRange, setZoomState]);
+
+  // Helper functions for formatting (copied from DetectionsList and SignaturesList)
+  const formatTimeOnly = (date) => {
+    return date.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDateTime = (date) => {
+    return date.toLocaleString('fr-FR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDurationMinutes = (seconds) => {
+    if (!seconds) return '0';
+    return Math.round(seconds / 60);
+  };
+
+  const formatHumanizedDate = (date) => {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) {
+      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
+    } else if (diffMinutes < 60) {
+      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
+    } else if (diffDays < 7) {
+      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
+    } else if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30);
+      return `il y a ${months} mois`;
+    } else {
+      const years = Math.floor(diffDays / 365);
+      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
+    }
+  };
 
   // Prepare annotations
   const annotationsData = useMemo(() => {
@@ -138,6 +256,20 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
         const color = getApplianceColor(d.appliance_id || d.name);
         const rowHeight = 1 / (maxDetectionRows + 1);
         
+        const startTime = new Date(d.start_time);
+        const endTime = new Date(d.end_time);
+        const durationSeconds = Math.round((endTime - startTime) / 1000);
+        const confidenceScore = d.confidence_score || 0;
+        
+        // Create tooltip text matching DetectionRow layout
+        const tooltipLines = [
+          `${d.name || 'Inconnu'}`,
+          `à ${formatTimeOnly(startTime)} pendant ${formatDurationMinutes(durationSeconds)}min`,
+          `${formatHumanizedDate(startTime)}`,
+          `${formatDateTime(startTime)} - ${formatTimeOnly(endTime)}`,
+          `Confiance: ${Math.round(confidenceScore * 100)}%`
+        ];
+        
         annotations[`detection-${d.id}`] = {
           type: 'box',
           xMin: d.startIndex,
@@ -149,6 +281,22 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           borderColor: color,
           borderWidth: 5,
           drawTime: 'beforeDatasetsDraw',
+          label: {
+            display: false,
+            content: tooltipLines,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            color: '#333',
+            font: {
+              size: 11,
+              weight: 'normal',
+            },
+            padding: 8,
+            borderRadius: 6,
+            borderColor: color,
+            borderWidth: 2,
+            position: 'center',
+            yAdjust: -80,
+          },
         };
       });
     }
@@ -199,6 +347,18 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
         const isNegative = s.is_negative === true;
         const rowHeight = 1 / (maxSignatureRows + 1);
         
+        const startTime = new Date(s.start_time);
+        const endTime = new Date(s.end_time);
+        const durationSeconds = s.duration_seconds || Math.round((endTime - startTime) / 1000);
+        
+        // Create tooltip text matching SignatureRow layout
+        const tooltipLines = [
+          `${s.appliance_name}${isNegative ? ' (Signature négative)' : ''}`,
+          `à ${formatTimeOnly(startTime)} pendant ${formatDurationMinutes(durationSeconds)}min`,
+          `${formatHumanizedDate(startTime)}`,
+          `${formatDateTime(startTime)} - ${formatTimeOnly(endTime)}`,
+        ];
+        
         annotations[`signature-${s.id}`] = {
           type: 'box',
           xMin: s.startIndex,
@@ -210,6 +370,22 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : color,
           borderWidth: 5,
           drawTime: 'beforeDatasetsDraw',
+          label: {
+            display: false,
+            content: tooltipLines,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            color: isNegative ? '#ef5350' : '#333',
+            font: {
+              size: 11,
+              weight: 'normal',
+            },
+            padding: 8,
+            borderRadius: 6,
+            borderColor: isNegative ? '#ef5350' : color,
+            borderWidth: isNegative ? 3 : 2,
+            position: 'center',
+            yAdjust: 80,
+          },
         };
       });
     }
@@ -422,6 +598,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       plugins: {
         annotation: {
           annotations: {},
+          drawTime: 'beforeDatasetsDraw',
         },
         legend: { display: false },
         title: { display: false },
