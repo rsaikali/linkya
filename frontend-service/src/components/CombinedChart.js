@@ -39,14 +39,33 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectionEnd, setSelectionEnd] = useState(null);
-  const [hoveredAnnotation, setHoveredAnnotation] = useState(null);
   const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
   const isUpdatingZoomRef = useRef(false);
+  const tooltipRef = useRef(null);
 
-  // Handle annotation hover
+  // Custom tooltip handler for annotations
   useEffect(() => {
     const canvas = chartRef.current?.canvas;
-    if (!canvas) return;
+    if (!canvas || !rawData?.data) return;
+
+    // Create tooltip element if it doesn't exist
+    if (!tooltipRef.current) {
+      const tooltip = document.createElement('div');
+      tooltip.style.position = 'absolute';
+      tooltip.style.pointerEvents = 'none';
+      tooltip.style.opacity = '0';
+      tooltip.style.transition = 'opacity 0.2s ease';
+      tooltip.style.zIndex = '10000';
+      tooltip.style.padding = '8px';
+      tooltip.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+      tooltip.style.borderRadius = '6px';
+      tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+      tooltip.style.fontSize = '11px';
+      tooltip.style.lineHeight = '1.5';
+      tooltip.style.minWidth = '200px';
+      document.body.appendChild(tooltip);
+      tooltipRef.current = tooltip;
+    }
 
     const handleMouseMove = (e) => {
       const chart = chartRef.current;
@@ -57,32 +76,77 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       const y = e.clientY - rect.top;
 
       // Get the annotations
-      const annotations = chart.config.options.plugins.annotation.annotations;
-      let foundAnnotation = null;
+      const annotations = chart.config?.options?.plugins?.annotation?.annotations;
+      if (!annotations) return;
+
+      let foundTooltipData = null;
 
       // Check if mouse is over any annotation
       for (const key in annotations) {
         const annotation = annotations[key];
-        if (annotation.type === 'box') {
+        if (annotation.type === 'box' && annotation.tooltipData) {
           const xScale = chart.scales.x;
           const yScale = chart.scales[annotation.yScaleID];
           
           if (xScale && yScale) {
             const xMin = xScale.getPixelForValue(annotation.xMin);
             const xMax = xScale.getPixelForValue(annotation.xMax);
-            const yMin = yScale.getPixelForValue(annotation.yMin);
-            const yMax = yScale.getPixelForValue(annotation.yMax);
+            const yMin = yScale.getPixelForValue(annotation.yMax); // Inverted for canvas
+            const yMax = yScale.getPixelForValue(annotation.yMin); // Inverted for canvas
             
             if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) {
-              foundAnnotation = key;
+              foundTooltipData = annotation.tooltipData;
               break;
             }
           }
         }
       }
 
-      if (foundAnnotation !== hoveredAnnotation) {
-        setHoveredAnnotation(foundAnnotation);
+      const tooltip = tooltipRef.current;
+      if (foundTooltipData) {
+        // Build tooltip HTML based on type
+        let html = '';
+        
+        if (foundTooltipData.type === 'detection') {
+          html = `
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+              <div style="width: 16px; height: 16px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0;"></div>
+              <strong style="color: ${foundTooltipData.color};">${foundTooltipData.name}</strong>
+            </div>
+            <div style="margin-bottom: 3px;">
+              à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
+            </div>
+            <div style="color: #666; font-size: 10px; font-weight: 300;">
+              ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
+            </div>
+            <div style="color: #666; font-size: 10px; margin-top: 4px;">
+              Confiance: ${Math.round(foundTooltipData.confidenceScore * 100)}%
+            </div>
+          `;
+          tooltip.style.borderLeft = `4px solid ${foundTooltipData.color}`;
+        } else if (foundTooltipData.type === 'signature') {
+          html = `
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+              <div style="width: 16px; height: 16px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? 'box-shadow: 0 0 0 2px white, 0 0 0 4px #ef5350;' : ''}"></div>
+              <strong style="color: ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color};">${foundTooltipData.name}</strong>
+            </div>
+            <div style="margin-bottom: 3px;">
+              à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
+            </div>
+            <div style="color: #666; font-size: 10px; font-weight: 300;">
+              ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
+            </div>
+            ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 10px; margin-top: 4px; font-style: italic;">Signature négative</div>' : ''}
+          `;
+          tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}`;
+        }
+
+        tooltip.innerHTML = html;
+        tooltip.style.left = `${e.pageX + 15}px`;
+        tooltip.style.top = `${e.pageY - 10}px`;
+        tooltip.style.opacity = '1';
+      } else {
+        tooltip.style.opacity = '0';
       }
     };
 
@@ -90,25 +154,12 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
     
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMove);
-    };
-  }, [hoveredAnnotation]);
-
-  // Update annotations when hover changes
-  useEffect(() => {
-    if (!chartRef.current) return;
-    
-    const chart = chartRef.current;
-    const annotations = chart.config.options.plugins.annotation.annotations;
-    
-    // Update display state for all annotations
-    for (const key in annotations) {
-      if (annotations[key].label) {
-        annotations[key].label.display = (key === hoveredAnnotation);
+      if (tooltipRef.current) {
+        document.body.removeChild(tooltipRef.current);
+        tooltipRef.current = null;
       }
-    }
-    
-    chart.update('none');
-  }, [hoveredAnnotation]);
+    };
+  }, [rawData, formatTimeOnly, formatDateTime, formatDurationMinutes, formatHumanizedDate]);
 
   // Synchronize zoom from context
   useEffect(() => {
@@ -261,15 +312,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
         const durationSeconds = Math.round((endTime - startTime) / 1000);
         const confidenceScore = d.confidence_score || 0;
         
-        // Create tooltip text matching DetectionRow layout
-        const tooltipLines = [
-          `${d.name || 'Inconnu'}`,
-          `à ${formatTimeOnly(startTime)} pendant ${formatDurationMinutes(durationSeconds)}min`,
-          `${formatHumanizedDate(startTime)}`,
-          `${formatDateTime(startTime)} - ${formatTimeOnly(endTime)}`,
-          `Confiance: ${Math.round(confidenceScore * 100)}%`
-        ];
-        
         annotations[`detection-${d.id}`] = {
           type: 'box',
           xMin: d.startIndex,
@@ -281,21 +323,15 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           borderColor: color,
           borderWidth: 5,
           drawTime: 'beforeDatasetsDraw',
-          label: {
-            display: false,
-            content: tooltipLines,
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            color: '#333',
-            font: {
-              size: 11,
-              weight: 'normal',
-            },
-            padding: 8,
-            borderRadius: 6,
-            borderColor: color,
-            borderWidth: 2,
-            position: 'center',
-            yAdjust: -80,
+          // Store tooltip data
+          tooltipData: {
+            type: 'detection',
+            name: d.name || 'Inconnu',
+            startTime,
+            endTime,
+            durationSeconds,
+            confidenceScore,
+            color,
           },
         };
       });
@@ -351,14 +387,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
         const endTime = new Date(s.end_time);
         const durationSeconds = s.duration_seconds || Math.round((endTime - startTime) / 1000);
         
-        // Create tooltip text matching SignatureRow layout
-        const tooltipLines = [
-          `${s.appliance_name}${isNegative ? ' (Signature négative)' : ''}`,
-          `à ${formatTimeOnly(startTime)} pendant ${formatDurationMinutes(durationSeconds)}min`,
-          `${formatHumanizedDate(startTime)}`,
-          `${formatDateTime(startTime)} - ${formatTimeOnly(endTime)}`,
-        ];
-        
         annotations[`signature-${s.id}`] = {
           type: 'box',
           xMin: s.startIndex,
@@ -370,21 +398,15 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : color,
           borderWidth: 5,
           drawTime: 'beforeDatasetsDraw',
-          label: {
-            display: false,
-            content: tooltipLines,
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            color: isNegative ? '#ef5350' : '#333',
-            font: {
-              size: 11,
-              weight: 'normal',
-            },
-            padding: 8,
-            borderRadius: 6,
-            borderColor: isNegative ? '#ef5350' : color,
-            borderWidth: isNegative ? 3 : 2,
-            position: 'center',
-            yAdjust: 80,
+          // Store tooltip data
+          tooltipData: {
+            type: 'signature',
+            name: s.appliance_name,
+            startTime,
+            endTime,
+            durationSeconds,
+            color,
+            isNegative,
           },
         };
       });
