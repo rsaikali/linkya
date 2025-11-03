@@ -190,10 +190,11 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
               <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0;"></div>
               <strong style="color: ${foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
-            </div>
-            <div style="margin-bottom: 6px; font-size: 14px;">
+              <div style="font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
             </div>
+            </div>
+            
             <div style="color: #666; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
@@ -207,9 +208,9 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
               <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? 'box-shadow: 0 0 0 2px white, 0 0 0 4px #ef5350;' : ''}"></div>
               <strong style="color: ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
-            </div>
-            <div style="margin-bottom: 6px; font-size: 14px;">
+              <div style="font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
+            </div>
             </div>
             <div style="color: #666; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
@@ -229,17 +230,10 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <div style="width: 20px; height: 20px; border-radius: 4px; background: linear-gradient(135deg, #0d6e00 0%, #BD2A2E 100%); flex-shrink: 0;"></div>
-              <strong style="color: #0d6e00; font-size: 16px;">Consommation</strong>
-            </div>
-            <div style="margin-bottom: 6px; font-size: 14px;">
-              <strong style="color: #0d6e00;">${powerW} W</strong>
+              <strong style="color: #0d6e00; font-size: 16px;">Consommation</strong><strong style="color: #777777ff; font-size: 16px;"> ${powerW} W</strong>
             </div>
             <div style="color: #666; font-size: 12px; font-weight: 300; text-transform: capitalize;">
-              ${dayName}
-            </div>
-            <div style="color: #666; font-size: 12px; font-weight: 300;">
-              ${formattedDate} à ${formattedTime}
+              ${dayName} ${formattedDate} à ${formattedTime}
             </div>
           `;
           tooltip.style.borderLeft = `4px solid #0d6e00`;
@@ -359,7 +353,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       
       detectionItems.forEach(d => {
         const color = getApplianceColor(d.appliance_id || d.name);
-        const rowHeight = 1 / (maxDetectionRows + 1);
+        const rowHeight = 1 / (maxDetectionRows);
         
         const startTime = new Date(d.start_time);
         const endTime = new Date(d.end_time);
@@ -376,6 +370,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           backgroundColor: `${color}`,
           borderColor: color,
           borderWidth: 5,
+          borderRadius: 10,
           drawTime: 'beforeDatasetsDraw',
           // Store tooltip data
           tooltipData: {
@@ -435,7 +430,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       signatureItems.forEach(s => {
         const color = getApplianceColor(s.appliance_id || s.appliance_name);
         const isNegative = s.is_negative === true;
-        const rowHeight = 1 / (maxSignatureRows + 1);
+        const rowHeight = 1 / (maxSignatureRows);
         
         const startTime = new Date(s.start_time);
         const endTime = new Date(s.end_time);
@@ -450,7 +445,8 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           yScaleID: 'ySignatures',
           backgroundColor: `${color}`,
           borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : color,
-          borderWidth: 5,
+          borderWidth: isNegative ? 3 : 5,
+          borderRadius: 10,
           drawTime: 'beforeDatasetsDraw',
           // Store tooltip data
           tooltipData: {

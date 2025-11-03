@@ -777,7 +777,7 @@ function SignatureRow({
           <Tooltip
             title={
               signature.is_negative
-                ? "Signature négative : issue d'une mauvaise détection de l'IA. Elle est marquée comme erreur pour aider le modèle à apprendre et à ne plus se tromper à l'avenir."
+                ? <div style={{ whiteSpace: 'pre-line' }}>Issue d'une détection déclarée comme incorrecte par l'utilisateur.<br/>Elle aide le modèle IA à apprendre de ses erreurs.</div>                
                 : ""
             }
             placement="right"
