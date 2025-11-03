@@ -130,6 +130,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       if (!annotations) return;
 
       let foundTooltipData = null;
+      let isAnnotation = false;
 
       // Check if mouse is over any annotation
       for (const key in annotations) {
@@ -146,7 +147,34 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
             
             if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) {
               foundTooltipData = annotation.tooltipData;
+              isAnnotation = true;
               break;
+            }
+          }
+        }
+      }
+
+      // If not over an annotation, check if over the chart data
+      if (!foundTooltipData) {
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.yConsumption;
+        
+        if (xScale && yScale) {
+          const dataIndex = Math.round(xScale.getValueForPixel(x));
+          
+          if (dataIndex >= 0 && dataIndex < rawData.data.length) {
+            const dataPoint = rawData.data[dataIndex];
+            const dataY = yScale.getPixelForValue(dataPoint.avg_papp);
+            
+            // Check if mouse is near the data point (within chart area)
+            const chartArea = chart.chartArea;
+            if (x >= chartArea.left && x <= chartArea.right && 
+                y >= chartArea.top && y <= chartArea.bottom) {
+              foundTooltipData = {
+                type: 'consumption',
+                time: new Date(dataPoint.time),
+                power: dataPoint.avg_papp,
+              };
             }
           }
         }
@@ -189,6 +217,32 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
             ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 12px; margin-top: 6px; font-style: italic;">Signature négative</div>' : ''}
           `;
           tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}`;
+        } else if (foundTooltipData.type === 'consumption') {
+          const dayName = foundTooltipData.time.toLocaleDateString('fr-FR', { weekday: 'long' });
+          const formattedDate = foundTooltipData.time.toLocaleDateString('fr-FR', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric' 
+          });
+          const formattedTime = formatTimeOnly(foundTooltipData.time);
+          const powerW = Math.round(foundTooltipData.power);
+          
+          html = `
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <div style="width: 20px; height: 20px; border-radius: 4px; background: linear-gradient(135deg, #0d6e00 0%, #BD2A2E 100%); flex-shrink: 0;"></div>
+              <strong style="color: #0d6e00; font-size: 16px;">Consommation</strong>
+            </div>
+            <div style="margin-bottom: 6px; font-size: 14px;">
+              <strong style="color: #0d6e00;">${powerW} W</strong>
+            </div>
+            <div style="color: #666; font-size: 12px; font-weight: 300; text-transform: capitalize;">
+              ${dayName}
+            </div>
+            <div style="color: #666; font-size: 12px; font-weight: 300;">
+              ${formattedDate} à ${formattedTime}
+            </div>
+          `;
+          tooltip.style.borderLeft = `4px solid #0d6e00`;
         }
 
         tooltip.innerHTML = html;
