@@ -23,8 +23,12 @@ import {
   Snackbar,
   Box,
   CircularProgress,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
-import { Delete, DeleteSweep, FileDownload, FileUpload, ModelTraining } from '@mui/icons-material';
+import { Delete, DeleteSweep, FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
@@ -100,20 +104,6 @@ function SignaturesList() {
 
   useEffect(() => {
     fetchSignatures();
-  }, [fetchSignatures]);
-
-  // Listen for signature creation events from other components
-  useEffect(() => {
-    const handleSignatureCreated = () => {
-      console.log('🔄 Nouvelle signature détectée, rafraîchissement...');
-      fetchSignatures();
-    };
-
-    window.addEventListener('signature-created', handleSignatureCreated);
-
-    return () => {
-      window.removeEventListener('signature-created', handleSignatureCreated);
-    };
   }, [fetchSignatures]);
 
   // Setup WebSocket for import progress
@@ -402,6 +392,17 @@ function SignaturesList() {
     return `${Math.round(watts / 100) * 100} W`;
   };
 
+  const formatDurationMinutes = (seconds) => {
+    if (!seconds) return '0';
+    return Math.round(seconds / 60);
+  };
+
+  const formatConsumption = (watts, durationSeconds) => {
+    if (watts === null || watts === undefined || !durationSeconds) return 'N/A';
+    const kWh = (watts * durationSeconds) / (1000 * 3600);
+    return `${kWh.toFixed(1)} kWh`;
+  };
+
   const formatHumanizedDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -432,23 +433,7 @@ function SignaturesList() {
     }
   };
 
-  const getRowBackgroundColor = (isNegative) => {
-    if (isNegative) {
-      // Rouge très clair pour les signatures négatives
-      return 'rgba(244, 67, 54, 0.08)';
-    }
-    // Vert très clair pour les signatures positives
-    return 'rgba(76, 175, 80, 0.08)';
-  };
 
-  const getRowHoverBackgroundColor = (isNegative) => {
-    if (isNegative) {
-      // Rouge plus marqué au hover
-      return 'rgba(244, 67, 54, 0.15)';
-    }
-    // Vert plus marqué au hover
-    return 'rgba(76, 175, 80, 0.15)';
-  };
 
   return (
     <Card sx={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -586,7 +571,7 @@ function SignaturesList() {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600 }}>Détails</TableCell>
+                <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 600, width: '60px' }}></TableCell>
               </TableRow>
             </TableHead>
@@ -601,54 +586,17 @@ function SignaturesList() {
                 </TableRow>
               )}
               {signatures.map((signature) => (
-                <TableRow 
+                <SignatureRow
                   key={signature.id}
-                  sx={{
-                    backgroundColor: getRowBackgroundColor(signature.is_negative),
-                    '&:hover': {
-                      backgroundColor: getRowHoverBackgroundColor(signature.is_negative),
-                    },
-                    transition: 'background-color 0.2s ease',
-                  }}
-                >
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: '50%',
-                          backgroundColor: getApplianceColor(signature.appliance_id),
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(signature.appliance_id) }}>
-                        {signature.appliance_name}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontSize: 'small' }}>
-                    <Box>
-                      <Typography variant="body2" component="div">
-                        <strong>{formatPower(signature.avg_power)}</strong> pendant <strong>{formatDurationFull(signature.duration_seconds)}</strong>
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
-                        {formatHumanizedDate(signature.start_time)} ({formatDateTime(signature.start_time)} - {formatTimeOnly(signature.end_time)})
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Supprimer">
-                      <IconButton
-                        color="error"
-                        size="small"
-                        onClick={() => handleDeleteClick(signature)}
-                      >
-                        <Delete fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
+                  signature={signature}
+                  onDelete={handleDeleteClick}
+                  getApplianceColor={getApplianceColor}
+                  formatTimeOnly={formatTimeOnly}
+                  formatDurationMinutes={formatDurationMinutes}
+                  formatConsumption={formatConsumption}
+                  formatHumanizedDate={formatHumanizedDate}
+                  formatDateTime={formatDateTime}
+                />
               ))}
             </TableBody>
           </Table>
@@ -833,6 +781,101 @@ function SignaturesList() {
         </Alert>
       </Snackbar>
     </Card>
+  );
+}
+
+/**
+ * Ligne de tableau pour une signature
+ */
+function SignatureRow({ 
+  signature, 
+  onDelete, 
+  getApplianceColor,
+  formatTimeOnly,
+  formatDurationMinutes,
+  formatConsumption,
+  formatHumanizedDate,
+  formatDateTime,
+}) {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const open = Boolean(anchorEl);
+
+  const handleMenuClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleDeleteClick = () => {
+    handleMenuClose();
+    onDelete(signature);
+  };
+
+  return (
+    <TableRow hover>
+      <TableCell>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box
+            sx={{
+              width: 20,
+              height: 20,
+              borderRadius: '50%',
+              backgroundColor: getApplianceColor(signature.appliance_id),
+              flexShrink: 0,
+              ...(signature.is_negative && {
+                boxShadow: '0 0 0 3px white, 0 0 0 5px #ef5350',
+              }),
+            }}
+          />
+          <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(signature.appliance_id) }}>
+            {signature.appliance_name}
+          </Typography>
+        </Box>
+      </TableCell>
+      <TableCell align="left" sx={{ fontSize: 'small' }}>
+        <Box>
+          <Typography variant="body2" component="div">
+            à <strong>{formatTimeOnly(signature.start_time)}</strong> pendant <strong>{formatDurationMinutes(signature.duration_seconds)}min</strong>
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
+            {formatHumanizedDate(signature.start_time)} ({formatDateTime(signature.start_time)} - {formatTimeOnly(signature.end_time)})
+          </Typography>
+        </Box>
+      </TableCell>
+      <TableCell align="right" sx={{ width: '100px' }}>
+        <IconButton
+          size="small"
+          onClick={handleMenuClick}
+          aria-label="actions"
+        >
+          <MoreVert fontSize="small" />
+        </IconButton>
+        <Menu
+          anchorEl={anchorEl}
+          open={open}
+          onClose={handleMenuClose}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'right',
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'right',
+          }}
+        >
+          <MenuItem onClick={handleDeleteClick}>
+            <ListItemIcon>
+              <Delete fontSize="small" color="error" />
+            </ListItemIcon>
+            <ListItemText>
+              Supprimer
+            </ListItemText>
+          </MenuItem>
+        </Menu>
+      </TableCell>
+    </TableRow>
   );
 }
 

@@ -23,8 +23,12 @@ import {
   DialogActions,
   Button,
   Snackbar,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
-import { DeleteSweep, ThumbUp, ThumbDown, Search } from '@mui/icons-material';
+import { DeleteSweep, ThumbUp, ThumbDown, Search, MoreVert } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
@@ -285,8 +289,8 @@ function DetectionsList() {
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 600 }}>Détails</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 600, width: '100px' }}></TableCell>
+                      <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600, width: '60px' }}></TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -383,6 +387,9 @@ function DetectionsList() {
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const { getApplianceColor } = useApplianceColors();
+  const [anchorEl, setAnchorEl] = useState(null);
+  const open = Boolean(anchorEl);
+  
   const startTime = new Date(detection.start_time);
   const endTime = new Date(detection.end_time);
   const durationSeconds = Math.round((endTime - startTime) / 1000);
@@ -390,6 +397,24 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
   // Statut de validation
   const isValidated = detection.user_validated === true && detection.is_correct === true;
   const isInvalidated = detection.user_validated === true && detection.is_correct === false;
+
+  const handleMenuClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleValidateClick = () => {
+    handleMenuClose();
+    onValidate(detection);
+  };
+
+  const handleInvalidateClick = () => {
+    handleMenuClose();
+    onInvalidate(detection);
+  };
 
   const formatDateTime = (date) => {
     return date.toLocaleString('fr-FR', {
@@ -461,6 +486,17 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     return `${Math.round(watts / 100) * 100} W`;
   };
 
+  const formatConsumption = (watts, durationSeconds) => {
+    if (watts === null || watts === undefined || !durationSeconds) return 'N/A';
+    const kWh = (watts * durationSeconds) / (1000 * 3600);
+    return `${kWh.toFixed(1)} kWh`;
+  };
+
+  const formatDurationMinutes = (seconds) => {
+    if (!seconds) return '0';
+    return Math.round(seconds / 60);
+  };
+
   // Background selon la confiance : rouge si < 0.6, orange si >= 0.6 et < 0.8
   const confidenceScore = detection.confidence_score || 0;
   const hasLowConfidence = confidenceScore < 0.6;
@@ -497,7 +533,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
         transition: 'background-color 0.2s ease',
       }}
     >
-      <TableCell sx={{ fontWeight: 500 }}>
+      <TableCell sx={{ fontWeight: 500, width: '40%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
           <Box
             sx={{
@@ -523,45 +559,54 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           </Typography>
         </Box>
       </TableCell>
-      <TableCell align="right" sx={{ fontSize: 'small' }}>
-        <Box>
+      <TableCell sx={{ fontSize: 'small', verticalAlign: 'middle', whiteSpace: 'normal' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
           <Typography variant="body2" component="div">
-            <strong>{formatPower(detection.avg_power)}</strong> pendant <strong>{formatDurationFull(durationSeconds)}</strong>
+            à <strong>{formatTimeOnly(startTime)}</strong> pendant <strong>{formatDurationMinutes(durationSeconds)}min</strong>
           </Typography>
           <Typography variant="caption" color="text.secondary" component="div" sx={{ fontWeight: 300, fontSize: '0.7rem' }}>
             {formatHumanizedDate(startTime)} ({formatDateTime(startTime)} - {formatTimeOnly(endTime)})
           </Typography>
         </Box>
       </TableCell>
-      <TableCell align="right">
-        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
-          <Tooltip title={isValidated ? "Déjà validée" : "Marquer comme correcte"}>
-            <span>
-              <IconButton
-                size="small"
-                color="success"
-                onClick={() => onValidate(detection)}
-                aria-label="valider"
-                disabled={isValidated}
-              >
-                <ThumbUp fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title={isInvalidated ? "Déjà invalidée" : "Marquer comme incorrecte"}>
-            <span>
-              <IconButton
-                size="small"
-                color="error"
-                onClick={() => onInvalidate(detection)}
-                aria-label="invalider"
-                disabled={isInvalidated}
-              >
-                <ThumbDown fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Box>
+      <TableCell align="right" sx={{ width: '100px' }}>
+        <IconButton
+          size="small"
+          onClick={handleMenuClick}
+          aria-label="actions"
+        >
+          <MoreVert fontSize="small" />
+        </IconButton>
+        <Menu
+          anchorEl={anchorEl}
+          open={open}
+          onClose={handleMenuClose}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'right',
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'right',
+          }}
+        >
+          <MenuItem onClick={handleValidateClick} disabled={isValidated}>
+            <ListItemIcon>
+              <ThumbUp fontSize="small" color={isValidated ? "disabled" : "success"} />
+            </ListItemIcon>
+            <ListItemText>
+              {isValidated ? "Déjà validée" : "Marquer comme correcte"}
+            </ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleInvalidateClick} disabled={isInvalidated}>
+            <ListItemIcon>
+              <ThumbDown fontSize="small" color={isInvalidated ? "disabled" : "error"} />
+            </ListItemIcon>
+            <ListItemText>
+              {isInvalidated ? "Déjà invalidée" : "Marquer comme incorrecte"}
+            </ListItemText>
+          </MenuItem>
+        </Menu>
       </TableCell>
     </TableRow>
   );

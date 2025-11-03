@@ -19,7 +19,7 @@ import SignatureModal from './SignatureModal';
 import { useChart } from '../context/ChartContext';
 
 const ChartsContainer = () => {
-  const { setZoomState } = useChart();
+  const { setZoomState, setVisibleTimeRange } = useChart();
   const [rawData, setRawData] = useState(null);
   const [detections, setDetections] = useState([]);
   const [signatures, setSignatures] = useState([]);
@@ -55,6 +55,13 @@ const ChartsContainer = () => {
             max: visibleMax,
             dataLength: result.data.length,
           });
+          
+          // Set visible time range for DetectionsList filtering
+          if (result.data[visibleMin] && result.data[visibleMax]) {
+            const startTime = new Date(result.data[visibleMin].time);
+            const endTime = new Date(result.data[visibleMax].time);
+            setVisibleTimeRange({ startTime, endTime });
+          }
         }
         
         setLoadingProgress(100);
@@ -119,7 +126,7 @@ const ChartsContainer = () => {
       detectionsWS.off('detection_complete', handleDetectionComplete);
       detectionsWS.off('detections_cleared', handleDetectionsCleared);
     };
-  }, [setZoomState]);
+  }, [setZoomState, setVisibleTimeRange]);
 
   const handleResetZoom = () => {
     if (rawData?.data) {
