@@ -206,7 +206,7 @@ const ChartsContainer = () => {
           subheader={
             loading 
               ? `Chargement des donnees (${loadingProgress}%)...`
-              : 'Molette: zoom - Glisser: naviguer - Clic droit + glisser: creer signature'
+              : 'Molette: zoom - Glisser: naviguer sur la période - Clic droit + glisser: créer une signature'
           }
           avatar={<QueryStatsIcon />}
         />
@@ -236,7 +236,7 @@ const ChartsContainer = () => {
                 disabled={loading}
                 sx={{ textTransform: 'none' }}
               >
-                Réinitialiser
+                Réinitialiser la vue
               </Button>
             </span>
           </MuiTooltip>

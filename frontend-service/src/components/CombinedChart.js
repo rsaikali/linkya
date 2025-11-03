@@ -215,7 +215,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
             <div style="color: #666; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 12px; margin-top: 6px; font-style: italic;">Signature négative</div>' : ''}
+            ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 12px; margin-top: 6px; font-style: italic;">Issue d\'une détection déclarée comme incorrecte par l\'utilisateur.<br/>Elle aide le modèle IA à apprendre de ses erreurs.</div>' : ''}
           `;
           tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}`;
         } else if (foundTooltipData.type === 'consumption') {
