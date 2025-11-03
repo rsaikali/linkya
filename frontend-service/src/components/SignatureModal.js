@@ -165,10 +165,10 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
       <CardHeader
         title="Créer une nouvelle signature d'appareil"
         titleTypographyProps={{ variant: 'h5' }}
-        subheader="Définissez les caractéristiques de consommation d'un appareil"
+        subheader={<span dangerouslySetInnerHTML={{ __html: `<strong>Durée:</strong> ${Math.round((new Date(endTime) - new Date(startTime)) / 60000)} minutes` }} />  }
         avatar={<CreateIcon />}
       />
-
+      
       <DialogContent sx={{ pt: 3 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -231,14 +231,7 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
                 />
               </Box>
 
-              {/* Durée */}
-              {startTime && endTime && (
-                <Box sx={{ bgcolor: '#f5f5f5', p: 1.5, borderRadius: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    <strong>Durée:</strong> {Math.round((new Date(endTime) - new Date(startTime)) / 60000)} minutes
-                  </Typography>
-                </Box>
-              )}
+              
             </Box>
           </Box>
         </Box>

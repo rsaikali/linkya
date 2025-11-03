@@ -248,10 +248,19 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       }
     };
 
+    const handleMouseLeave = () => {
+      const tooltip = tooltipRef.current;
+      if (tooltip) {
+        tooltip.style.opacity = '0';
+      }
+    };
+
     canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
     
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseleave', handleMouseLeave);
       if (tooltipRef.current) {
         document.body.removeChild(tooltipRef.current);
         tooltipRef.current = null;
