@@ -231,7 +231,7 @@ const Header = () => {
 
   return (
     <AppBar position="static" elevation={2}>
-      <Toolbar sx={{ gap: 2 }}>
+      <Toolbar sx={{ gap: 2, minHeight: '56px', py: 0.5 }}>
         {/* Logo et titre */}
         <ElectricBolt sx={{ fontSize: 28 }} />
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>

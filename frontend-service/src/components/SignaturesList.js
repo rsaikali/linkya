@@ -30,7 +30,7 @@ import {
   Toolbar,
   Divider,
 } from '@mui/material';
-import { Delete, DeleteSweep, FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
+import { Delete, FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
@@ -48,8 +48,6 @@ function SignaturesList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [signatureToDelete, setSignatureToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
-  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -323,36 +321,6 @@ function SignaturesList() {
     }
   };
 
-  const handleDeleteAllClick = () => {
-    setDeleteAllDialogOpen(true);
-  };
-
-  const handleDeleteAllConfirm = async () => {
-    try {
-      setDeleteAllLoading(true);
-      const response = await api.delete('/api/signatures');
-      
-      setSnackbar({
-        open: true,
-        message: `${response.data.signatures_deleted} signature(s) supprimée(s)`,
-        severity: 'success'
-      });
-      
-      // Rafraîchir la liste
-      await fetchSignatures();
-    } catch (err) {
-      console.error('Erreur lors de la suppression de toutes les signatures:', err);
-      setSnackbar({
-        open: true,
-        message: 'Erreur lors de la suppression',
-        severity: 'error'
-      });
-    } finally {
-      setDeleteAllLoading(false);
-      setDeleteAllDialogOpen(false);
-    }
-  };
-
   const formatDateTime = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -442,7 +410,7 @@ function SignaturesList() {
       <CardHeader 
         title="Signatures d'appareils"
         titleTypographyProps={{ variant: 'h5' }}
-        subheader={`${totalSignatures} signature(s)`}
+        subheader={`${totalSignatures} signature${totalSignatures > 1 ? 's' : ''} utilisées pour l'apprentissage de l'IA`}
         avatar={<TrackChangesIcon />}
       />
       
@@ -476,6 +444,8 @@ function SignaturesList() {
           </span>
         </Tooltip>
         
+        <Box sx={{ flexGrow: 1 }} />
+        
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
         
         <Tooltip title="Exporter les signatures en CSV">
@@ -500,21 +470,6 @@ function SignaturesList() {
           >
             Importer
           </Button>
-        </Tooltip>
-        
-        <Box sx={{ flexGrow: 1 }} />
-        
-        <Tooltip title="Supprimer toutes les signatures">
-          <span>
-            <IconButton
-              size="small"
-              color="error"
-              onClick={handleDeleteAllClick}
-              disabled={deleteAllLoading || totalSignatures === 0}
-            >
-              {deleteAllLoading ? <CircularProgress size={20} /> : <DeleteSweep />}
-            </IconButton>
-          </span>
         </Tooltip>
       </Toolbar>
 
@@ -605,7 +560,7 @@ function SignaturesList() {
               <TableRow>
                 <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
                 <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600, width: '60px' }}></TableCell>
+                <TableCell align="right" sx={{ width: '40px', p: 1 }}></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -655,37 +610,6 @@ function SignaturesList() {
           </Button>
           <Button onClick={handleDeleteConfirm} color="error" autoFocus>
             Supprimer
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Dialog de confirmation de suppression totale */}
-      <Dialog
-        open={deleteAllDialogOpen}
-        onClose={() => !deleteAllLoading && setDeleteAllDialogOpen(false)}
-      >
-        <DialogTitle>Supprimer toutes les signatures</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Voulez-vous vraiment supprimer <strong>toutes les {totalSignatures} signature(s)</strong> ?
-            <br />
-            Cette action est irréversible.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button 
-            onClick={() => setDeleteAllDialogOpen(false)}
-            disabled={deleteAllLoading}
-          >
-            Annuler
-          </Button>
-          <Button 
-            onClick={handleDeleteAllConfirm} 
-            color="error" 
-            autoFocus
-            disabled={deleteAllLoading}
-          >
-            {deleteAllLoading ? 'Suppression...' : 'Supprimer tout'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -888,7 +812,7 @@ function SignatureRow({
           </Typography>
         </Box>
       </TableCell>
-      <TableCell align="right" sx={{ width: '100px' }}>
+      <TableCell align="right" sx={{ width: '40px', p: 1 }}>
         <IconButton
           size="small"
           onClick={handleMenuClick}

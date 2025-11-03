@@ -59,6 +59,8 @@ const theme = createTheme({
         root: {
           backgroundColor: '#BD2A2E',
           color: '#fff',
+          paddingTop: '10px',
+          paddingBottom: '10px',
           '& .MuiIconButton-root': {
             color: '#fff',
             '&:hover': {

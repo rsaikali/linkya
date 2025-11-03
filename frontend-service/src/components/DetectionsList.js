@@ -30,12 +30,40 @@ import {
   Toolbar,
   Divider,
 } from '@mui/material';
-import { DeleteSweep, Check, Close, Search, MoreVert } from '@mui/icons-material';
+import { Check, Close, Search, MoreVert } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
 import { useChart } from '../context/ChartContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
+
+// Icône Google Material Symbols pour Delete
+const DeleteIcon = () => (
+  <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+    delete
+  </span>
+);
+
+// Icône Google Material Symbols pour qualité de détection
+const QualityIcon = ({ confidence }) => {
+  const getColor = () => {
+    if (confidence < 0.6) return '#f44336'; // Rouge
+    if (confidence < 0.8) return '#ff9800'; // Orange
+    return '#4caf50'; // Vert
+  };
+
+  return (
+    <span 
+      className="material-symbols-outlined" 
+      style={{ 
+        fontSize: '20px',
+        color: getColor()
+      }}
+    >
+      psychology_alt
+    </span>
+  );
+};
 
 /**
  * Composant affichant les détections d'appareils récentes
@@ -281,14 +309,17 @@ function DetectionsList() {
           
           <Tooltip title="Supprimer toutes les détections">
             <span>
-              <IconButton
+              <Button
+                variant="outlined"
                 size="small"
                 color="error"
+                startIcon={deleteAllLoading ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon />}
                 onClick={handleOpenDeleteAllDialog}
                 disabled={deleteAllLoading || totalDetections === 0}
+                sx={{ textTransform: 'none' }}
               >
-                {deleteAllLoading ? <CircularProgress size={20} /> : <DeleteSweep />}
-              </IconButton>
+                {deleteAllLoading ? 'Suppression...' : 'Tout supprimer'}
+              </Button>
             </span>
           </Tooltip>
         </Toolbar>
@@ -314,7 +345,8 @@ function DetectionsList() {
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
                       <TableCell align="left" sx={{ fontWeight: 600 }}>Détails</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 600, width: '60px' }}></TableCell>
+                      <TableCell align="center" sx={{ width: '40px', p: 1 }}></TableCell>
+                      <TableCell align="right" sx={{ width: '40px', p: 1 }}></TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -328,7 +360,7 @@ function DetectionsList() {
                     ))}
                     {loading && (
                       <TableRow>
-                        <TableCell colSpan={3} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
                           <CircularProgress size={32} />
                         </TableCell>
                       </TableRow>
@@ -379,7 +411,7 @@ function DetectionsList() {
             color="error" 
             variant="contained"
             disabled={deleteAllLoading}
-            startIcon={deleteAllLoading ? <CircularProgress size={20} /> : <DeleteSweep />}
+            startIcon={deleteAllLoading ? <CircularProgress size={20} /> : <DeleteIcon />}
           >
             {deleteAllLoading ? 'Suppression...' : 'Tout supprimer'}
           </Button>
@@ -521,39 +553,12 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     return Math.round(seconds / 60);
   };
 
-  // Background selon la confiance : rouge si < 0.6, orange si >= 0.6 et < 0.8
   const confidenceScore = detection.confidence_score || 0;
-  const hasLowConfidence = confidenceScore < 0.6;
-  const hasMediumConfidence = confidenceScore >= 0.6 && confidenceScore < 0.8;
-  
-  const backgroundColor = isValidated 
-    ? 'rgba(76, 175, 80, 0.08)' 
-    : isInvalidated 
-    ? 'rgba(244, 67, 54, 0.08)' 
-    : hasLowConfidence 
-    ? 'rgba(244, 67, 54, 0.05)' 
-    : hasMediumConfidence
-    ? 'rgba(255, 152, 0, 0.05)'
-    : 'inherit';
-    
-  const hoverColor = isValidated 
-    ? 'rgba(76, 175, 80, 0.15)' 
-    : isInvalidated 
-    ? 'rgba(244, 67, 54, 0.15)' 
-    : hasLowConfidence 
-    ? 'rgba(244, 67, 54, 0.1)' 
-    : hasMediumConfidence
-    ? 'rgba(255, 152, 0, 0.1)'
-    : 'rgba(0, 0, 0, 0.04)';
 
   return (
     <TableRow
       hover
       sx={{
-        backgroundColor: backgroundColor,
-        '&:hover': {
-          backgroundColor: hoverColor,
-        },
         transition: 'background-color 0.2s ease',
       }}
     >
@@ -593,7 +598,14 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           </Typography>
         </Box>
       </TableCell>
-      <TableCell align="right" sx={{ width: '100px' }}>
+      <TableCell align="center" sx={{ width: '40px', p: 1 }}>
+        <Tooltip title={`Confiance: ${Math.round(confidenceScore * 100)}%`}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <QualityIcon confidence={confidenceScore} />
+          </Box>
+        </Tooltip>
+      </TableCell>
+      <TableCell align="right" sx={{ width: '40px', p: 1 }}>
         <IconButton
           size="small"
           onClick={handleMenuClick}
