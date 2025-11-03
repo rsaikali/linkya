@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useCallback, useState } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -12,9 +12,11 @@ import {
   Filler,
   Decimation,
 } from 'chart.js';
+import annotationPlugin from 'chartjs-plugin-annotation';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { Line } from 'react-chartjs-2';
 import { useChart } from '../context/ChartContext';
+import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 ChartJS.register(
   CategoryScale,
@@ -26,19 +28,19 @@ ChartJS.register(
   Legend,
   Filler,
   Decimation,
+  annotationPlugin,
   zoomPlugin
 );
 
-const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
+const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }) => {
   const chartRef = useRef(null);
   const { zoomState, setZoomState, setVisibleTimeRange } = useChart();
-  const [customTooltip, setCustomTooltip] = useState({ visible: false, x: 0, y: 0, content: null });
+  const { getApplianceColor } = useApplianceColors();
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectionEnd, setSelectionEnd] = useState(null);
   const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
   const isUpdatingZoomRef = useRef(false);
-  const initializedRef = useRef(false);
 
   // Synchronize zoom from context
   useEffect(() => {
@@ -50,7 +52,6 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
       chart.options.scales.x.min = zoomState.min;
       chart.options.scales.x.max = zoomState.max;
       chart.update('none');
-      initializedRef.current = true;
     }
   }, [zoomState]);
 
@@ -63,14 +64,12 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
       const visibleMin = Math.max(0, Math.floor(chart.scales.x.min || 0));
       const visibleMax = Math.min(rawData.data.length - 1, Math.ceil(chart.scales.x.max || rawData.data.length - 1));
       
-      // Update visible time range in context
       if (rawData.data[visibleMin] && rawData.data[visibleMax]) {
         const startTime = new Date(rawData.data[visibleMin].time);
         const endTime = new Date(rawData.data[visibleMax].time);
         setVisibleTimeRange({ startTime, endTime });
       }
       
-      // Update zoom state
       isUpdatingZoomRef.current = true;
       setZoomState({
         min: chart.scales.x.min,
@@ -82,6 +81,142 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
       }, 50);
     }
   }, [rawData, setVisibleTimeRange, setZoomState]);
+
+  // Prepare annotations
+  const annotationsData = useMemo(() => {
+    if (!rawData || !rawData.data) return {};
+
+    const annotations = {};
+    
+    const assignRowLevels = (items) => {
+      const sorted = [...items].sort((a, b) => a.startIndex - b.startIndex);
+      const rowEndIndices = [];
+      
+      sorted.forEach(item => {
+        let assignedRow = -1;
+        for (let i = 0; i < rowEndIndices.length; i++) {
+          if (rowEndIndices[i] < item.startIndex) {
+            assignedRow = i;
+            rowEndIndices[i] = item.endIndex;
+            break;
+          }
+        }
+        if (assignedRow === -1) {
+          assignedRow = rowEndIndices.length;
+          rowEndIndices.push(item.endIndex);
+        }
+        item.row = assignedRow;
+      });
+      
+      return Math.max(1, rowEndIndices.length);
+    };
+
+    // Detections annotations (on yDetections scale, 0-1)
+    if (detections && detections.length > 0) {
+      const detectionItems = detections
+        .filter(d => d.start_time && d.end_time && d.name)
+        .map(d => {
+          const startTime = new Date(d.start_time).getTime();
+          const endTime = new Date(d.end_time).getTime();
+          const startIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
+          const endIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
+          
+          if (startIndex !== -1) {
+            return {
+              ...d,
+              startIndex,
+              endIndex: endIndex !== -1 ? endIndex : rawData.data.length - 1,
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      const maxDetectionRows = assignRowLevels(detectionItems);
+      
+      detectionItems.forEach(d => {
+        const color = getApplianceColor(d.appliance_id || d.name);
+        const rowHeight = 1 / (maxDetectionRows + 1);
+        
+        annotations[`detection-${d.id}`] = {
+          type: 'box',
+          xMin: d.startIndex,
+          xMax: d.endIndex,
+          yMin: d.row * rowHeight,
+          yMax: (d.row + 1) * rowHeight - 0.05,
+          yScaleID: 'yDetections',
+          backgroundColor: `${color}99`,
+          borderColor: color,
+          borderWidth: 1,
+          drawTime: 'beforeDatasetsDraw',
+        };
+      });
+    }
+
+    // Signatures annotations (on ySignatures scale, 0-1)
+    if (signatures && signatures.length > 0) {
+      const signatureItems = signatures
+        .filter(s => s.start_time && s.end_time && s.appliance_name)
+        .map(s => {
+          const startTime = new Date(s.start_time).getTime();
+          const endTime = new Date(s.end_time).getTime();
+          
+          let startIndex = -1;
+          let endIndex = -1;
+          let minStartDiff = Infinity;
+          let minEndDiff = Infinity;
+          
+          rawData.data.forEach((dt, idx) => {
+            const dtTime = new Date(dt.time).getTime();
+            const startDiff = Math.abs(dtTime - startTime);
+            const endDiff = Math.abs(dtTime - endTime);
+            
+            if (startDiff < minStartDiff) {
+              minStartDiff = startDiff;
+              startIndex = idx;
+            }
+            if (endDiff < minEndDiff) {
+              minEndDiff = endDiff;
+              endIndex = idx;
+            }
+          });
+          
+          if (startIndex !== -1 && endIndex !== -1) {
+            return {
+              ...s,
+              startIndex: Math.min(startIndex, endIndex),
+              endIndex: Math.max(startIndex, endIndex),
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      const maxSignatureRows = assignRowLevels(signatureItems);
+      
+      signatureItems.forEach(s => {
+        const color = getApplianceColor(s.appliance_id || s.appliance_name);
+        const isNegative = s.is_negative === true;
+        const rowHeight = 1 / (maxSignatureRows + 1);
+        
+        annotations[`signature-${s.id}`] = {
+          type: 'box',
+          xMin: s.startIndex,
+          xMax: s.endIndex,
+          yMin: s.row * rowHeight,
+          yMax: (s.row + 1) * rowHeight - 0.05,
+          yScaleID: 'ySignatures',
+          backgroundColor: `${color}99`,
+          borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : color,
+          borderWidth: 1,
+          borderDash: isNegative ? [10, 5] : undefined,
+          drawTime: 'beforeDatasetsDraw',
+        };
+      });
+    }
+
+    return annotations;
+  }, [rawData, detections, signatures, getApplianceColor]);
 
   // Handle right-click selection for signature creation
   useEffect(() => {
@@ -199,64 +334,18 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
     };
   }, [rawData, onSignatureModalOpen]);
 
-  // Custom tooltip
+  // Update annotations
   useEffect(() => {
-    const canvas = chartRef.current?.canvas;
-    if (!canvas || !rawData?.data) return;
+    if (!chartRef.current || !annotationsData) return;
+    
+    const chart = chartRef.current;
+    if (chart.options?.plugins?.annotation) {
+      chart.options.plugins.annotation.annotations = annotationsData;
+      chart.update('none');
+    }
+  }, [annotationsData]);
 
-    const handleTooltipMove = (e) => {
-      if (selectionRef.current.isSelecting) {
-        setCustomTooltip({ visible: false, x: 0, y: 0, content: null });
-        return;
-      }
-
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      
-      const chart = chartRef.current;
-      if (!chart?.scales?.x) return;
-
-      const xScale = chart.scales.x;
-      const dataIndex = Math.round(xScale.getValueForPixel(x));
-      
-      if (dataIndex >= 0 && dataIndex < rawData.data.length) {
-        const dataPoint = rawData.data[dataIndex];
-        const date = new Date(dataPoint.time);
-        const power = dataPoint.avg_papp;
-        
-        setCustomTooltip({
-          visible: true,
-          x: e.clientX,
-          y: e.clientY - 10,
-          content: {
-            time: date.toLocaleString('fr-FR', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              day: '2-digit',
-              month: '2-digit',
-              year: '2-digit'
-            }),
-            power: power.toFixed(0),
-          },
-        });
-      }
-    };
-
-    const handleTooltipLeave = () => {
-      setCustomTooltip({ visible: false, x: 0, y: 0, content: null });
-    };
-
-    canvas.addEventListener('mousemove', handleTooltipMove);
-    canvas.addEventListener('mouseleave', handleTooltipLeave);
-
-    return () => {
-      canvas.removeEventListener('mousemove', handleTooltipMove);
-      canvas.removeEventListener('mouseleave', handleTooltipLeave);
-    };
-  }, [rawData]);
-
-  // Chart data
+  // Chart data with 3 datasets (one per Y axis)
   const chartData = useMemo(() => {
     if (!rawData || !rawData.data || rawData.data.length === 0) {
       return null;
@@ -268,14 +357,36 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
     return {
       labels,
       datasets: [
+        // Signatures dataset (invisible, just for ySignatures scale) - Will be at bottom
+        {
+          label: 'Signatures',
+          data: rawData.data.map(() => 0),
+          yAxisID: 'ySignatures',
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          pointHoverRadius: 0,
+        },
+        // Consumption dataset (main) - Will be in middle
         {
           label: 'Puissance moyenne (W)',
           data: powerData,
+          yAxisID: 'yConsumption',
           borderColor: '#0d6e00ff',
           backgroundColor: '#BD2A2E50',
           fill: true,
           borderWidth: 0,
           tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+        },
+        // Detections dataset (invisible, just for yDetections scale) - Will be at top
+        {
+          label: 'Detections',
+          data: rawData.data.map(() => 0),
+          yAxisID: 'yDetections',
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
           pointRadius: 0,
           pointHoverRadius: 0,
         },
@@ -310,6 +421,9 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
         },
       },
       plugins: {
+        annotation: {
+          annotations: {},
+        },
         legend: { display: false },
         title: { display: false },
         tooltip: { enabled: false },
@@ -344,9 +458,58 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
         },
       },
       scales: {
-        y: {
+        // Signatures Y axis (bottom, 15% height)
+        ySignatures: {
+          type: 'linear',
+          position: 'left',
+          min: 0,
+          max: 1,
+          display: true,
+          title: { 
+            display: true, 
+            text: 'Signatures',
+            font: { size: 11, weight: 600 },
+            color: '#666',
+          },
+          stack: 'demo',
+          stackWeight: 1,
+          grid: { display: false },
+          ticks: { display: false },
+          border: { display: false },
+        },
+        // Consumption Y axis (middle, 70% height)
+        yConsumption: {
+          type: 'linear',
+          position: 'left',
           beginAtZero: true,
-          title: { display: true, text: 'Puissance (W)' },
+          display: true,
+          title: { 
+            display: true, 
+            text: 'Puissance (W)',
+            font: { size: 12, weight: 600 },
+          },
+          stack: 'demo',
+          stackWeight: 7,
+          grid: { drawOnChartArea: true },
+        },
+        // Detections Y axis (top, 15% height)
+        yDetections: {
+          type: 'linear',
+          position: 'left',
+          min: 0,
+          max: 1,
+          display: true,
+          title: { 
+            display: true, 
+            text: 'Detections',
+            font: { size: 11, weight: 600 },
+            color: '#666',
+          },
+          stack: 'demo',
+          stackWeight: 1,
+          grid: { display: false },
+          ticks: { display: false },
+          border: { display: false },
         },
         x: {
           min: initialMin,
@@ -358,7 +521,7 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
             minRotation: 0,
             autoSkip: true,
             maxTicksLimit: 20,
-            callback: (value, index) => {
+            callback: (value) => {
               if (rawData?.data && rawData.data[value]) {
                 const date = new Date(rawData.data[value].time);
                 const dayName = date.toLocaleDateString('fr-FR', { weekday: 'long' });
@@ -379,61 +542,29 @@ const ConsumptionChart = ({ rawData, onSignatureModalOpen }) => {
   if (!rawData || !chartData) return null;
 
   return (
-    <>
-      <Box 
-        sx={{ height: 400, position: 'relative', borderTop: '1px solid rgba(0,0,0,0.1)', borderBottom: '1px solid rgba(0,0,0,0.1)' }}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        <Line 
-          ref={chartRef} 
-          data={chartData} 
-          options={options}
-        />
-        {isSelecting && selectionStart !== null && selectionEnd !== null && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: Math.min(selectionStart, selectionEnd),
-              width: Math.abs(selectionEnd - selectionStart),
-              height: '100%',
-              backgroundColor: 'rgba(33, 150, 243, 0.2)',
-              border: '2px solid rgba(33, 150, 243, 0.6)',
-              pointerEvents: 'none',
-              zIndex: 1000,
-            }}
-          />
-        )}
-      </Box>
-
-      {customTooltip.visible && customTooltip.content && (
+    <Box 
+      sx={{ height: 600, position: 'relative' }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <Line ref={chartRef} data={chartData} options={options} />
+      
+      {isSelecting && selectionStart !== null && selectionEnd !== null && (
         <Box
           sx={{
-            position: 'fixed',
-            left: customTooltip.x,
-            top: customTooltip.y,
-            transform: 'translate(-50%, -100%)',
-            backgroundColor: 'rgba(255, 255, 255, 0.98)',
-            border: '1px solid rgba(0, 0, 0, 0.12)',
-            borderRadius: 2,
-            boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.15)',
-            padding: 1.5,
+            position: 'absolute',
+            top: 0,
+            left: Math.min(selectionStart, selectionEnd),
+            width: Math.abs(selectionEnd - selectionStart),
+            height: '100%',
+            backgroundColor: 'rgba(33, 150, 243, 0.2)',
+            border: '2px solid rgba(33, 150, 243, 0.6)',
             pointerEvents: 'none',
-            zIndex: 10000,
-            minWidth: 200,
-            maxWidth: 350,
+            zIndex: 1000,
           }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-            {customTooltip.content.time}
-          </Typography>
-          <Typography variant="body1" sx={{ fontWeight: 600, color: 'primary.main' }}>
-            {customTooltip.content.power} W
-          </Typography>
-        </Box>
+        />
       )}
-    </>
+    </Box>
   );
 };
 
-export default ConsumptionChart;
+export default CombinedChart;

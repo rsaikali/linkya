@@ -4,7 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Typography, Grid } from '@mui/material';
 import theme from './theme';
 import Header from './components/Header';
-import ConsumptionChart from './components/ConsumptionChart';
+import ChartsContainer from './components/ChartsContainer';
 import DetectionsList from './components/DetectionsList';
 import SignaturesList from './components/SignaturesList';
 import AppliancesList from './components/AppliancesList';
@@ -34,7 +34,7 @@ function App() {
 
             {/* Colonne 2 - Graphique (6/12) */}
             <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <ConsumptionChart />
+              <ChartsContainer />
             </Grid>
 
             {/* Colonne 3 - Détections (3/12) */}
