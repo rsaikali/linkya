@@ -142,12 +142,12 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           type: 'box',
           xMin: d.startIndex,
           xMax: d.endIndex,
-          yMin: d.row * rowHeight,
+          yMin: d.row * rowHeight + 0.05,
           yMax: (d.row + 1) * rowHeight - 0.05,
           yScaleID: 'yDetections',
-          backgroundColor: `${color}99`,
+          backgroundColor: `${color}`,
           borderColor: color,
-          borderWidth: 1,
+          borderWidth: 5,
           drawTime: 'beforeDatasetsDraw',
         };
       });
@@ -203,13 +203,12 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
           type: 'box',
           xMin: s.startIndex,
           xMax: s.endIndex,
-          yMin: s.row * rowHeight,
+          yMin: s.row * rowHeight + 0.05,
           yMax: (s.row + 1) * rowHeight - 0.05,
           yScaleID: 'ySignatures',
-          backgroundColor: `${color}99`,
+          backgroundColor: `${color}`,
           borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : color,
-          borderWidth: 1,
-          borderDash: isNegative ? [10, 5] : undefined,
+          borderWidth: 5,
           drawTime: 'beforeDatasetsDraw',
         };
       });
