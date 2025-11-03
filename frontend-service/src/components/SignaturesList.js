@@ -27,6 +27,8 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Toolbar,
+  Divider,
 } from '@mui/material';
 import { Delete, DeleteSweep, FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
@@ -442,49 +444,80 @@ function SignaturesList() {
         titleTypographyProps={{ variant: 'h5' }}
         subheader={`${totalSignatures} signature(s)`}
         avatar={<TrackChangesIcon />}
-        action={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <Tooltip title="Entraîner le modèle">
-              <span>
-                <IconButton
-                  color="primary"
-                  onClick={handleTrain}
-                  disabled={trainLoading || totalSignatures === 0}
-                >
-                  {trainLoading ? <CircularProgress size={24} /> : <ModelTraining />}
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="Exporter les signatures en CSV">
-              <IconButton
-                color="primary"
-                onClick={handleExportCSV}
-              >
-                <FileDownload />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Importer des signatures depuis un CSV">
-              <IconButton
-                color="primary"
-                onClick={handleImportClick}
-              >
-                <FileUpload />
-              </IconButton>
-            </Tooltip>
-            <Tooltip title="Supprimer toutes les signatures">
-              <span>
-                <IconButton
-                  color="error"
-                  onClick={handleDeleteAllClick}
-                  disabled={deleteAllLoading || totalSignatures === 0}
-                >
-                  {deleteAllLoading ? <CircularProgress size={24} /> : <DeleteSweep />}
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
-        }
       />
+      
+      {/* Toolbar avec actions */}
+      <Toolbar 
+        variant="dense" 
+        sx={{ 
+          px: 2,
+          py: 1,
+          minHeight: 48,
+          bgcolor: 'action.hover',
+          borderTop: 1,
+          borderBottom: 1,
+          borderColor: 'divider',
+          gap: 1,
+          justifyContent: 'flex-start'
+        }}
+      >
+        <Tooltip title="Entraîner le modèle IA">
+          <span>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={trainLoading ? <CircularProgress size={16} color="inherit" /> : <ModelTraining />}
+              onClick={handleTrain}
+              disabled={trainLoading || totalSignatures === 0}
+              sx={{ textTransform: 'none' }}
+            >
+              Entraîner
+            </Button>
+          </span>
+        </Tooltip>
+        
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+        
+        <Tooltip title="Exporter les signatures en CSV">
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<FileDownload />}
+            onClick={handleExportCSV}
+            sx={{ textTransform: 'none' }}
+          >
+            Exporter
+          </Button>
+        </Tooltip>
+        
+        <Tooltip title="Importer des signatures depuis un CSV">
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<FileUpload />}
+            onClick={handleImportClick}
+            sx={{ textTransform: 'none' }}
+          >
+            Importer
+          </Button>
+        </Tooltip>
+        
+        <Box sx={{ flexGrow: 1 }} />
+        
+        <Tooltip title="Supprimer toutes les signatures">
+          <span>
+            <IconButton
+              size="small"
+              color="error"
+              onClick={handleDeleteAllClick}
+              disabled={deleteAllLoading || totalSignatures === 0}
+            >
+              {deleteAllLoading ? <CircularProgress size={20} /> : <DeleteSweep />}
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Toolbar>
+
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
         {(error || importProgress.status !== 'idle' || loading) && (
           <Box sx={{ p: 2 }}>

@@ -27,6 +27,8 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Toolbar,
+  Divider,
 } from '@mui/material';
 import { DeleteSweep, Check, Close, Search, MoreVert } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
@@ -242,33 +244,55 @@ function DetectionsList() {
           titleTypographyProps={{ variant: 'h5' }}
           subheader={`${totalDetections} détection${totalDetections !== 1 ? 's' : ''} dans la période visible`}
           avatar={<InsightsIcon />}
-          action={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-              <Tooltip title="Lancer la détection des appareils">
-                <span>
-                  <IconButton
-                    color="success"
-                    onClick={handleDetect}
-                    disabled={detectLoading}
-                  >
-                    {detectLoading ? <CircularProgress size={24} /> : <Search />}
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title="Supprimer toutes les détections">
-                <span>
-                  <IconButton
-                    color="error"
-                    onClick={handleOpenDeleteAllDialog}
-                    disabled={deleteAllLoading || totalDetections === 0}
-                  >
-                    {deleteAllLoading ? <CircularProgress size={24} /> : <DeleteSweep />}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Box>
-          }
         />
+        
+        {/* Toolbar avec actions */}
+        <Toolbar 
+          variant="dense" 
+          sx={{ 
+            px: 2,
+            py: 1,
+            minHeight: 48,
+            bgcolor: 'action.hover',
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: 'divider',
+            gap: 1,
+            justifyContent: 'flex-start'
+          }}
+        >
+          <Tooltip title="Lancer la détection des appareils">
+            <span>
+              <Button
+                variant="contained"
+                size="small"
+                color="success"
+                startIcon={detectLoading ? <CircularProgress size={16} color="inherit" /> : <Search />}
+                onClick={handleDetect}
+                disabled={detectLoading}
+                sx={{ textTransform: 'none' }}
+              >
+                Détecter
+              </Button>
+            </span>
+          </Tooltip>
+          
+          <Box sx={{ flexGrow: 1 }} />
+          
+          <Tooltip title="Supprimer toutes les détections">
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                onClick={handleOpenDeleteAllDialog}
+                disabled={deleteAllLoading || totalDetections === 0}
+              >
+                {deleteAllLoading ? <CircularProgress size={20} /> : <DeleteSweep />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Toolbar>
+
         <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 0, display: 'flex', flexDirection: 'column' }}>
           {((loading && detections.length === 0) || totalDetections === 0) && (
             <Box sx={{ p: 2 }}>

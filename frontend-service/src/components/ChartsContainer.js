@@ -9,6 +9,8 @@ import {
   IconButton,
   Tooltip as MuiTooltip,
   LinearProgress,
+  Toolbar,
+  Button,
 } from '@mui/material';
 import { ZoomOutMap } from '@mui/icons-material';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
@@ -207,20 +209,39 @@ const ChartsContainer = () => {
               : 'Molette: zoom - Glisser: naviguer - Clic droit + glisser: creer signature'
           }
           avatar={<QueryStatsIcon />}
-          action={
-            <MuiTooltip title="Reinitialiser le zoom">
-              <span>
-                <IconButton
-                  color="primary"
-                  onClick={handleResetZoom}
-                  disabled={loading}
-                >
-                  <ZoomOutMap />
-                </IconButton>
-              </span>
-            </MuiTooltip>
-          }
         />
+        
+        {/* Toolbar avec actions */}
+        <Toolbar 
+          variant="dense" 
+          sx={{ 
+            px: 2,
+            py: 1,
+            minHeight: 48,
+            bgcolor: 'action.hover',
+            borderTop: 1,
+            borderBottom: 1,
+            borderColor: 'divider',
+            gap: 1,
+            justifyContent: 'flex-start'
+          }}
+        >
+          <MuiTooltip title="Réinitialiser le zoom (dernières 48h)">
+            <span>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ZoomOutMap />}
+                onClick={handleResetZoom}
+                disabled={loading}
+                sx={{ textTransform: 'none' }}
+              >
+                Réinitialiser
+              </Button>
+            </span>
+          </MuiTooltip>
+        </Toolbar>
+        
         {loading && (
           <LinearProgress 
             variant="determinate" 
