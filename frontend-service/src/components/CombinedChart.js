@@ -43,6 +43,56 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
   const isUpdatingZoomRef = useRef(false);
   const tooltipRef = useRef(null);
 
+  // Helper functions for formatting (copied from DetectionsList and SignaturesList)
+  const formatTimeOnly = (date) => {
+    return date.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDateTime = (date) => {
+    return date.toLocaleString('fr-FR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDurationMinutes = (seconds) => {
+    if (!seconds) return '0';
+    return Math.round(seconds / 60);
+  };
+
+  const formatHumanizedDate = (date) => {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSeconds < 60) {
+      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
+    } else if (diffMinutes < 60) {
+      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
+    } else if (diffHours < 24) {
+      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
+    } else if (diffDays < 7) {
+      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
+    } else if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
+    } else if (diffDays < 365) {
+      const months = Math.floor(diffDays / 30);
+      return `il y a ${months} mois`;
+    } else {
+      const years = Math.floor(diffDays / 365);
+      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
+    }
+  };
+
   // Custom tooltip handler for annotations
   useEffect(() => {
     const canvas = chartRef.current?.canvas;
@@ -159,7 +209,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
         tooltipRef.current = null;
       }
     };
-  }, [rawData, formatTimeOnly, formatDateTime, formatDurationMinutes, formatHumanizedDate]);
+  }, [rawData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Synchronize zoom from context
   useEffect(() => {
@@ -200,56 +250,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       }, 50);
     }
   }, [rawData, setVisibleTimeRange, setZoomState]);
-
-  // Helper functions for formatting (copied from DetectionsList and SignaturesList)
-  const formatTimeOnly = (date) => {
-    return date.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatDateTime = (date) => {
-    return date.toLocaleString('fr-FR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatDurationMinutes = (seconds) => {
-    if (!seconds) return '0';
-    return Math.round(seconds / 60);
-  };
-
-  const formatHumanizedDate = (date) => {
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSeconds = Math.floor(diffMs / 1000);
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffSeconds < 60) {
-      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
-    } else if (diffMinutes < 60) {
-      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
-    } else if (diffHours < 24) {
-      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
-    } else if (diffDays < 7) {
-      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
-    } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7);
-      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
-    } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30);
-      return `il y a ${months} mois`;
-    } else {
-      const years = Math.floor(diffDays / 365);
-      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
-    }
-  };
 
   // Prepare annotations
   const annotationsData = useMemo(() => {
