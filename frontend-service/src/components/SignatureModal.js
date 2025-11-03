@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
@@ -11,9 +10,9 @@ import {
   Autocomplete,
   Alert,
   CircularProgress,
-  FormControlLabel,
-  Checkbox,
+  CardHeader,
 } from '@mui/material';
+import CreateIcon from '@mui/icons-material/Create';
 import { apiService } from '../services/api';
 
 const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
@@ -152,8 +151,23 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Créer une nouvelle signature d'appareil</DialogTitle>
+    <Dialog 
+      open={open} 
+      onClose={handleClose} 
+      maxWidth="sm" 
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+        }
+      }}
+    >
+      <CardHeader
+        title="Créer une nouvelle signature d'appareil"
+        titleTypographyProps={{ variant: 'h5' }}
+        subheader="Définissez les caractéristiques de consommation d'un appareil"
+        avatar={<CreateIcon />}
+      />
 
       <DialogContent sx={{ pt: 3 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -201,9 +215,6 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
                   fullWidth
                   size="small"
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  {formatTimeDisplay(startTime)}
-                </Typography>
               </Box>
 
               {/* End time */}
@@ -218,9 +229,6 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
                   fullWidth
                   size="small"
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  {formatTimeDisplay(endTime)}
-                </Typography>
               </Box>
 
               {/* Durée */}
