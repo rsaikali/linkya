@@ -197,6 +197,9 @@ class DatabaseManager:
             JOIN cnn_appliances ca ON cd.appliance_id = ca.id
             WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
               AND (:end_time IS NULL OR cd.end_time <= :end_time)
+              AND (cd.user_validated IS NULL 
+                   OR cd.user_validated = FALSE 
+                   OR cd.is_correct = TRUE)
             ORDER BY cd.start_time DESC
         """)
 
@@ -753,9 +756,7 @@ class DatabaseManager:
                 ca.name,
                 cd.start_time,
                 cd.end_time,
-                cd.confidence_score,
-                cd.avg_power,
-                cd.energy_consumed
+                cd.confidence_score
             FROM cnn_detections cd
             JOIN cnn_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
@@ -778,10 +779,6 @@ class DatabaseManager:
                 "end_time": format_datetime(result[4]),
                 "confidence_score": (
                     float(result[5]) if result[5] is not None else None
-                ),
-                "avg_power": float(result[6]) if result[6] is not None else None,
-                "energy_consumed": (
-                    float(result[7]) if result[7] is not None else None
                 ),
                 "user_validated": True,
                 "is_correct": is_correct,
@@ -809,14 +806,13 @@ class DatabaseManager:
                 ).scalar()
 
                 if existing == 0:
-                    # Créer la signature positive avec les données de la détection
+                    # Create positive signature from validated detection
                     create_signature_query = text("""
                         INSERT INTO cnn_signatures
                         (appliance_id, start_time, end_time, is_negative,
-                         avg_power, energy_consumed, created_at)
+                         created_at)
                         VALUES
-                        (:appliance_id, :start_time, :end_time, FALSE,
-                         :avg_power, :energy_consumed, NOW())
+                        (:appliance_id, :start_time, :end_time, FALSE, NOW())
                     """)
 
                     conn.execute(
@@ -824,9 +820,7 @@ class DatabaseManager:
                         {
                             "appliance_id": result[1],
                             "start_time": result[3],
-                            "end_time": result[4],
-                            "avg_power": result[6],
-                            "energy_consumed": result[7]
+                            "end_time": result[4]
                         }
                     )
                     logger.info(
@@ -852,10 +846,10 @@ class DatabaseManager:
                     }
                 )
             else:
-                # Si la détection est incorrecte, créer une signature négative
-                # puis supprimer la détection
+                # Create negative signature if detection is incorrect
+                # then delete the detection
                 if result[5] is not None and result[5] >= 0.6:
-                    # Vérifier qu'une signature négative similaire n'existe pas déjà
+                    # Check that similar negative signature doesn't exist
                     check_negative_query = text("""
                         SELECT COUNT(*) FROM cnn_signatures
                         WHERE appliance_id = :appliance_id
@@ -874,14 +868,14 @@ class DatabaseManager:
                     ).scalar()
 
                     if existing == 0:
-                        # Créer la signature négative avec les données de la détection
+                        # Create negative signature from detection data
                         create_negative_query = text("""
                             INSERT INTO cnn_signatures
-                            (appliance_id, start_time, end_time, is_negative,
-                             avg_power, energy_consumed, created_at)
+                            (appliance_id, start_time, end_time,
+                             is_negative, created_at)
                             VALUES
-                            (:appliance_id, :start_time, :end_time, TRUE,
-                             :avg_power, :energy_consumed, NOW())
+                            (:appliance_id, :start_time, :end_time,
+                             TRUE, NOW())
                         """)
 
                         conn.execute(
@@ -889,9 +883,7 @@ class DatabaseManager:
                             {
                                 "appliance_id": result[1],
                                 "start_time": result[3],
-                                "end_time": result[4],
-                                "avg_power": result[6],
-                                "energy_consumed": result[7]
+                                "end_time": result[4]
                             }
                         )
                         logger.info(
@@ -899,15 +891,26 @@ class DatabaseManager:
                             f"(détection {detection_id})"
                         )
 
-                # Supprimer la détection incorrecte
-                delete_query = text("""
-                    DELETE FROM cnn_detections
+                # Mark detection as incorrect (do not delete)
+                update_query = text("""
+                    UPDATE cnn_detections
+                    SET user_validated = :user_validated,
+                        is_correct = :is_correct,
+                        validated_at = NOW()
                     WHERE id = :detection_id
                 """)
-                conn.execute(delete_query, {"detection_id": detection_id})
-                logger.info(f"Détection incorrecte supprimée: {detection_id}")
 
-                detection_info["deleted"] = True
+                conn.execute(
+                    update_query,
+                    {
+                        "detection_id": detection_id,
+                        "user_validated": True,
+                        "is_correct": False,
+                    }
+                )
+                logger.info(
+                    f"Detection marked as incorrect: {detection_id}"
+                )
 
             conn.commit()
 

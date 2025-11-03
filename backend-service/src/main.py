@@ -521,7 +521,7 @@ async def create_signature(signature: SignatureCreate):
                 signature.appliance_name,
                 signature.start_time,
                 signature.end_time,
-                ""
+                False
             ),
             queue='nilm_cnn',
             routing_key='nilm_cnn.add_cnn_signature'

@@ -102,6 +102,20 @@ function SignaturesList() {
     fetchSignatures();
   }, [fetchSignatures]);
 
+  // Listen for signature creation events from other components
+  useEffect(() => {
+    const handleSignatureCreated = () => {
+      console.log('🔄 Nouvelle signature détectée, rafraîchissement...');
+      fetchSignatures();
+    };
+
+    window.addEventListener('signature-created', handleSignatureCreated);
+
+    return () => {
+      window.removeEventListener('signature-created', handleSignatureCreated);
+    };
+  }, [fetchSignatures]);
+
   // Setup WebSocket for import progress
   useEffect(() => {
     const handleImportStart = (data) => {

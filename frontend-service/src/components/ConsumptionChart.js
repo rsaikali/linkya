@@ -1079,9 +1079,31 @@ const ConsumptionChart = () => {
             setSelectedRange(null);
           }}
           selectedRange={selectedRange}
-          onSignatureSaved={() => {
+          onSignatureSaved={async () => {
             setShowSignatureModal(false);
             setSelectedRange(null);
+            
+            // Switch to signatures mode to show the newly created signature
+            setAnnotationMode('signatures');
+            
+            // Refresh signatures list in this component
+            try {
+              const result = await apiService.getSignatures();
+              setSignatures(result.signatures || []);
+              console.log('✅ Signatures refreshed after creation:', result.signatures?.length);
+              
+              // Force chart update after a small delay to ensure state is updated
+              setTimeout(() => {
+                if (chartRef.current) {
+                  chartRef.current.update('none');
+                  console.log('✅ Chart annotations updated');
+                }
+              }, 100);
+            } catch (err) {
+              console.error('Failed to refresh signatures:', err);
+            }
+            // Emit custom event for other components to refresh
+            window.dispatchEvent(new CustomEvent('signature-created'));
           }}
         />
       )}
