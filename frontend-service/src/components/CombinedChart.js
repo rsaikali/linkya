@@ -106,13 +106,13 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
       tooltip.style.opacity = '0';
       tooltip.style.transition = 'opacity 0.2s ease';
       tooltip.style.zIndex = '10000';
-      tooltip.style.padding = '10px';
+      tooltip.style.padding = '12px';
       tooltip.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
       tooltip.style.borderRadius = '6px';
       tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-      tooltip.style.fontSize = '13px';
+      tooltip.style.fontSize = '14px';
       tooltip.style.lineHeight = '1.6';
-      tooltip.style.minWidth = '220px';
+      tooltip.style.minWidth = '250px';
       document.body.appendChild(tooltip);
       tooltipRef.current = tooltip;
     }
@@ -159,34 +159,34 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen }
         
         if (foundTooltipData.type === 'detection') {
           html = `
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <div style="width: 18px; height: 18px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0;"></div>
-              <strong style="color: ${foundTooltipData.color}; font-size: 14px;">${foundTooltipData.name}</strong>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0;"></div>
+              <strong style="color: ${foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
             </div>
-            <div style="margin-bottom: 4px; font-size: 13px;">
+            <div style="margin-bottom: 6px; font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
             </div>
-            <div style="color: #666; font-size: 11px; font-weight: 300;">
+            <div style="color: #666; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            <div style="color: #666; font-size: 11px; margin-top: 4px;">
+            <div style="color: #666; font-size: 12px; margin-top: 6px;">
               Confiance: ${Math.round(foundTooltipData.confidenceScore * 100)}%
             </div>
           `;
           tooltip.style.borderLeft = `4px solid ${foundTooltipData.color}`;
         } else if (foundTooltipData.type === 'signature') {
           html = `
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-              <div style="width: 18px; height: 18px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? 'box-shadow: 0 0 0 2px white, 0 0 0 4px #ef5350;' : ''}"></div>
-              <strong style="color: ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}; font-size: 14px;">${foundTooltipData.name}</strong>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? 'box-shadow: 0 0 0 2px white, 0 0 0 4px #ef5350;' : ''}"></div>
+              <strong style="color: ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
             </div>
-            <div style="margin-bottom: 4px; font-size: 13px;">
+            <div style="margin-bottom: 6px; font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
             </div>
-            <div style="color: #666; font-size: 11px; font-weight: 300;">
+            <div style="color: #666; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 11px; margin-top: 4px; font-style: italic;">Signature négative</div>' : ''}
+            ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 12px; margin-top: 6px; font-style: italic;">Signature négative</div>' : ''}
           `;
           tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}`;
         }
