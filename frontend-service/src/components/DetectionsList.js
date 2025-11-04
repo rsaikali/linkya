@@ -37,6 +37,20 @@ import { detectionsWS } from '../services/websocket';
 import { useChart } from '../context/ChartContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
+// Custom Material Symbols Icon component
+const MaterialIcon = ({ children, sx = {} }) => (
+  <span 
+    className="material-symbols-outlined" 
+    style={{
+      fontSize: sx.fontSize || 'inherit',
+      color: sx.color || 'inherit',
+      ...sx,
+    }}
+  >
+    {children}
+  </span>
+);
+
 // Icône Google Material Symbols pour Delete
 const DeleteIcon = () => (
   <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
@@ -444,7 +458,7 @@ function DetectionsList() {
  * Ligne de tableau pour une détection
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
-  const { getApplianceColor } = useApplianceColors();
+  const { getApplianceColor, getApplianceIcon } = useApplianceColors();
   const [anchorEl, setAnchorEl] = useState(null);
   const open = Boolean(anchorEl);
   
@@ -534,15 +548,9 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     >
       <TableCell sx={{ fontWeight: 500, width: '40%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-          <Box
-            sx={{
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              backgroundColor: getApplianceColor(detection.appliance_id),
-              flexShrink: 0,
-            }}
-          />
+          <MaterialIcon sx={{ fontSize: '2rem', color: getApplianceColor(detection.appliance_id) }}>
+            {getApplianceIcon(detection.appliance_id)}
+          </MaterialIcon>
           {isValidated && (
             <Tooltip title="Détection validée comme correcte">
               <Check fontSize="small" color="success" />

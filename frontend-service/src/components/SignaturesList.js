@@ -37,11 +37,25 @@ import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
+// Custom Material Symbols Icon component
+const MaterialIcon = ({ children, sx = {} }) => (
+  <span 
+    className="material-symbols-outlined" 
+    style={{
+      fontSize: sx.fontSize || 'inherit',
+      color: sx.color || 'inherit',
+      ...sx,
+    }}
+  >
+    {children}
+  </span>
+);
+
 /**
  * Composant affichant la liste des signatures
  */
 function SignaturesList() {
-  const { getApplianceColor } = useApplianceColors();
+  const { getApplianceColor, getApplianceIcon } = useApplianceColors();
   const [signatures, setSignatures] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -559,6 +573,7 @@ function SignaturesList() {
                   signature={signature}
                   onDelete={handleDeleteClick}
                   getApplianceColor={getApplianceColor}
+                  getApplianceIcon={getApplianceIcon}
                   formatTimeOnly={formatTimeOnly}
                   formatDurationMinutes={formatDurationMinutes}
                   formatConsumption={formatConsumption}
@@ -728,6 +743,7 @@ function SignatureRow({
   signature, 
   onDelete, 
   getApplianceColor,
+  getApplianceIcon,
   formatTimeOnly,
   formatDurationMinutes,
   formatConsumption,
@@ -764,19 +780,34 @@ function SignatureRow({
             placement="right"
             arrow
           >
-            <Box
-              sx={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: getApplianceColor(signature.appliance_id),
-                flexShrink: 0,
-                ...(signature.is_negative && {
-                  boxShadow: (theme) => `0 0 0 3px white, 0 0 0 5px ${theme.palette.chart.negativeSignature.main}`,
-                  cursor: 'help',
-                }),
-              }}
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+              <MaterialIcon 
+                sx={{ 
+                  fontSize: '2rem', 
+                  color: getApplianceColor(signature.appliance_id),
+                  ...(signature.is_negative && {
+                    filter: `drop-shadow(0 0 3px ${signature.appliance_id ? 'white' : 'transparent'}) drop-shadow(0 0 5px var(--negative-color))`,
+                  }),
+                }}
+              >
+                {getApplianceIcon(signature.appliance_id)}
+              </MaterialIcon>
+              {signature.is_negative && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    borderRadius: '50%',
+                    border: '2px solid',
+                    borderColor: (theme) => theme.palette.chart.negativeSignature.main,
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
+            </Box>
           </Tooltip>
           <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(signature.appliance_id) }}>
             {signature.appliance_name}

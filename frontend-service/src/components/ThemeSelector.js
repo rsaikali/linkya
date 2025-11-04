@@ -32,6 +32,16 @@ const ThemeSelector = () => {
     rust: '#bb3e03',
     crimson: '#ae2012',
     burgundy: '#9b2226',
+    darkBrown: '#582f0e',
+    brown: '#7f4f24',
+    lightBrown: '#936639',
+    sand: '#a68a64',
+    khaki: '#b6ad90',
+    sage: '#c2c5aa',
+    oliveGreen: '#a4ac86',
+    fern: '#656d4a',
+    forest: '#414833',
+    darkForest: '#333d29',
   };
 
   const createThemeIcon = (color, isSelected) => (

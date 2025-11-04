@@ -128,11 +128,29 @@ const baseThemeConfig = {
   },
 };
 
+// Helper function to convert hex to rgba
+const hexToRgba = (hex, alpha) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 // Helper function to create a theme with custom header color
 const createCustomTheme = (name, headerColor) => {
   return createTheme({
     ...baseThemeConfig,
     name,
+    palette: {
+      ...baseThemeConfig.palette,
+      chart: {
+        ...baseThemeConfig.palette.chart,
+        consumption: {
+          main: headerColor,
+          background: hexToRgba(headerColor, 0.31),
+        },
+      },
+    },
     components: {
       ...baseThemeConfig.components,
       MuiCardHeader: {
@@ -195,30 +213,28 @@ const createCustomTheme = (name, headerColor) => {
 };
 
 // Theme definitions with different header colors from the palette
-export const redTheme = createCustomTheme('Red', '#BD2A2E');
-export const darkBlueTheme = createCustomTheme('Dark Blue', '#001219');
-export const tealTheme = createCustomTheme('Teal', '#005f73');
-export const turquoiseTheme = createCustomTheme('Turquoise', '#0a9396');
-export const mintTheme = createCustomTheme('Mint', '#94d2bd');
-export const beigeTheme = createCustomTheme('Beige', '#e9d8a6');
-export const orangeTheme = createCustomTheme('Orange', '#ee9b00');
-export const darkOrangeTheme = createCustomTheme('Dark Orange', '#ca6702');
-export const rustTheme = createCustomTheme('Rust', '#bb3e03');
-export const crimsonTheme = createCustomTheme('Crimson', '#ae2012');
-export const burgundyTheme = createCustomTheme('Burgundy', '#9b2226');
+export const darkBrownTheme = createCustomTheme('Dark Brown', '#582f0e');
+export const brownTheme = createCustomTheme('Brown', '#7f4f24');
+export const lightBrownTheme = createCustomTheme('Light Brown', '#936639');
+export const sandTheme = createCustomTheme('Sand', '#a68a64');
+export const khakiTheme = createCustomTheme('Khaki', '#b6ad90');
+export const sageTheme = createCustomTheme('Sage', '#c2c5aa');
+export const oliveGreenTheme = createCustomTheme('Olive Green', '#a4ac86');
+export const fernTheme = createCustomTheme('Fern', '#656d4a');
+export const forestTheme = createCustomTheme('Forest', '#414833');
+export const darkForestTheme = createCustomTheme('Dark Forest', '#333d29');
 
 export const themes = {
-  red: redTheme,
-  darkBlue: darkBlueTheme,
-  teal: tealTheme,
-  turquoise: turquoiseTheme,
-  mint: mintTheme,
-  beige: beigeTheme,
-  orange: orangeTheme,
-  darkOrange: darkOrangeTheme,
-  rust: rustTheme,
-  crimson: crimsonTheme,
-  burgundy: burgundyTheme,
+  darkBrown: darkBrownTheme,
+  brown: brownTheme,
+  lightBrown: lightBrownTheme,
+  sand: sandTheme,
+  khaki: khakiTheme,
+  sage: sageTheme,
+  oliveGreen: oliveGreenTheme,
+  fern: fernTheme,
+  forest: forestTheme,
+  darkForest: darkForestTheme,
 };
 
-export default redTheme;
+export default darkBrownTheme;

@@ -1,6 +1,0 @@
-# Exclure les fichiers sensibles de pgAdmin
-# Le fichier pgpass contient des mots de passe
-pgpass
-
-# Logs de pgAdmin
-*.log

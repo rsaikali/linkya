@@ -16,16 +16,32 @@ import {
   Tooltip,
   Box,
   TextField,
-  Menu,
   Chip,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
   Divider,
-  Popover,
+  Grid,
 } from '@mui/material';
-import { Edit, Close, Palette } from '@mui/icons-material';
+import { Edit, Close } from '@mui/icons-material';
 import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
-import { SketchPicker } from 'react-color';
 import api from '../services/api';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
+
+// Custom Material Symbols Icon component
+const MaterialIcon = ({ children, sx = {} }) => (
+  <span 
+    className="material-symbols-outlined" 
+    style={{
+      fontSize: sx.fontSize || 'inherit',
+      color: sx.color || 'inherit',
+      ...sx,
+    }}
+  >
+    {children}
+  </span>
+);
 
 // Palette de couleurs pour les appareils
 const COLOR_PALETTE = [
@@ -39,20 +55,28 @@ const COLOR_PALETTE = [
   { name: 'Teal', value: '#4d908e' },
   { name: 'Blue Grey', value: '#577590' },
   { name: 'Blue', value: '#277da1' },
+  { name: 'Purple', value: '#9d4edd' },
+  { name: 'Pink', value: '#f72585' },
 ];
 
 function AppliancesList() {
-  const { applianceColors, updateApplianceColor, getApplianceColor } = useApplianceColors();
+  const { 
+    updateApplianceColor, 
+    updateApplianceIcon,
+    getApplianceColor,
+    getApplianceIcon,
+    availableIcons,
+  } = useApplianceColors();
   const [appliances, setAppliances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
-  const [colorMenuAnchor, setColorMenuAnchor] = useState(null);
+  
+  // Menu state
+  const [styleMenuAnchor, setStyleMenuAnchor] = useState(null);
   const [selectedApplianceId, setSelectedApplianceId] = useState(null);
-  const [customColor, setCustomColor] = useState('');
-  const [showColorPicker, setShowColorPicker] = useState(false);
-  const [pickerAnchor, setPickerAnchor] = useState(null);
+  const [menuView, setMenuView] = useState('main'); // 'main', 'icon', 'color'
 
   const fetchAppliances = useCallback(async () => {
     try {
@@ -110,44 +134,30 @@ function AppliancesList() {
     }
   };
 
-  const handleColorClick = (event, applianceId) => {
-    setColorMenuAnchor(event.currentTarget);
+  const handleStyleClick = (event, applianceId) => {
+    setStyleMenuAnchor(event.currentTarget);
     setSelectedApplianceId(applianceId);
+    setMenuView('main');
   };
 
-  const handleColorClose = () => {
-    setColorMenuAnchor(null);
+  const handleStyleMenuClose = () => {
+    setStyleMenuAnchor(null);
     setSelectedApplianceId(null);
-    setCustomColor('');
-    setShowColorPicker(false);
-    setPickerAnchor(null);
+    setMenuView('main');
+  };
+
+  const handleIconSelect = (iconName) => {
+    if (selectedApplianceId !== null) {
+      updateApplianceIcon(selectedApplianceId, iconName);
+    }
+    handleStyleMenuClose();
   };
 
   const handleColorSelect = (color) => {
     if (selectedApplianceId !== null) {
       updateApplianceColor(selectedApplianceId, color);
     }
-    handleColorClose();
-  };
-
-  const handleCustomColorChange = (color) => {
-    // color.hex contient la couleur au format #RRGGBB
-    const hexColor = color.hex;
-    setCustomColor(hexColor);
-    
-    if (selectedApplianceId !== null) {
-      updateApplianceColor(selectedApplianceId, hexColor);
-    }
-  };
-
-  const handlePickerClick = (event) => {
-    setPickerAnchor(event.currentTarget);
-    setShowColorPicker(true);
-  };
-
-  const handlePickerClose = () => {
-    setShowColorPicker(false);
-    setPickerAnchor(null);
+    handleStyleMenuClose();
   };
 
   if (loading) {
@@ -220,22 +230,23 @@ function AppliancesList() {
                   >
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Tooltip title="Change color">
+                        <Tooltip title="Customize style">
                           <Box
-                            onClick={(e) => handleColorClick(e, appliance.id)}
+                            onClick={(e) => handleStyleClick(e, appliance.id)}
                             sx={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: '50%',
-                              backgroundColor: getApplianceColor(appliance.id),
+                              display: 'flex',
+                              alignItems: 'center',
                               cursor: 'pointer',
-                              flexShrink: 0,
                               transition: 'transform 0.2s',
                               '&:hover': {
-                                transform: 'scale(1.2)',
+                                transform: 'scale(1.15)',
                               },
                             }}
-                          />
+                          >
+                            <MaterialIcon sx={{ fontSize: '2rem', color: getApplianceColor(appliance.id) }}>
+                              {getApplianceIcon(appliance.id)}
+                            </MaterialIcon>
+                          </Box>
                         </Tooltip>
                         {editingId === appliance.id ? (
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexGrow: 1 }}>
@@ -326,136 +337,151 @@ function AppliancesList() {
         )}
       </CardContent>
 
-      {/* Menu de sélection de couleur */}
+      {/* Style Customization Menu */}
       <Menu
-        anchorEl={colorMenuAnchor}
-        open={Boolean(colorMenuAnchor)}
-        onClose={handleColorClose}
+        anchorEl={styleMenuAnchor}
+        open={Boolean(styleMenuAnchor)}
+        onClose={handleStyleMenuClose}
         PaperProps={{
           sx: {
             mt: 1,
-            minWidth: 240,
+            maxWidth: 400,
+            maxHeight: 500,
             borderRadius: 2,
           },
         }}
       >
-        <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-            PRESET COLORS
-          </Typography>
-        </Box>
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
-            gap: 1,
-            px: 2,
-            pb: 1.5,
-          }}
-        >
-          {COLOR_PALETTE.map((color) => (
-            <Tooltip key={color.value} title={color.name} placement="top">
-              <Box
-                onClick={() => handleColorSelect(color.value)}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  backgroundColor: color.value,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  border: '2px solid',
-                  borderColor:
-                    applianceColors[selectedApplianceId] === color.value
-                      ? 'primary.main'
-                      : 'transparent',
-                  boxShadow:
-                    applianceColors[selectedApplianceId] === color.value
-                      ? (theme) => `0 0 0 2px ${theme.palette.overlay.primary[20]}`
-                      : 'none',
-                  '&:hover': {
-                    transform: 'scale(1.15)',
-                    boxShadow: (theme) => theme.palette.utility.shadow.medium,
-                  },
-                }}
-              />
-            </Tooltip>
-          ))}
-        </Box>
-        <Divider sx={{ my: 1 }} />
-        <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mb: 1, display: 'block' }}>
-            CUSTOM COLOR
-          </Typography>
-          <Box
-            onClick={handlePickerClick}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-              p: 1.5,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              '&:hover': {
-                borderColor: 'primary.main',
-                backgroundColor: 'action.hover',
-              },
-            }}
-          >
-            <Box
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                backgroundColor: customColor || applianceColors[selectedApplianceId] || ((theme) => theme.palette.utility.defaultGray),
-                border: '2px solid',
-                borderColor: 'divider',
-                flexShrink: 0,
-              }}
-            />
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                Pick custom color
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {customColor || applianceColors[selectedApplianceId] || 'Click to select'}
+        {menuView === 'main' && (
+          <>
+            <MenuItem onClick={() => setMenuView('icon')}>
+              <ListItemIcon>
+                <MaterialIcon sx={{ fontSize: '1.5rem' }}>
+                  {getApplianceIcon(selectedApplianceId)}
+                </MaterialIcon>
+              </ListItemIcon>
+              <ListItemText primary="Modifier l'icône" />
+            </MenuItem>
+            <MenuItem onClick={() => setMenuView('color')}>
+              <ListItemIcon>
+                <Box
+                  sx={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    backgroundColor: getApplianceColor(selectedApplianceId),
+                    border: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                />
+              </ListItemIcon>
+              <ListItemText primary="Modifier la couleur" />
+            </MenuItem>
+          </>
+        )}
+
+        {menuView === 'icon' && (
+          <>
+            <MenuItem onClick={() => setMenuView('main')}>
+              <ListItemText primary="← Back" />
+            </MenuItem>
+            <Divider />
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                SELECT AN ICON
               </Typography>
             </Box>
-            <Palette sx={{ color: 'text.secondary' }} />
-          </Box>
-        </Box>
-      </Menu>
+            <Box sx={{ px: 2, pb: 2 }}>
+              <Grid container spacing={1}>
+                {availableIcons.map((icon) => (
+                  <Grid item xs={3} key={icon.name}>
+                    <Tooltip title={icon.label} placement="top">
+                      <Box
+                        onClick={() => handleIconSelect(icon.name)}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          p: 1.5,
+                          cursor: 'pointer',
+                          borderRadius: 2,
+                          border: '2px solid',
+                          borderColor: getApplianceIcon(selectedApplianceId) === icon.name 
+                            ? getApplianceColor(selectedApplianceId) 
+                            : 'transparent',
+                          backgroundColor: getApplianceIcon(selectedApplianceId) === icon.name 
+                            ? 'action.selected' 
+                            : 'transparent',
+                          transition: 'all 0.2s',
+                          '&:hover': {
+                            backgroundColor: 'action.hover',
+                            borderColor: 'divider',
+                          },
+                        }}
+                      >
+                        <MaterialIcon
+                          sx={{
+                            fontSize: '1.5rem',
+                            color: getApplianceIcon(selectedApplianceId) === icon.name 
+                              ? getApplianceColor(selectedApplianceId) 
+                              : 'text.secondary',
+                          }}
+                        >
+                          {icon.name}
+                        </MaterialIcon>
+                      </Box>
+                    </Tooltip>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          </>
+        )}
 
-      {/* Color Picker Popover */}
-      <Popover
-        open={showColorPicker}
-        anchorEl={pickerAnchor}
-        onClose={handlePickerClose}
-        anchorOrigin={{
-          vertical: 'center',
-          horizontal: 'right',
-        }}
-        transformOrigin={{
-          vertical: 'center',
-          horizontal: 'left',
-        }}
-        PaperProps={{
-          sx: {
-            ml: 1,
-            boxShadow: 3,
-          },
-        }}
-      >
-        <SketchPicker
-          color={customColor || applianceColors[selectedApplianceId] || '#f94144'}
-          onChange={handleCustomColorChange}
-          disableAlpha={false}
-          presetColors={COLOR_PALETTE.map(c => c.value)}
-        />
-      </Popover>
+        {menuView === 'color' && (
+          <>
+            <MenuItem onClick={() => setMenuView('main')}>
+              <ListItemText primary="← Back" />
+            </MenuItem>
+            <Divider />
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                SELECT A COLOR
+              </Typography>
+            </Box>
+            <Box sx={{ px: 2, pb: 2 }}>
+              <Grid container spacing={1.5}>
+                {COLOR_PALETTE.map((color) => (
+                  <Grid item xs={3} key={color.value}>
+                    <Tooltip title={color.name} placement="top">
+                      <Box
+                        onClick={() => handleColorSelect(color.value)}
+                        sx={{
+                          aspectRatio: '1',
+                          cursor: 'pointer',
+                          borderRadius: 2,
+                          backgroundColor: color.value,
+                          border: '3px solid',
+                          borderColor: getApplianceColor(selectedApplianceId) === color.value 
+                            ? 'background.paper' 
+                            : color.value,
+                          boxShadow: getApplianceColor(selectedApplianceId) === color.value 
+                            ? 3 
+                            : 0,
+                          transition: 'all 0.2s',
+                          '&:hover': {
+                            transform: 'scale(1.1)',
+                            boxShadow: 2,
+                          },
+                        }}
+                      />
+                    </Tooltip>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          </>
+        )}
+      </Menu>
     </Card>
   );
 }

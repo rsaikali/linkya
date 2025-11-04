@@ -14,6 +14,34 @@ const COLOR_PALETTE = [
   '#277da1',
 ];
 
+// Liste d'icônes Material Symbols pour appareils domestiques
+const ICON_LIST = [
+  { name: 'power', label: 'Generic appliance' },
+  { name: 'electrical_services', label: 'Electrical device' },
+  { name: 'microwave', label: 'Microwave' },
+  { name: 'kitchen', label: 'Refrigerator' },
+  { name: 'dishwasher', label: 'Dishwasher' },
+  { name: 'local_laundry_service', label: 'Washing machine' },
+  { name: 'oven', label: 'Oven' },
+  { name: 'water_heater', label: 'Water heater' },
+  { name: 'heat_pump', label: 'Heat pump' },
+  { name: 'nest_farsight_heat', label: 'Heater' },
+  { name: 'coffee_maker', label: 'Coffee maker' },
+  { name: 'blender', label: 'Blender' },
+  { name: 'tv', label: 'Television' },
+  { name: 'speaker', label: 'Speaker' },
+  { name: 'computer', label: 'Computer' },
+  { name: 'light', label: 'Light' },
+  { name: 'lightbulb', label: 'Bulb' },
+  { name: 'ac_unit', label: 'Air conditioning' },
+  { name: 'thermostat', label: 'Thermostat' },
+  { name: 'iron', label: 'Iron' },
+  { name: 'vacuum', label: 'Vacuum cleaner' },
+  { name: 'phone_android', label: 'Phone charger' },
+  { name: 'router', label: 'Router' },
+  { name: 'print', label: 'Printer' },
+];
+
 // Utilitaires pour gérer les cookies
 const setCookie = (name, value, days = 365) => {
   const expires = new Date();
@@ -37,6 +65,11 @@ const getApplianceColorsFromCookie = () => {
   return colors ? JSON.parse(colors) : {};
 };
 
+const getApplianceIconsFromCookie = () => {
+  const icons = getCookie('applianceIcons');
+  return icons ? JSON.parse(icons) : {};
+};
+
 // Fonction pour obtenir une couleur aléatoire non utilisée
 const getRandomUnusedColor = (usedColors) => {
   const availableColors = COLOR_PALETTE.filter(color => !usedColors.includes(color));
@@ -49,17 +82,25 @@ const getRandomUnusedColor = (usedColors) => {
   return COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)];
 };
 
+// Fonction pour obtenir une icône par défaut
+const getDefaultIcon = () => {
+  return ICON_LIST[0].name; // 'power' par défaut
+};
+
 // Créer le Context
 const ApplianceColorsContext = createContext();
 
 // Provider du Context
 export function ApplianceColorsProvider({ children }) {
   const [applianceColors, setApplianceColors] = useState({});
+  const [applianceIcons, setApplianceIcons] = useState({});
 
-  // Charger les couleurs depuis les cookies au montage
+  // Charger les couleurs et icônes depuis les cookies au montage
   useEffect(() => {
     const savedColors = getApplianceColorsFromCookie();
+    const savedIcons = getApplianceIconsFromCookie();
     setApplianceColors(savedColors);
+    setApplianceIcons(savedIcons);
   }, []);
 
   // Fonction pour mettre à jour la couleur d'un appareil
@@ -70,6 +111,16 @@ export function ApplianceColorsProvider({ children }) {
     };
     setApplianceColors(newColors);
     setCookie('applianceColors', JSON.stringify(newColors));
+  };
+
+  // Fonction pour mettre à jour l'icône d'un appareil
+  const updateApplianceIcon = (applianceId, icon) => {
+    const newIcons = {
+      ...applianceIcons,
+      [applianceId]: icon,
+    };
+    setApplianceIcons(newIcons);
+    setCookie('applianceIcons', JSON.stringify(newIcons));
   };
 
   // Fonction pour obtenir la couleur d'un appareil
@@ -93,10 +144,34 @@ export function ApplianceColorsProvider({ children }) {
     return newColor;
   };
 
+  // Fonction pour obtenir l'icône d'un appareil
+  const getApplianceIcon = (applianceId) => {
+    if (applianceIcons[applianceId]) {
+      return applianceIcons[applianceId];
+    }
+    
+    // Si l'appareil n'a pas d'icône, en attribuer une par défaut
+    const defaultIcon = getDefaultIcon();
+    
+    // Sauvegarder l'icône par défaut
+    const newIcons = {
+      ...applianceIcons,
+      [applianceId]: defaultIcon,
+    };
+    setApplianceIcons(newIcons);
+    setCookie('applianceIcons', JSON.stringify(newIcons));
+    
+    return defaultIcon;
+  };
+
   const value = {
     applianceColors,
+    applianceIcons,
     updateApplianceColor,
+    updateApplianceIcon,
     getApplianceColor,
+    getApplianceIcon,
+    availableIcons: ICON_LIST,
   };
 
   return (
