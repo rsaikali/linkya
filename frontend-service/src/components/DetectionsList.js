@@ -305,7 +305,7 @@ function DetectionsList() {
             justifyContent: 'flex-start'
           }}
         >
-          <Tooltip title="Lancer la détection des appareils">
+          <Tooltip title="Lancer un job de détection d'appareils par le modèle IA.">
             <span>
               <Button
                 variant="contained"
@@ -316,7 +316,7 @@ function DetectionsList() {
                 disabled={detectLoading}
                 sx={{ textTransform: 'none' }}
               >
-                Détecter
+                Détecter les appareils par l'IA
               </Button>
             </span>
           </Tooltip>

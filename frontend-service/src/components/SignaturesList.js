@@ -423,7 +423,7 @@ function SignaturesList() {
           justifyContent: 'flex-start'
         }}
       >
-        <Tooltip title="Entraîner le modèle IA">
+        <Tooltip title="Lancer un job d'entraînement du modèle d'IA à partir des signatures décrites.">
           <span>
             <Button
               variant="contained"
@@ -433,7 +433,7 @@ function SignaturesList() {
               disabled={trainLoading || totalSignatures === 0}
               sx={{ textTransform: 'none' }}
             >
-              Entraîner
+              Entraîner le modèle IA
             </Button>
           </span>
         </Tooltip>
