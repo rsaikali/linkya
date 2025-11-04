@@ -82,19 +82,39 @@ Frontend (React) → Backend (FastAPI) → TimescaleDB
 NILM_MODEL_TYPE=gru     # 'gru' or 'lstm'
 ```
 
-### Architecture: FiLM (Feature-wise Linear Modulation)
-- Multi-appliance with conditional learning
-- FiLM layers for appliance-specific feature modulation
-- Best for complex appliance patterns (washing machines, dryers)
-- Outputs: power + state predictions per appliance
-- Single unified model for all appliances
+### Architecture: Multi-Output (Current)
+**Overview**: Parallel output branches for simultaneous multi-appliance detection
+- **Deprecated**: FiLM (Feature-wise Linear Modulation) removed Nov 4, 2025
+- **Current**: Multi-Output architecture with parallel Dense branches
+- **Cleanup**: 703 lines of FiLM code removed (commit ef29c5b)
+
+**Key Components**:
+- **Conv1D Layers**: Feature extraction with batch normalization
+- **GRU/LSTM**: Temporal pattern learning (configurable via NILM_MODEL_TYPE)
+- **Multi-Head Attention**: 4 heads, key_dim=16, captures concurrent appliance patterns
+- **Parallel Outputs**: Separate Dense branch (512→256→128→1) per appliance
+- **Loss Function**: Combined focal loss + MSE with class weighting
+- **Class Weighting**: Inverse-proportional (e.g., rare appliances get higher weight)
+
+**Advantages**:
+- ✅ **Concurrent Detection**: Detect multiple appliances simultaneously from one power signal
+- ✅ **Attention Mechanism**: Captures overlapping temporal patterns
+- ✅ **Scalability**: Easy to add new appliances (add output branch)
+- ✅ **Independent Predictions**: Each appliance predicted independently
+
+**Training Features**:
+- Time-series K-Fold cross-validation (5 folds)
+- Early stopping (patience=5)
+- Learning rate scheduling (ReduceLROnPlateau)
+- Dropout (0.3) and L2 regularization
+- Hybrid detection: Change Point Detection + Pattern Matching
 
 ### Model Pipeline
-1. **Input**: 599-point sliding window (PAPP values, ~20min at 2s interval)
+1. **Input**: 599-point sliding window (10 minutes at 1Hz)
 2. **Preprocessing**: StandardScaler normalization
-3. **Architecture**: Conv1D → GRU/LSTM → Attention → Dense
-4. **Output**: Power consumption + appliance state per timestep
-5. **Loss**: Focal loss (handles class imbalance, reduces false positives)
+3. **Architecture**: Conv1D → GRU/LSTM → Multi-Head Attention → Parallel Dense Outputs
+4. **Output**: Power consumption prediction per appliance (simultaneous)
+5. **Detection**: Hybrid approach with signature pattern matching + negative filtering
 
 ### Training Process
 - **Trigger**: Manual via UI or scheduled (every 24h)
@@ -253,6 +273,48 @@ docker-compose logs -f cnn-worker | grep "Task"
 - **Missing data**: Verify sync-worker logs, check MySQL connectivity
 - **Slow training**: Reduce `SEQUENCE_LENGTH` or use smaller dataset
 - **False positives**: Adjust confidence threshold, add negative signatures
+
+### Known Limitations & Expected Behavior
+
+#### Concurrent Appliance Detection
+**Symptom**: An appliance with valid signatures is not detected despite being active.
+
+**Root Cause**: The appliance operates exclusively in conjunction with another appliance, creating combined power signatures that don't match individual appliance profiles.
+
+**Example**:
+- **Heater signatures**: ~1500W (when running alone)
+- **Water heater signatures**: ~3000W (when running alone)
+- **Actual consumption patterns**: ~4500W (both running simultaneously)
+- **Result**: Individual heater signatures don't match the combined 4500W pattern
+
+**Why Multi-Output Architecture Helps**:
+- The Multi-Output architecture has **parallel output branches** for each appliance
+- It can detect **multiple appliances simultaneously** from a single power pattern
+- However, training signatures must represent the **actual usage patterns**
+
+**Solutions**:
+1. **Composite Signatures** (Recommended):
+   - Create signatures labeled with both appliances for combined patterns
+   - Example: Label a 4500W pattern as "Water Heater + Heater"
+   - The model will learn to detect both from the combined signal
+
+2. **Wait for Isolated Activations**:
+   - If appliances sometimes run independently, collect those signatures
+   - Over time, the model will learn both isolated and combined patterns
+
+3. **Adjust Detection Logic**:
+   - Lower power thresholds to catch partial matches
+   - Use pattern subtraction (if heater+water = 4500W, and water alone = 3000W, infer heater = 1500W)
+
+**Current Status**:
+- Architecture: **100% Multi-Output** (FiLM removed, 703 lines cleaned)
+- Concurrent Detection: **Supported by architecture**
+- Pattern Matching: **Depends on training signatures matching real usage**
+
+**When to Expect Perfect Detection**:
+- ✅ Appliances with diverse activation patterns (alone, with others)
+- ✅ Sufficient training signatures covering all scenarios
+- ⚠️ Appliances that ALWAYS run together need composite signatures
 
 ## Key Files
 

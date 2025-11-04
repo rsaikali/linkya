@@ -27,13 +27,13 @@ class Settings(BaseSettings):
     cnn_detection_period_hours: Optional[int] = None  # Période analysée (None=tout, ou nombre d'heures)
     # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
     cnn_window_size_minutes: int = 10  # 10 min = 600 points à 1Hz
-    cnn_min_power_threshold: int = 30  # Seuil minimal de puissance (W)
+    cnn_min_power_threshold: int = 15  # Seuil minimal de puissance (W) - réduit pour détecter transitions douces
     cnn_min_duration_seconds: int = 30  # Durée minimale d'un événement (s)
     
     # Configuration du modèle (S2P, LSTM, GRU)
     cnn_model_path: str = "/app/models"
     # Override manuel de la longueur de séquence (si None, calculé auto)
-    cnn_sequence_length: Optional[int] = None
+    cnn_sequence_length: Optional[int] = 599  # 10 minutes à 1Hz (impair pour symétrie)
     cnn_batch_size: int = 32
     cnn_epochs: int = 50
     cnn_learning_rate: float = 0.001

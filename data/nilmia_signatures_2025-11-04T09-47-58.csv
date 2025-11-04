@@ -1,5 +1,10 @@
 appliance_name,start_time,end_time,is_negative
+Ballon d'Eau Chaude,2025-11-04T07:29:56+01:00,2025-11-04T08:29:57+01:00,True
+Ballon d'Eau Chaude,2025-11-03T21:09:11+01:00,2025-11-03T21:18:28+01:00,True
+Chauffage à bain d'huile,2025-11-03T21:08:30+01:00,2025-11-03T21:18:30+01:00,False
+Chauffage à bain d'huile,2025-11-03T19:52:30+01:00,2025-11-03T20:14:00+01:00,False
 Ballon d'Eau Chaude,2025-11-03T08:16:12+01:00,2025-11-03T08:40:51+01:00,True
+Chauffage à bain d'huile,2025-11-03T08:15:30+01:00,2025-11-03T08:41:00+01:00,False
 Ballon d'Eau Chaude,2025-11-03T07:06:53+01:00,2025-11-03T07:34:01+01:00,True
 Chauffage à bain d'huile,2025-11-03T07:06:30+01:00,2025-11-03T07:34:30+01:00,False
 Ballon d'Eau Chaude,2025-11-03T05:57:04+01:00,2025-11-03T06:23:09+01:00,True
