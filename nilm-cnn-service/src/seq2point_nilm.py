@@ -105,7 +105,7 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
 
 
 @tf.keras.utils.register_keras_serializable(package='custom_losses')
-def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=2.5):
+def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=1.5):
     """
     Loss asymétrique qui pénalise plus les faux positifs.
     
@@ -116,7 +116,7 @@ def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=2.5):
         y_true: Valeurs réelles (None si utilisé comme constructeur)
         y_pred: Valeurs prédites (None si utilisé comme constructeur)
         false_positive_penalty: Multiplicateur pour les faux positifs
-                                (défaut: 2.5)
+                                (défaut: 1.5, réduit de 2.5 pour être moins agressif)
         
     Returns:
         Perte calculée si y_true et y_pred fournis, sinon fonction de perte
@@ -317,6 +317,747 @@ class FiLMLayer(layers.Layer):
     
     def get_config(self):
         return super(FiLMLayer, self).get_config()
+
+
+# --- Multi-Head Attention Layer ---
+@tf.keras.utils.register_keras_serializable(package='custom_layers')
+class MultiHeadAttentionLayer(layers.Layer):
+    """
+    Multi-Head Attention pour mieux capturer les patterns de multiples
+    appareils simultanés.
+    """
+    def __init__(self, num_heads: int = 4, key_dim: int = 32, **kwargs):
+        super(MultiHeadAttentionLayer, self).__init__(**kwargs)
+        self.num_heads = num_heads
+        self.key_dim = key_dim
+        self.attention = layers.MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=key_dim
+        )
+    
+    def call(self, inputs):
+        """
+        Args:
+            inputs: (batch, sequence, features)
+        
+        Returns:
+            Attended features de même shape
+        """
+        return self.attention(inputs, inputs)
+    
+    def get_config(self):
+        config = super(MultiHeadAttentionLayer, self).get_config()
+        config.update({
+            'num_heads': self.num_heads,
+            'key_dim': self.key_dim
+        })
+        return config
+
+
+# --- S2P Multi-Output : un modèle avec output par appareil ---
+class Seq2PointMultiOutputModel:
+    """
+    Modèle Sequence-to-Point avec Multi-Output architecture.
+    
+    Architecture:
+    1. Input aggregate power (séquence temporelle)
+    2. Feature extraction (Conv1D + GRU/LSTM)
+    3. Multi-Head Attention (pour patterns simultanés)
+    4. Output branches: une par appareil
+    
+    Avantages vs. FiLM:
+    - Désagrégation simultanée de N appareils
+    - Détection native de chevauchements temporels
+    - Pas besoin de conditioning (one-hot encoding)
+    - Plus simple et plus efficace
+    """
+    
+    def __init__(
+        self,
+        appliance_ids: List[int],
+        appliance_names: List[str],
+        sequence_length: int = 599,
+        model_type: str = "gru"
+    ):
+        self.appliance_ids = appliance_ids
+        self.appliance_names = appliance_names
+        self.sequence_length = (
+            sequence_length if sequence_length % 2 == 1
+            else sequence_length - 1
+        )
+        self.model_type = model_type
+        self.num_appliances = len(appliance_ids)
+        self.model: Optional[keras.Model] = None
+        self.preprocessor = Seq2PointPreprocessor(self.sequence_length)
+        self.history = None
+        self.use_gpu = self._configure_device()
+        
+        # Mapping appareil ID -> index
+        self.appliance_id_to_idx = {
+            app_id: idx for idx, app_id in enumerate(appliance_ids)
+        }
+        self.appliance_idx_to_id = {
+            idx: app_id for app_id, idx in self.appliance_id_to_idx.items()
+        }
+    
+    def _configure_device(self) -> bool:
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logger.info(f"🎮 Device: GPU ({len(gpus)} disponible(s))")
+            return True
+        logger.info("💻 Device: CPU")
+        return False
+    
+    def build_model(self) -> keras.Model:
+        """
+        Construit le modèle Multi-Output avec attention.
+        
+        Architecture:
+        - Input: aggregate_power (sequence_length, 1)
+        - Conv1D: extraction de features locales
+        - GRU/LSTM: extraction de features temporelles
+        - Multi-Head Attention: patterns simultanés
+        - Dense shared: features communes
+        - Outputs: N branches (une par appareil)
+        """
+        # Input
+        aggregate_input = layers.Input(
+            shape=(self.sequence_length, 1),
+            name='aggregate_power'
+        )
+        
+        # Conv1D pour features locales
+        x = layers.Conv1D(
+            64, kernel_size=5, padding='same', activation='relu',
+            name='conv1d_1'
+        )(aggregate_input)
+        x = layers.MaxPooling1D(pool_size=2, name='pool_1')(x)
+        
+        # Recurrent layers pour features temporelles
+        if self.model_type == "gru":
+            x = layers.GRU(
+                128, return_sequences=True, name='gru_1'
+            )(x)
+            x = layers.Dropout(0.2)(x)
+            x = layers.GRU(
+                64, return_sequences=True, name='gru_2'
+            )(x)
+            x = layers.Dropout(0.2)(x)
+        elif self.model_type == "lstm":
+            x = layers.LSTM(
+                128, return_sequences=True, name='lstm_1'
+            )(x)
+            x = layers.Dropout(0.2)(x)
+            x = layers.LSTM(
+                64, return_sequences=True, name='lstm_2'
+            )(x)
+            x = layers.Dropout(0.2)(x)
+        else:
+            raise ValueError(f"Type de modèle inconnu: {self.model_type}")
+        
+        # Multi-Head Attention pour capturer patterns simultanés
+        x = MultiHeadAttentionLayer(
+            num_heads=4, key_dim=16, name='multi_head_attention'
+        )(x)
+        
+        # Flatten pour dense layers
+        x = layers.Flatten(name='flatten')(x)
+        
+        # Shared dense layers
+        shared = layers.Dense(128, activation='relu', name='shared_dense_1')(x)
+        shared = layers.Dropout(0.2)(shared)
+        shared = layers.Dense(64, activation='relu', name='shared_dense_2')(
+            shared
+        )
+        shared = layers.Dropout(0.1)(shared)
+        
+        # Output branches (une par appareil)
+        outputs = []
+        output_names = []
+        for i, (app_id, app_name) in enumerate(
+            zip(self.appliance_ids, self.appliance_names)
+        ):
+            # Normaliser le nom pour TensorFlow
+            safe_name = normalize_name_for_tensorflow(app_name)
+            output_name = f'output_{safe_name}'
+            output_names.append(output_name)
+            
+            # Branch spécifique à l'appareil
+            branch = layers.Dense(
+                32, activation='relu',
+                name=f'branch_{safe_name}'
+            )(shared)
+            output = layers.Dense(
+                1, activation='linear',
+                name=output_name
+            )(branch)
+            outputs.append(output)
+        
+        # Build model
+        model = models.Model(
+            inputs=aggregate_input,
+            outputs=outputs,
+            name=f's2p_multioutput_{self.model_type}'
+        )
+        
+        # Compile avec loss asymétrique pour chaque output
+        losses = {name: asymmetric_loss for name in output_names}
+        metrics_dict = {name: ['mae', 'mse'] for name in output_names}
+        
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            loss=losses,
+            metrics=metrics_dict
+        )
+        
+        logger.info(
+            f"🎬 Modèle S2P-MultiOutput {self.model_type.upper()} "
+            f"construit:\n"
+            f"   - {self.num_appliances} appareils: "
+            f"{self.appliance_names}\n"
+            f"   - Séquence: {self.sequence_length}\n"
+            f"   - Architecture: Multi-Output + Multi-Head Attention\n"
+            f"   - Loss: asymmetric (FP penalty=1.5)"
+        )
+        
+        return model
+    
+    def train(
+        self,
+        all_signatures: Dict[int, List[Dict[str, Any]]],
+        model_name: str,
+        epochs: int = 30,
+        batch_size: int = 32,
+        validation_split: float = 0.15,
+        use_feedback: bool = True,
+        fine_tune: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Entraîne le modèle Multi-Output.
+        
+        Args:
+            all_signatures: Dict[appliance_id, List[signature]]
+            model_name: Name of the model
+            use_feedback: Utiliser détections invalidées comme négatifs
+            fine_tune: Continue entraînement modèle existant
+        
+        Returns:
+            Dictionnaire de métriques
+        """
+        is_fine_tuning = fine_tune and self.model is not None
+        if is_fine_tuning:
+            logger.info("🔄 Fine-tuning du modèle Multi-Output existant")
+            learning_rate = 0.0001
+            epochs = min(epochs, 15)
+        else:
+            logger.info("🆕 Entraînement from-scratch Multi-Output")
+            learning_rate = 0.001
+        
+        # Préparer les données
+        X_aggregate = []
+        y_outputs = {idx: [] for idx in range(self.num_appliances)}
+        timestamps = []
+        class_counts = {idx: 0 for idx in range(self.num_appliances)}
+        
+        for appliance_id, signatures in all_signatures.items():
+            if appliance_id not in self.appliance_id_to_idx:
+                logger.warning(f"Appareil {appliance_id} inconnu, ignoré")
+                continue
+            
+            app_idx = self.appliance_id_to_idx[appliance_id]
+            
+            for sig in signatures:
+                aggregate, power = self._load_signature_data_static(sig)
+                if aggregate is None or len(aggregate) < self.sequence_length:
+                    continue
+                
+                # Créer les séquences
+                X, y = self.preprocessor.create_sequences(
+                    aggregate, power, stride=10
+                )
+                
+                if len(X) > 0:
+                    X_aggregate.append(X)
+                    
+                    # Pour chaque appareil, créer target
+                    for other_idx in range(self.num_appliances):
+                        if other_idx == app_idx:
+                            # Cet appareil: utiliser la vraie consommation
+                            y_outputs[other_idx].append(y)
+                            class_counts[other_idx] += len(y)
+                        else:
+                            # Autres appareils: zéro
+                            y_outputs[other_idx].append(
+                                np.zeros_like(y)
+                            )
+                    
+                    # Timestamps
+                    sig_start = sig['start_time']
+                    sig_timestamp = (
+                        sig_start.timestamp()
+                        if hasattr(sig_start, 'timestamp')
+                        else sig_start
+                    )
+                    timestamps.extend([sig_timestamp] * len(X))
+        
+        # Ajouter exemples négatifs si demandé
+        if use_feedback:
+            negative_count = self._add_negative_examples_multioutput(
+                X_aggregate, y_outputs, timestamps, class_counts
+            )
+            if negative_count > 0:
+                logger.info(
+                    f"✅ {negative_count} exemples négatifs ajoutés "
+                    f"(Multi-Output)"
+                )
+        
+        # Concaténer
+        if not X_aggregate:
+            logger.error("Aucune donnée pour entraînement Multi-Output")
+            return {}
+        
+        X = np.concatenate(X_aggregate, axis=0)
+        y_dict = {
+            idx: np.concatenate(y_outputs[idx], axis=0)
+            for idx in range(self.num_appliances)
+        }
+        
+        # Calculer class weights (inverse proportionnel)
+        total_samples = len(X)
+        class_weights = {}
+        for idx in range(self.num_appliances):
+            count = class_counts[idx]
+            if count > 0:
+                weight = total_samples / (self.num_appliances * count)
+                class_weights[idx] = weight
+            else:
+                class_weights[idx] = 1.0
+        
+        logger.info("📊 Class weights:")
+        for idx, app_id in self.appliance_idx_to_id.items():
+            app_name = self.appliance_names[idx]
+            logger.info(
+                f"   {app_name}: {class_weights[idx]:.2f} "
+                f"({class_counts[idx]} samples)"
+            )
+        
+        # Ajuster scalers (from-scratch seulement)
+        if not is_fine_tuning:
+            logger.info("Ajustement scalers (from-scratch)")
+            self.preprocessor.input_scaler.fit(X.reshape(-1, 1))
+            # Pour multi-output, on normalise avec toutes les cibles
+            all_y = np.concatenate(
+                [y_dict[idx] for idx in range(self.num_appliances)]
+            )
+            self.preprocessor.target_scaler.fit(all_y.reshape(-1, 1))
+            self.preprocessor.fitted = True
+        else:
+            logger.info("Réutilisation scalers existants (fine-tuning)")
+        
+        # Normaliser
+        X_scaled, _ = self.preprocessor.transform(X)
+        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
+        
+        y_scaled_dict = {}
+        for idx in range(self.num_appliances):
+            y_scaled = self.preprocessor.target_scaler.transform(
+                y_dict[idx].reshape(-1, 1)
+            ).flatten()
+            y_scaled_dict[idx] = y_scaled
+        
+        # Time Series Cross-Validation
+        timestamps_array = np.array(timestamps)
+        sorted_indices = np.argsort(timestamps_array)
+        
+        tscv = TimeSeriesSplit(n_splits=5)
+        all_splits = list(tscv.split(sorted_indices))
+        train_idx, val_idx = all_splits[-1]
+        
+        idx_train = sorted_indices[train_idx]
+        idx_val = sorted_indices[val_idx]
+        
+        logger.info(
+            f"📅 Dernier fold utilisé: {len(idx_train)} train / "
+            f"{len(idx_val)} val "
+            f"({100*len(idx_val)/len(sorted_indices):.1f}% récent)"
+        )
+        
+        X_train = X_scaled[idx_train]
+        X_val = X_scaled[idx_val]
+        
+        y_train_dict = {}
+        y_val_dict = {}
+        safe_output_names = []
+        
+        for idx, app_name in enumerate(self.appliance_names):
+            safe_name = normalize_name_for_tensorflow(app_name)
+            output_name = f'output_{safe_name}'
+            safe_output_names.append(output_name)
+            
+            y_train_dict[output_name] = y_scaled_dict[idx][idx_train]
+            y_val_dict[output_name] = y_scaled_dict[idx][idx_val]
+        
+        # Construire ou ajuster modèle
+        if not is_fine_tuning:
+            self.model = self.build_model()
+        else:
+            logger.info(f"Ajustement learning rate: {learning_rate}")
+            self.model.optimizer.learning_rate.assign(learning_rate)
+        
+        # Callbacks
+        callbacks_list = [
+            callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=10,
+                restore_best_weights=True,
+                verbose=1
+            ),
+            callbacks.ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,
+                patience=5,
+                min_lr=1e-6,
+                verbose=1
+            )
+        ]
+        
+        # Redis real-time training logs callback
+        redis_callback = RedisTrainingCallback(
+            model_name=model_name,
+            total_epochs=epochs,
+            batch_update_freq=10
+        )
+        callbacks_list.append(redis_callback)
+        logger.info("Real-time logs → channel 'training:logs'")
+
+        # Entraînement
+        self.history = self.model.fit(
+            X_train,
+            y_train_dict,
+            validation_data=(X_val, y_val_dict),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks_list,
+            verbose=1
+        )
+        
+        logger.info("✅ Entraînement Multi-Output terminé")
+        
+        # Métriques
+        metrics = {
+            'epochs_trained': len(self.history.history['loss']),
+            'train_loss': float(self.history.history['loss'][-1]),
+            'val_loss': float(self.history.history['val_loss'][-1]),
+            'appliances': self.appliance_names,
+            'architecture': 'MultiOutput',
+            'class_weights': {
+                self.appliance_names[idx]: float(class_weights[idx])
+                for idx in range(self.num_appliances)
+            }
+        }
+        
+        # Métriques par appareil
+        for idx, app_name in enumerate(self.appliance_names):
+            safe_name = normalize_name_for_tensorflow(app_name)
+            output_name = f'output_{safe_name}'
+            mae_key = f'{output_name}_mae'
+            if mae_key in self.history.history:
+                metrics[f'{app_name}_train_mae'] = float(
+                    self.history.history[mae_key][-1]
+                )
+                metrics[f'{app_name}_val_mae'] = float(
+                    self.history.history[f'val_{mae_key}'][-1]
+                )
+        
+        return metrics
+    
+    def predict(
+        self,
+        aggregate_power: np.ndarray,
+        stride: int = 1
+    ) -> Dict[int, np.ndarray]:
+        """
+        Prédit la consommation pour TOUS les appareils simultanément.
+        
+        Args:
+            aggregate_power: Série agrégée
+            stride: Pas de fenêtre glissante
+        
+        Returns:
+            Dict[appliance_id, predictions]
+        """
+        if self.model is None:
+            raise ValueError("Modèle Multi-Output non entraîné/chargé")
+        
+        # Créer fenêtres glissantes
+        X = self.preprocessor.create_prediction_windows(
+            aggregate_power, stride=stride
+        )
+        
+        if len(X) == 0:
+            return {
+                app_id: np.zeros_like(aggregate_power)
+                for app_id in self.appliance_ids
+            }
+        
+        # Normaliser
+        X_scaled, _ = self.preprocessor.transform(X)
+        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
+        
+        # Prédiction (liste de N outputs)
+        predictions_scaled_list = self.model.predict(
+            X_scaled,
+            batch_size=32,
+            verbose=0
+        )
+        
+        # Dénormaliser et reconstruire pour chaque appareil
+        result = {}
+        half_window = self.sequence_length // 2
+        
+        for idx, app_id in enumerate(self.appliance_ids):
+            predictions_scaled = predictions_scaled_list[idx]
+            predictions = self.preprocessor.target_scaler.inverse_transform(
+                predictions_scaled
+            ).flatten()
+            
+            # Post-traitement
+            predictions = np.maximum(predictions, 0)
+            
+            # Reconstruction signal complet
+            signal = np.zeros(len(aggregate_power))
+            
+            for i, pred in enumerate(predictions):
+                sig_idx = i * stride + half_window
+                if sig_idx < len(signal):
+                    signal[sig_idx] = pred
+            
+            # Interpolation si stride > 1
+            if stride > 1:
+                from scipy.interpolate import interp1d
+                indices = np.arange(0, len(signal), stride)
+                indices = np.minimum(indices, len(signal) - 1)
+                values = signal[indices]
+                f = interp1d(
+                    indices, values,
+                    kind='linear',
+                    fill_value='extrapolate'
+                )
+                signal = f(np.arange(len(signal)))
+            
+            result[app_id] = signal
+        
+        return result
+    
+    @staticmethod
+    def _load_signature_data_static(
+        signature: Dict[str, Any]
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Charge les données d'une signature (méthode statique)."""
+        try:
+            with db_manager.engine.connect() as conn:
+                query = text("""
+                    SELECT time, papp
+                    FROM linky_realtime
+                    WHERE time >= :start_time AND time <= :end_time
+                    ORDER BY time
+                """)
+                
+                result = conn.execute(
+                    query,
+                    {
+                        'start_time': signature['start_time'],
+                        'end_time': signature['end_time']
+                    }
+                )
+                
+                aggregate_power = [
+                    row[1] for row in result if row[1] is not None
+                ]
+                
+                if not aggregate_power:
+                    return None, None
+                
+                aggregate_power = np.array(aggregate_power, dtype=np.float32)
+                
+                if signature.get('is_negative', False):
+                    appliance_power = np.zeros(
+                        len(aggregate_power), dtype=np.float32
+                    )
+                else:
+                    appliance_power = aggregate_power.copy()
+                
+                return aggregate_power, appliance_power
+        except Exception as e:
+            logger.error(f"Erreur chargement données signature: {e}")
+            return None, None
+    
+    def _add_negative_examples_multioutput(
+        self,
+        X_aggregate: List,
+        y_outputs: Dict[int, List],
+        timestamps: List,
+        class_counts: Dict[int, int]
+    ) -> int:
+        """Ajoute exemples négatifs pour Multi-Output."""
+        negative_count = 0
+        negative_sigs = self._load_negative_signatures()
+        
+        for appliance_id, signatures in negative_sigs.items():
+            if appliance_id not in self.appliance_id_to_idx:
+                continue
+            
+            app_idx = self.appliance_id_to_idx[appliance_id]
+            
+            for sig in signatures:
+                aggregate = self._load_aggregate_data(
+                    sig['start_time'],
+                    sig['end_time']
+                )
+                
+                if aggregate is None or len(aggregate) < self.sequence_length:
+                    continue
+                
+                zero_target = np.zeros(len(aggregate), dtype=np.float32)
+                
+                X, y = self.preprocessor.create_sequences(
+                    aggregate, zero_target, stride=15
+                )
+                
+                if len(X) > 0:
+                    X_aggregate.append(X)
+                    
+                    # Pour chaque appareil
+                    for other_idx in range(self.num_appliances):
+                        y_outputs[other_idx].append(np.zeros_like(y))
+                    
+                    # Compter pour l'appareil concerné
+                    class_counts[app_idx] += len(y)
+                    
+                    sig_start = sig['start_time']
+                    sig_timestamp = (
+                        sig_start.timestamp()
+                        if hasattr(sig_start, 'timestamp')
+                        else sig_start
+                    )
+                    timestamps.extend([sig_timestamp] * len(X))
+                    negative_count += 1
+        
+        return negative_count
+    
+    def _load_negative_signatures(self) -> Dict[int, List[Dict[str, Any]]]:
+        """Charge les signatures négatives depuis la base."""
+        negative_sigs = {}
+        try:
+            with db_manager.get_session() as session:
+                query = text("""
+                    SELECT id, appliance_id, start_time, end_time
+                    FROM cnn_signatures
+                    WHERE is_negative = TRUE
+                    ORDER BY created_at DESC
+                """)
+                result = session.execute(query)
+                
+                for row in result:
+                    app_id = row[1]
+                    if app_id not in negative_sigs:
+                        negative_sigs[app_id] = []
+                    negative_sigs[app_id].append({
+                        'id': row[0],
+                        'appliance_id': app_id,
+                        'start_time': row[2],
+                        'end_time': row[3]
+                    })
+        except Exception as e:
+            logger.error(f"Erreur chargement signatures négatives: {e}")
+        
+        return negative_sigs
+    
+    def _load_aggregate_data(
+        self,
+        start_time,
+        end_time
+    ) -> Optional[np.ndarray]:
+        """Charge les données agrégées pour une période."""
+        try:
+            with db_manager.engine.connect() as conn:
+                query = text("""
+                    SELECT papp
+                    FROM linky_realtime
+                    WHERE time >= :start_time AND time <= :end_time
+                    ORDER BY time
+                """)
+                result = conn.execute(
+                    query,
+                    {'start_time': start_time, 'end_time': end_time}
+                )
+                data = [row[0] for row in result if row[0] is not None]
+                
+                if not data:
+                    return None
+                
+                return np.array(data, dtype=np.float32)
+        except Exception as e:
+            logger.error(f"Erreur chargement données agrégées: {e}")
+            return None
+    
+    def save(self, filepath: str, metadata: Optional[Dict[str, Any]] = None):
+        """Sauvegarde le modèle Multi-Output."""
+        if self.model is None:
+            raise ValueError("Aucun modèle à sauvegarder")
+        
+        self.model.save(filepath)
+        logger.info(f"💾 Modèle Multi-Output sauvegardé: {filepath}")
+        
+        meta = {
+            'architecture': 'MultiOutput',
+            'model_type': self.model_type,
+            'sequence_length': self.sequence_length,
+            'num_appliances': self.num_appliances,
+            'appliance_ids': self.appliance_ids,
+            'appliance_names': self.appliance_names,
+            'appliance_id_to_idx': self.appliance_id_to_idx
+        }
+        if metadata:
+            meta.update(metadata)
+        
+        meta_path = filepath.replace('.keras', '.metadata.json')
+        with open(meta_path, 'w') as f:
+            json.dump(meta, f, indent=2)
+        logger.info(f"📝 Métadonnées sauvegardées: {meta_path}")
+    
+    def load(self, filepath: str):
+        """Charge le modèle Multi-Output."""
+        custom_objects = {
+            'MultiHeadAttentionLayer': MultiHeadAttentionLayer,
+            'asymmetric_loss': asymmetric_loss,
+            'focal_loss_fixed': focal_loss_fixed
+        }
+        self.model = keras.models.load_model(
+            filepath,
+            custom_objects=custom_objects
+        )
+        logger.info(f"📂 Modèle Multi-Output chargé: {filepath}")
+        
+        meta_path = filepath.replace('.keras', '.metadata.json')
+        if Path(meta_path).exists():
+            with open(meta_path, 'r') as f:
+                meta = json.load(f)
+            
+            self.appliance_ids = meta['appliance_ids']
+            self.appliance_names = meta['appliance_names']
+            self.num_appliances = meta['num_appliances']
+            self.appliance_id_to_idx = {
+                int(k): v for k, v in meta['appliance_id_to_idx'].items()
+            }
+            self.appliance_idx_to_id = {
+                v: int(k) for k, v in self.appliance_id_to_idx.items()
+            }
+            logger.info(
+                f"📋 Métadonnées chargées: {self.num_appliances} appareils"
+            )
 
 
 # --- S2P FiLM : un seul modèle multi-target avec conditioning ---
@@ -535,7 +1276,7 @@ class Seq2PointFiLMModel:
                 
                 # Créer les séquences
                 X, y = self.preprocessor.create_sequences(
-                    aggregate, power, stride=30
+                    aggregate, power, stride=10
                 )
                 
                 if len(X) > 0:
@@ -797,7 +1538,7 @@ class Seq2PointFiLMModel:
                 zero_target = np.zeros(len(aggregate), dtype=np.float32)
                 
                 X, y = self.preprocessor.create_sequences(
-                    aggregate, zero_target, stride=50
+                    aggregate, zero_target, stride=15
                 )
                 
                 if len(X) > 0:
@@ -1518,10 +2259,12 @@ class Seq2PointPreprocessor:
 
 
 class Seq2PointNILMManager:
-    """Gestionnaire de modèles S2P NILM avec architecture FiLM"""
+    """Gestionnaire de modèles S2P NILM avec architectures FiLM et Multi-Output"""
     
     def __init__(self):
         self.model_type = os.getenv('NILM_MODEL_TYPE', 'gru').lower()
+        # Architecture: 'film' ou 'multioutput'
+        self.architecture = os.getenv('NILM_ARCHITECTURE', 'multioutput').lower()
 
         # Créer le répertoire des modèles
         Path(settings.cnn_model_path).mkdir(parents=True, exist_ok=True)
@@ -1533,14 +2276,18 @@ class Seq2PointNILMManager:
         )
         logger.info("Change Point Pattern Detector initialisé")
 
-        # Modèle FiLM (seule architecture supportée)
+        # Modèles (une seule architecture à la fois)
         self.film_model: Optional[Seq2PointFiLMModel] = None
+        self.multioutput_model: Optional[Seq2PointMultiOutputModel] = None
         
-        logger.info(f"🎯 Architecture: FiLM, Type: {self.model_type.upper()}")
+        logger.info(
+            f"🎯 Architecture: {self.architecture.upper()}, "
+            f"Type: {self.model_type.upper()}"
+        )
 
     def load_model(self, model_path: str):
         """
-        Charge un modèle FiLM existant pour fine-tuning
+        Charge un modèle existant pour fine-tuning.
 
         Args:
             model_path: Chemin vers le modèle .keras à charger
@@ -1562,26 +2309,32 @@ class Seq2PointNILMManager:
             )
             architecture = metadata.get('architecture', 'FiLM')
 
-            # Vérifier que c'est bien un modèle FiLM
-            if architecture.lower() != 'film':
-                logger.warning(
-                    f"Seule l'architecture FiLM est supportée. "
-                    f"Modèle {architecture} détecté."
+            logger.info(f"📂 Chargement modèle {architecture}...")
+            
+            if architecture.lower() == 'film':
+                self.film_model = Seq2PointFiLMModel(
+                    appliance_ids=appliance_ids,
+                    appliance_names=appliance_names,
+                    sequence_length=sequence_length,
+                    model_type=self.model_type
                 )
+                self.film_model.load(model_path)
+                self.architecture = 'film'
+            elif architecture.lower() == 'multioutput':
+                self.multioutput_model = Seq2PointMultiOutputModel(
+                    appliance_ids=appliance_ids,
+                    appliance_names=appliance_names,
+                    sequence_length=sequence_length,
+                    model_type=self.model_type
+                )
+                self.multioutput_model.load(model_path)
+                self.architecture = 'multioutput'
+            else:
                 raise ValueError(
-                    f"Modèle {architecture} non supporté. "
-                    f"Veuillez réentraîner avec l'architecture FiLM."
+                    f"Architecture {architecture} non supportée"
                 )
-
-            logger.info("📂 Chargement modèle FiLM...")
-            self.film_model = Seq2PointFiLMModel(
-                appliance_ids=appliance_ids,
-                appliance_names=appliance_names,
-                sequence_length=sequence_length,
-                model_type=self.model_type
-            )
-            self.film_model.load(model_path)
-            logger.info(f"✅ Modèle FiLM chargé: {model_path}")
+            
+            logger.info(f"✅ Modèle {architecture} chargé: {model_path}")
 
         except Exception as e:
             logger.error(f"❌ Erreur chargement modèle: {e}")
@@ -1593,7 +2346,7 @@ class Seq2PointNILMManager:
         fine_tune: bool = False
     ) -> Dict[str, Any]:
         """
-        Entraîne le modèle FiLM sur tous les appareils.
+        Entraîne le modèle sur tous les appareils (FiLM ou Multi-Output).
 
         Args:
             model_name: Name of the model (format: linkya_model_<timestamp>)
@@ -1647,9 +2400,16 @@ class Seq2PointNILMManager:
                 app_idx = appliance_ids.index(appliance_id)
                 appliance_name = appliance_names[app_idx]
                 for sig in signatures:
-                    agg, app_pwr = (
-                        Seq2PointFiLMModel._load_signature_data_static(sig)
-                    )
+                    # Utiliser la méthode statique appropriée
+                    if self.architecture == 'multioutput':
+                        agg, app_pwr = (
+                            Seq2PointMultiOutputModel
+                            ._load_signature_data_static(sig)
+                        )
+                    else:
+                        agg, app_pwr = (
+                            Seq2PointFiLMModel._load_signature_data_static(sig)
+                        )
                     if app_pwr is None or len(app_pwr) == 0:
                         continue
 
@@ -1676,45 +2436,92 @@ class Seq2PointNILMManager:
                 f"appareils, {total_profiles} profils"
             )
 
-            # Entraîner avec architecture FiLM (seule architecture supportée)
-            logger.info("🎬 Entraînement FiLM (multi-target conditioning)")
-            
-            # Créer ou réutiliser modèle FiLM
-            if fine_tune and self.film_model is not None:
-                logger.info("♻️  Réutilisation modèle FiLM pour fine-tuning")
-            else:
-                self.film_model = Seq2PointFiLMModel(
-                    appliance_ids,
-                    appliance_names,
-                    sequence_length=settings.effective_sequence_length,
-                    model_type=self.model_type
+            # Entraîner avec l'architecture choisie
+            if self.architecture == 'multioutput':
+                logger.info(
+                    "🎬 Entraînement Multi-Output "
+                    "(outputs parallèles + attention)"
                 )
+                
+                # Créer ou réutiliser modèle Multi-Output
+                if fine_tune and self.multioutput_model is not None:
+                    logger.info(
+                        "♻️  Réutilisation modèle Multi-Output "
+                        "pour fine-tuning"
+                    )
+                else:
+                    self.multioutput_model = Seq2PointMultiOutputModel(
+                        appliance_ids,
+                        appliance_names,
+                        sequence_length=settings.effective_sequence_length,
+                        model_type=self.model_type
+                    )
 
-            metrics = self.film_model.train(
-                all_signatures,
-                model_name,
-                epochs=30,
-                batch_size=32,
-                use_feedback=True,
-                fine_tune=fine_tune
-            )
-            
-            if not metrics:
-                logger.error(
-                    "Entraînement FiLM impossible (données insuffisantes)"
+                metrics = self.multioutput_model.train(
+                    all_signatures,
+                    model_name,
+                    epochs=30,
+                    batch_size=32,
+                    use_feedback=True,
+                    fine_tune=fine_tune
                 )
-                return {'error': 'insufficient_training_data'}
-            
-            model_path = Path(settings.cnn_model_path) / (
-                f'{model_name}.keras'
-            )
-            self.film_model.save(str(model_path), metadata=metrics)
+                
+                if not metrics:
+                    logger.error(
+                        "Entraînement Multi-Output impossible "
+                        "(données insuffisantes)"
+                    )
+                    return {'error': 'insufficient_training_data'}
+                
+                model_path = Path(settings.cnn_model_path) / (
+                    f'{model_name}.keras'
+                )
+                self.multioutput_model.save(str(model_path), metadata=metrics)
+                architecture_name = 'MultiOutput'
+                
+            else:  # FiLM (legacy)
+                logger.info("🎬 Entraînement FiLM (multi-target conditioning)")
+                
+                # Créer ou réutiliser modèle FiLM
+                if fine_tune and self.film_model is not None:
+                    logger.info(
+                        "♻️  Réutilisation modèle FiLM pour fine-tuning"
+                    )
+                else:
+                    self.film_model = Seq2PointFiLMModel(
+                        appliance_ids,
+                        appliance_names,
+                        sequence_length=settings.effective_sequence_length,
+                        model_type=self.model_type
+                    )
+
+                metrics = self.film_model.train(
+                    all_signatures,
+                    model_name,
+                    epochs=30,
+                    batch_size=32,
+                    use_feedback=True,
+                    fine_tune=fine_tune
+                )
+                
+                if not metrics:
+                    logger.error(
+                        "Entraînement FiLM impossible "
+                        "(données insuffisantes)"
+                    )
+                    return {'error': 'insufficient_training_data'}
+                
+                model_path = Path(settings.cnn_model_path) / (
+                    f'{model_name}.keras'
+                )
+                self.film_model.save(str(model_path), metadata=metrics)
+                architecture_name = 'FiLM'
             
             # Formater la réponse pour compatibilité frontend
             return {
                 'model_name': model_name,
-                'model_type': f'FiLM-{self.model_type}',
-                'architecture': 'FiLM',
+                'model_type': f'{architecture_name}-{self.model_type}',
+                'architecture': architecture_name,
                 'num_appliances': len(appliance_ids),
                 'model_path': str(model_path),
                 'appliances': [
@@ -1862,27 +2669,27 @@ class Seq2PointNILMManager:
 
                 logger.debug(f"    ✓ Durée OK")
 
-                # Critère 2: Puissance moyenne similaire (±5% strict!)
+                # Critère 2: Puissance moyenne similaire (±15% assoupli)
                 if neg['avg_power'] > 0:
                     power_ratio = det['avg_power'] / neg['avg_power']
                     logger.debug(
                         f"    Puissance: ratio={power_ratio:.2f}, "
-                        f"seuils=[0.95, 1.05]"
+                        f"seuils=[0.85, 1.15]"
                     )
-                    if not (0.95 <= power_ratio <= 1.05):
+                    if not (0.85 <= power_ratio <= 1.15):
                         logger.debug(f"    ✗ Puissance hors limite")
                         continue
                     logger.debug(f"    ✓ Puissance OK")
                 
-                # Critère 3: Énergie similaire (±10%)
+                # Critère 3: Énergie similaire (±20% assoupli)
                 det_energy = det.get('energy_wh', 0)
                 if neg['energy_wh'] > 0 and det_energy > 0:
                     energy_ratio = det_energy / neg['energy_wh']
                     logger.debug(
                         f"    Énergie: ratio={energy_ratio:.2f}, "
-                        f"seuils=[0.90, 1.10]"
+                        f"seuils=[0.80, 1.20]"
                     )
-                    if not (0.90 <= energy_ratio <= 1.10):
+                    if not (0.80 <= energy_ratio <= 1.20):
                         logger.debug(f"    ✗ Énergie hors limite")
                         continue
                     logger.debug(f"    ✓ Énergie OK")
@@ -1979,7 +2786,8 @@ class Seq2PointNILMManager:
         end_time: datetime
     ) -> List[Dict[str, Any]]:
         """
-        Désagrège la consommation totale pour tous les appareils
+        Désagrège la consommation totale pour tous les appareils.
+        Supporte FiLM et Multi-Output architectures.
         
         Args:
             start_time: Début de la période
@@ -1988,13 +2796,15 @@ class Seq2PointNILMManager:
         Returns:
             Liste de détections par appareil
         """
-        if self.film_model is None:
-            logger.error("Aucun modèle FiLM chargé pour la désagrégation")
+        if self.film_model is None and self.multioutput_model is None:
+            logger.error("Aucun modèle chargé pour la désagrégation")
             return []
 
         # Charger les profils de signatures si nécessaire
         if not self.change_point_detector.signature_profiles:
-            logger.info("Chargement des profils de signatures pour détection...")
+            logger.info(
+                "Chargement des profils de signatures pour détection..."
+            )
             self._load_signature_profiles()
 
         try:
@@ -2015,24 +2825,33 @@ class Seq2PointNILMManager:
                     logger.warning("Aucune donnée pour désagrégation")
                     return []
                 timestamps = [row[0] for row in data]
-                aggregate_power = np.array([row[1] for row in data], dtype=np.float32)
+                aggregate_power = np.array(
+                    [row[1] for row in data], dtype=np.float32
+                )
             logger.info(f"Désagrégation sur {len(aggregate_power)} points")
 
-            #############################################################
+            ##########################################################
             # APPROCHE HYBRIDE : Change Point Detection + Pattern Matching
-            #############################################################
+            ##########################################################
 
-            logger.info("=== Détection Hybride (Change Point + Pattern Matching) ===")
+            logger.info(
+                "=== Détection Hybride "
+                "(Change Point + Pattern Matching) ==="
+            )
 
             # Étape 1 : Détecter les change points dans l'agrégé
-            change_points = self.change_point_detector.detect_change_points(aggregate_power)
+            change_points = (
+                self.change_point_detector.detect_change_points(aggregate_power)
+            )
 
             if not change_points:
                 logger.warning("Aucun change point détecté")
                 return []
 
             # Étape 2 : Extraire les patterns entre les change points
-            patterns = self.change_point_detector.extract_patterns(aggregate_power, change_points)
+            patterns = self.change_point_detector.extract_patterns(
+                aggregate_power, change_points
+            )
 
             if not patterns:
                 logger.warning("Aucun pattern extrait")
@@ -2041,44 +2860,56 @@ class Seq2PointNILMManager:
             # Étape 3 : Matcher chaque pattern avec les profils de signatures
             detections = []
             for pattern_data in patterns:
-                match_result = self.change_point_detector.match_pattern(pattern_data)
+                match_result = self.change_point_detector.match_pattern(
+                    pattern_data
+                )
 
                 if match_result:
-                    appliance_id, appliance_name, matched_signature_id, confidence = match_result
+                    (appliance_id, appliance_name,
+                     matched_signature_id, confidence) = match_result
 
                     # Mapper les indices vers les timestamps
                     start_idx = pattern_data['start_idx']
                     end_idx = pattern_data['end_idx']
 
-                    if start_idx < len(timestamps) and end_idx <= len(timestamps):
+                    if (start_idx < len(timestamps) and
+                            end_idx <= len(timestamps)):
                         detection = {
                             'appliance_id': appliance_id,
                             'appliance_name': appliance_name,
                             'signature_id': matched_signature_id,
                             'start_time': timestamps[start_idx],
-                            'end_time': timestamps[min(end_idx, len(timestamps)-1)],
+                            'end_time': timestamps[
+                                min(end_idx, len(timestamps)-1)
+                            ],
                             'duration_seconds': pattern_data['duration'],
                             'avg_power': pattern_data['avg_power'],
                             'max_power': pattern_data['max_power'],
                             'energy_wh': pattern_data['energy_wh'],
                             'confidence_score': float(confidence),
                             'features': {
-                                'detection_method': 'change_point_pattern_matching',
+                                'detection_method': (
+                                    'change_point_pattern_matching'
+                                ),
                                 'change_point_based': True
                             }
                         }
                         if matched_signature_id is not None:
-                            detection['features']['matched_signature_id'] = int(matched_signature_id)
+                            detection['features']['matched_signature_id'] = (
+                                int(matched_signature_id)
+                            )
                             detection['features']['matching'] = {
                                 'score': float(confidence),
                                 'method': 'duration_power_shape_combined'
                             }
                         detections.append(detection)
 
-                        logger.info(f"Pattern matché: {appliance_name} - "
-                                  f"{pattern_data['duration']}s - "
-                                  f"{pattern_data['avg_power']:.1f}W - "
-                                  f"confiance {confidence:.2%}")
+                        logger.info(
+                            f"Pattern matché: {appliance_name} - "
+                            f"{pattern_data['duration']}s - "
+                            f"{pattern_data['avg_power']:.1f}W - "
+                            f"confiance {confidence:.2%}"
+                        )
 
             logger.info(f"Total détections avant filtrage: {len(detections)}")
             
@@ -2086,7 +2917,7 @@ class Seq2PointNILMManager:
             detections = self._filter_against_negative_signatures(detections)
             
             # ✨ NOUVEAU: Filtrer par seuil de confiance minimum
-            min_confidence = 0.55  # 55% de confiance minimum
+            min_confidence = 0.40  # 40% de confiance minimum (assoupli)
             before_conf_filter = len(detections)
             detections = [
                 d for d in detections
