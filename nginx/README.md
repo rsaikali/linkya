@@ -75,3 +75,65 @@ curl http://localhost:3000/health
 ```
 
 Should return: `healthy`
+
+## Troubleshooting
+
+### WebSocket Connection Refused Errors
+
+**Symptom**: Logs show `connect() failed (111: Connection refused) while connecting to upstream`
+
+**Cause**: Docker was trying to use IPv6 to connect to backend
+
+**Solution**: IPv6 is now disabled on the Docker network. If you still see this error:
+
+1. Recreate the network:
+```bash
+docker compose down
+docker compose up -d
+```
+
+2. Check backend is accessible:
+```bash
+docker compose exec nginx ping -c 2 backend
+```
+
+3. Verify network configuration:
+```bash
+docker network inspect nilmia_nilmia-network | grep IPv6
+# Should show: "EnableIPv6": false
+```
+
+### Domain Access Issues
+
+**Symptom**: Application works on `localhost:3000` but not on `dev.saikali.fr`
+
+**Solution**: The `server_name` directive accepts multiple domains. Check Nginx logs:
+
+```bash
+docker compose logs nginx --tail=50
+```
+
+If you see errors, ensure your reverse proxy (if any) is correctly forwarding requests.
+
+### WebSocket Connections Failing
+
+**Symptom**: Browser console shows `WebSocket connection to 'ws://...' failed`
+
+**Solution**:
+
+1. Verify Nginx is proxying WebSocket correctly:
+```bash
+# Test from inside container
+docker compose exec nginx curl -i -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  http://backend:8000/ws/consumption
+```
+
+2. Check for status 101 in logs (Switching Protocols):
+```bash
+docker compose logs nginx | grep "101"
+```
+
+3. Ensure firewall allows WebSocket connections
+
