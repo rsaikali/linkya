@@ -261,3 +261,6 @@ volumes:
 networks:
   nilmia-network:
     driver: bridge
+    enable_ipv6: false
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
