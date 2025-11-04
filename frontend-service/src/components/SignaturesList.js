@@ -30,7 +30,7 @@ import {
   Toolbar,
   Divider,
 } from '@mui/material';
-import { Delete, FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
+import { FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
 import { importProgressWS } from '../services/websocket';
@@ -339,27 +339,6 @@ function SignaturesList() {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const formatDurationFull = (seconds) => {
-    if (!seconds) return 'N/A';
-    const minutes = Math.round(seconds / 60);
-    
-    if (minutes < 60) {
-      return `${minutes}min`;
-    } else {
-      const hours = Math.floor(minutes / 60);
-      const remainingMinutes = minutes % 60;
-      if (remainingMinutes === 0) {
-        return `${hours}h`;
-      }
-      return `${hours}h${remainingMinutes}min`;
-    }
-  };
-
-  const formatPower = (watts) => {
-    if (watts === null || watts === undefined) return 'N/A';
-    return `${Math.round(watts / 100) * 100} W`;
   };
 
   const formatDurationMinutes = (seconds) => {

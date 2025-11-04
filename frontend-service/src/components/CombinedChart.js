@@ -130,7 +130,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       if (!annotations) return;
 
       let foundTooltipData = null;
-      let isAnnotation = false;
 
       // Check if mouse is over any annotation
       for (const key in annotations) {
@@ -147,7 +146,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             
             if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) {
               foundTooltipData = annotation.tooltipData;
-              isAnnotation = true;
               break;
             }
           }
@@ -164,7 +162,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           
           if (dataIndex >= 0 && dataIndex < rawData.data.length) {
             const dataPoint = rawData.data[dataIndex];
-            const dataY = yScale.getPixelForValue(dataPoint.avg_papp);
             
             // Check if mouse is near the data point (within chart area)
             const chartArea = chart.chartArea;

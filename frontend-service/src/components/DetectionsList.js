@@ -28,7 +28,6 @@ import {
   ListItemIcon,
   ListItemText,
   Toolbar,
-  Divider,
 } from '@mui/material';
 import { Check, Close, Search, MoreVert } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
@@ -488,27 +487,6 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     });
   };
 
-  const formatDurationFull = (seconds) => {
-    if (!seconds) return 'N/A';
-    
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    const parts = [];
-    if (hours > 0) {
-      parts.push(`${hours}h`);
-    }
-    if (minutes > 0) {
-      parts.push(`${minutes}min`);
-    }
-    if (secs > 0 || parts.length === 0) {
-      parts.push(`${secs}sec`);
-    }
-    
-    return parts.join(' ');
-  };
-
   const formatHumanizedDate = (date) => {
     const now = new Date();
     const diffMs = now - date;
@@ -535,17 +513,6 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
       const years = Math.floor(diffDays / 365);
       return `il y a ${years} an${years !== 1 ? 's' : ''}`;
     }
-  };
-
-  const formatPower = (watts) => {
-    if (watts === null || watts === undefined) return 'N/A';
-    return `${Math.round(watts / 100) * 100} W`;
-  };
-
-  const formatConsumption = (watts, durationSeconds) => {
-    if (watts === null || watts === undefined || !durationSeconds) return 'N/A';
-    const kWh = (watts * durationSeconds) / (1000 * 3600);
-    return `${kWh.toFixed(1)} kWh`;
   };
 
   const formatDurationMinutes = (seconds) => {
