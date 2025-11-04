@@ -43,20 +43,28 @@ const MaterialIcon = ({ children, sx = {} }) => (
   </span>
 );
 
-// Palette de couleurs pour les appareils
+// French Palette from flatuicolors.com
 const COLOR_PALETTE = [
-  { name: 'Red', value: '#f94144' },
-  { name: 'Orange Red', value: '#f3722c' },
-  { name: 'Orange', value: '#f8961e' },
-  { name: 'Light Orange', value: '#f9844a' },
-  { name: 'Yellow', value: '#f9c74f' },
-  { name: 'Green', value: '#90be6d' },
-  { name: 'Teal Green', value: '#43aa8b' },
-  { name: 'Teal', value: '#4d908e' },
-  { name: 'Blue Grey', value: '#577590' },
-  { name: 'Blue', value: '#277da1' },
-  { name: 'Purple', value: '#9d4edd' },
-  { name: 'Pink', value: '#f72585' },
+  { name: 'Flat Flesh', value: '#fdcb6e' },
+  { name: 'Melon Melody', value: '#e17055' },
+  { name: 'Prunus Avium', value: '#d63031' },
+  { name: 'Carmine Pink', value: '#e84393' },
+  { name: 'Exodus Fruit', value: '#6c5ce7' },
+  { name: 'Shy Moment', value: '#a29bfe' },
+  { name: 'Pico-8 Pink', value: '#74b9ff' },
+  { name: 'Electron Blue', value: '#0984e3' },
+  { name: 'Mint Leaf', value: '#00b894' },
+  { name: 'Robin\'s Egg Blue', value: '#00cec9' },
+  { name: 'Light Greenish Blue', value: '#55efc4' },
+  { name: 'Faded Poster', value: '#81ecec' },
+  { name: 'Orange Ville', value: '#fab1a0' },
+  { name: 'Chi-Gong', value: '#ff7675' },
+  { name: 'Bloom', value: '#fd79a8' },
+  { name: 'Sour Lemon', value: '#ffeaa7' },
+  { name: 'City Lights', value: '#dfe6e9' },
+  { name: 'Amour', value: '#b2bec3' },
+  { name: 'Grisaille', value: '#636e72' },
+  { name: 'Dark Slate', value: '#2d3436' },
 ];
 
 function AppliancesList() {
@@ -355,7 +363,7 @@ function AppliancesList() {
           <>
             <MenuItem onClick={() => setMenuView('icon')}>
               <ListItemIcon>
-                <MaterialIcon sx={{ fontSize: '1.5rem' }}>
+                <MaterialIcon sx={{ fontSize: '1.7rem' }}>
                   {getApplianceIcon(selectedApplianceId)}
                 </MaterialIcon>
               </ListItemIcon>
@@ -365,8 +373,8 @@ function AppliancesList() {
               <ListItemIcon>
                 <Box
                   sx={{
-                    width: 24,
-                    height: 24,
+                    width: 26,
+                    height: 26,
                     borderRadius: '50%',
                     backgroundColor: getApplianceColor(selectedApplianceId),
                     border: '2px solid',
@@ -385,15 +393,10 @@ function AppliancesList() {
               <ListItemText primary="← Back" />
             </MenuItem>
             <Divider />
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                SELECT AN ICON
-              </Typography>
-            </Box>
             <Box sx={{ px: 2, pb: 2 }}>
               <Grid container spacing={1}>
                 {availableIcons.map((icon) => (
-                  <Grid item xs={3} key={icon.name}>
+                  <Grid item xs={2} key={icon.name}>
                     <Tooltip title={icon.label} placement="top">
                       <Box
                         onClick={() => handleIconSelect(icon.name)}
@@ -420,7 +423,7 @@ function AppliancesList() {
                       >
                         <MaterialIcon
                           sx={{
-                            fontSize: '1.5rem',
+                            fontSize: '2rem',
                             color: getApplianceIcon(selectedApplianceId) === icon.name 
                               ? getApplianceColor(selectedApplianceId) 
                               : 'text.secondary',
@@ -443,22 +446,17 @@ function AppliancesList() {
               <ListItemText primary="← Back" />
             </MenuItem>
             <Divider />
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                SELECT A COLOR
-              </Typography>
-            </Box>
             <Box sx={{ px: 2, pb: 2 }}>
               <Grid container spacing={1.5}>
                 {COLOR_PALETTE.map((color) => (
-                  <Grid item xs={3} key={color.value}>
+                  <Grid item xs={2} key={color.value}>
                     <Tooltip title={color.name} placement="top">
                       <Box
                         onClick={() => handleColorSelect(color.value)}
                         sx={{
                           aspectRatio: '1',
                           cursor: 'pointer',
-                          borderRadius: 2,
+                          borderRadius: 20,
                           backgroundColor: color.value,
                           border: '3px solid',
                           borderColor: getApplianceColor(selectedApplianceId) === color.value 

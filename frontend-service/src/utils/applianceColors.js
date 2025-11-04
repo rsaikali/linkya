@@ -1,15 +1,25 @@
-// Palette de couleurs par défaut pour les appareils
+// French Palette from flatuicolors.com
 const COLOR_PALETTE = [
-  '#f94144',
-  '#f3722c',
-  '#f8961e',
-  '#f9844a',
-  '#f9c74f',
-  '#90be6d',
-  '#43aa8b',
-  '#4d908e',
-  '#577590',
-  '#277da1',
+  '#fdcb6e', // Flat Flesh
+  '#e17055', // Melon Melody
+  '#d63031', // Prunus Avium
+  '#e84393', // Carmine Pink
+  '#6c5ce7', // Exodus Fruit
+  '#a29bfe', // Shy Moment
+  '#74b9ff', // Pico-8 Pink
+  '#0984e3', // Electron Blue
+  '#00b894', // Mint Leaf
+  '#00cec9', // Robin's Egg Blue
+  '#55efc4', // Light Greenish Blue
+  '#81ecec', // Faded Poster
+  '#fab1a0', // Orange Ville
+  '#ff7675', // Chi-Gong
+  '#fd79a8', // Bloom
+  '#fdcb6e', // Flat Flesh
+  '#ffeaa7', // Sour Lemon
+  '#dfe6e9', // City Lights
+  '#b2bec3', // Amour
+  '#636e72', // Grisaille
 ];
 
 // Utilitaires pour gérer les cookies
