@@ -62,12 +62,12 @@ const createCustomColorTheme = (color) => {
 export const ThemeContextProvider = ({ children }) => {
   const [currentTheme, setCurrentTheme] = useState(() => {
     const savedTheme = localStorage.getItem('selectedTheme');
-    if (savedTheme && themes[savedTheme]) {
+    if (savedTheme && (themes[savedTheme] || savedTheme === 'custom')) {
       return savedTheme;
     }
     return 'darkBrown';
   });
-
+  
   const [customColor, setCustomColor] = useState(() => {
     return localStorage.getItem('customThemeColor') || null;
   });
