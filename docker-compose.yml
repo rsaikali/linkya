@@ -213,7 +213,7 @@ services:
     container_name: nilmia-frontend-service
     environment:
       TZ: Europe/Paris
-      REACT_APP_API_URL: http://localhost:8000
+      # No need to set REACT_APP_API_URL, using relative URLs through Nginx
     depends_on:
       backend:
         condition: service_healthy

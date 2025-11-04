@@ -3,7 +3,18 @@
  * Handles connection, reconnection, and event processing
  */
 
-const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
+// Use relative WebSocket URLs to go through Nginx proxy
+// Automatically use ws:// or wss:// based on current protocol
+const getWsBaseUrl = () => {
+  if (process.env.REACT_APP_WS_URL) {
+    return process.env.REACT_APP_WS_URL;
+  }
+  // Use current host with appropriate protocol
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}`;
+};
+
+const WS_BASE_URL = getWsBaseUrl();
 
 /**
  * WebSocket manager for training logs
