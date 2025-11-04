@@ -104,3 +104,31 @@ model-status: ## Affiche le statut actuel des modèles (current/backup/archived)
 			num_classes as appareils \
 		FROM cnn_models \
 		ORDER BY CASE model_status WHEN 'current' THEN 1 WHEN 'backup' THEN 2 ELSE 3 END, training_date DESC;"
+frontend-build: ## Rebuild le frontend et redémarre Nginx
+@echo "🔨 Building frontend..."
+@docker-compose exec frontend-service npm run build
+@echo "🔄 Restarting Nginx..."
+@docker-compose restart nginx
+@echo "✅ Frontend rebuilt and Nginx restarted"
+
+frontend-watch: ## Watch mode pour rebuild automatique du frontend
+@echo "👀 Watching frontend for changes..."
+@docker-compose exec frontend-service npm run build -- --watch
+
+nginx-logs: ## Affiche les logs Nginx
+@docker-compose logs -f nginx
+
+nginx-access: ## Affiche les logs d'accès Nginx
+@docker-compose exec nginx cat /var/log/nginx/access.log
+
+nginx-error: ## Affiche les logs d'erreur Nginx
+@docker-compose exec nginx cat /var/log/nginx/error.log
+
+nginx-reload: ## Recharge la configuration Nginx sans downtime
+@echo "🔄 Reloading Nginx configuration..."
+@docker-compose exec nginx nginx -s reload
+@echo "✅ Nginx configuration reloaded"
+
+nginx-test: ## Test la configuration Nginx
+@echo "🧪 Testing Nginx configuration..."
+@docker-compose exec nginx nginx -t
