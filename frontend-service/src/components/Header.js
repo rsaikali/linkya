@@ -11,7 +11,7 @@ import {
 } from '@mui/material';
 import {
   ElectricBolt,
-  ThermostatAuto,
+  Thermostat,
   AccessTime,
   FiberManualRecord,
   ModelTraining,
@@ -274,21 +274,23 @@ const Header = () => {
                     bgcolor: (theme) => theme.palette.overlay.white[15],
                     color: 'white',
                     fontWeight: 'bold',
-                    fontSize: '0.85rem',
+                    fontSize: '1rem',
+                    fontFamily: '"Space Mono", monospace',
                     '& .MuiChip-icon': { color: 'white' },
                   }}
                 />
               </Tooltip>
             ) : (
               <Chip
-                icon={<ModelTraining sx={{ fontSize: 18 }} />}
+                icon={<ModelTraining sx={{ fontSize: 19 }} />}
                 label="Aucun modèle entraîné"
                 variant="filled"
                 sx={{
                   bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: 'white',
                   fontWeight: 'bold',
-                  fontSize: '0.85rem',
+                  fontSize: '1rem',
+                  fontFamily: '"Space Mono", monospace',
                   '& .MuiChip-icon': { color: 'white' },
                 }}
               />
@@ -297,14 +299,15 @@ const Header = () => {
             {/* Date et heure */}
             <Tooltip title={`Dernière mise à jour: ${formatFullDate(data.time)}`}>
               <Chip
-                icon={<AccessTime sx={{ fontSize: 18 }} />}
+                icon={<AccessTime sx={{ fontSize: 19 }} />}
                 label={formatDate(data.time)}
                 variant="filled"
                 sx={{
                   bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: 'white',
                   fontWeight: 'bold',
-                  fontSize: '0.85rem',
+                  fontSize: '1rem',
+                  fontFamily: '"Space Mono", monospace',
                   '& .MuiChip-icon': { color: 'white' },
                 }}
               />
@@ -313,14 +316,15 @@ const Header = () => {
             {/* Puissance */}
             <Tooltip title="Puissance apparente">
               <Chip
-                icon={<ElectricBolt sx={{ fontSize: 18 }} />}
+                icon={<ElectricBolt sx={{ fontSize: 19 }} />}
                 label={`${data.papp} W`}
                 variant="filled"
                 sx={{
                   bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: 'white',
                   fontWeight: 'bold',
-                  fontSize: '0.9rem',
+                  fontSize: '1rem',
+                  fontFamily: '"Space Mono", monospace',
                   '& .MuiChip-icon': { color: 'white' },
                 }}
               />
@@ -330,14 +334,15 @@ const Header = () => {
             {data.temperature && (
               <Tooltip title="Température extérieure">
                 <Chip
-                  icon={<ThermostatAuto sx={{ fontSize: 18 }} />}
-                  label={`${data.temperature.toFixed(1)}°C`}
+                  icon={<Thermostat sx={{ fontSize: 19 }} />}
+                  label={`${data.temperature.toFixed(0)}°C`}
                   variant="filled"
                   sx={{
                     bgcolor: (theme) => theme.palette.overlay.white[15],
                     color: 'white',
                     fontWeight: 'bold',
-                    fontSize: '0.9rem',
+                    fontSize: '1rem',
+                    fontFamily: '"Space Mono", monospace',
                     '& .MuiChip-icon': { color: 'white' },
                   }}
                 />
