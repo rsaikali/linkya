@@ -37,6 +37,18 @@ const getApplianceColorsFromCookie = () => {
   return colors ? JSON.parse(colors) : {};
 };
 
+// Fonction pour obtenir une couleur aléatoire non utilisée
+const getRandomUnusedColor = (usedColors) => {
+  const availableColors = COLOR_PALETTE.filter(color => !usedColors.includes(color));
+  
+  if (availableColors.length > 0) {
+    return availableColors[Math.floor(Math.random() * availableColors.length)];
+  }
+  
+  // Si toutes les couleurs sont utilisées, retourner une couleur aléatoire
+  return COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)];
+};
+
 // Créer le Context
 const ApplianceColorsContext = createContext();
 
@@ -62,7 +74,23 @@ export function ApplianceColorsProvider({ children }) {
 
   // Fonction pour obtenir la couleur d'un appareil
   const getApplianceColor = (applianceId) => {
-    return applianceColors[applianceId] || COLOR_PALETTE[0];
+    if (applianceColors[applianceId]) {
+      return applianceColors[applianceId];
+    }
+    
+    // Si l'appareil n'a pas de couleur, en attribuer une aléatoire non utilisée
+    const usedColors = Object.values(applianceColors);
+    const newColor = getRandomUnusedColor(usedColors);
+    
+    // Sauvegarder la nouvelle couleur
+    const newColors = {
+      ...applianceColors,
+      [applianceId]: newColor,
+    };
+    setApplianceColors(newColors);
+    setCookie('applianceColors', JSON.stringify(newColors));
+    
+    return newColor;
   };
 
   const value = {
