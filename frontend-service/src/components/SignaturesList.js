@@ -30,6 +30,7 @@ import {
   Toolbar,
   Divider,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
@@ -733,6 +734,7 @@ function SignatureRow({
   formatHumanizedDate,
   formatDateTime,
 }) {
+  const theme = useTheme();
   const [anchorEl, setAnchorEl] = useState(null);
   const open = Boolean(anchorEl);
 
@@ -770,7 +772,7 @@ function SignatureRow({
                 backgroundColor: getApplianceColor(signature.appliance_id),
                 flexShrink: 0,
                 ...(signature.is_negative && {
-                  boxShadow: '0 0 0 3px white, 0 0 0 5px #ef5350',
+                  boxShadow: (theme) => `0 0 0 3px white, 0 0 0 5px ${theme.palette.chart.negativeSignature.main}`,
                   cursor: 'help',
                 }),
               }}
@@ -814,7 +816,7 @@ function SignatureRow({
         >
           <MenuItem onClick={handleDeleteClick}>
             <ListItemIcon>
-              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: '#d32f2f' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: theme.palette.error.dark }}>
                 delete
               </span>
             </ListItemIcon>

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useMemo, useCallback, useState } from 'react';
 import { Box } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -33,6 +34,7 @@ ChartJS.register(
 );
 
 const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, isModalOpen }) => {
+  const theme = useTheme();
   const chartRef = useRef(null);
   const { zoomState, setZoomState, setVisibleTimeRange } = useChart();
   const { getApplianceColor } = useApplianceColors();
@@ -107,9 +109,9 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       tooltip.style.transition = 'opacity 0.2s ease';
       tooltip.style.zIndex = '10000';
       tooltip.style.padding = '12px';
-      tooltip.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+      tooltip.style.backgroundColor = theme.palette.overlay.white[95];
       tooltip.style.borderRadius = '6px';
-      tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+      tooltip.style.boxShadow = theme.palette.utility.tooltip.shadow;
       tooltip.style.fontSize = '14px';
       tooltip.style.lineHeight = '1.6';
       tooltip.style.minWidth = '250px';
@@ -192,10 +194,10 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             </div>
             </div>
             
-            <div style="color: #666; font-size: 12px; font-weight: 300;">
+            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            <div style="color: #666; font-size: 12px; margin-top: 6px;">
+            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; margin-top: 6px;">
               Confiance: ${Math.round(foundTooltipData.confidenceScore * 100)}%
             </div>
           `;
@@ -203,18 +205,18 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         } else if (foundTooltipData.type === 'signature') {
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? 'box-shadow: 0 0 0 2px white, 0 0 0 4px #ef5350;' : ''}"></div>
-              <strong style="color: ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
+              <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? `box-shadow: 0 0 0 2px white, 0 0 0 4px ${theme.palette.chart.negativeSignature.main};` : ''}"></div>
+              <strong style="color: ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
               <div style="font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
             </div>
             </div>
-            <div style="color: #666; font-size: 12px; font-weight: 300;">
+            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; font-weight: 300;">
               ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            ${foundTooltipData.isNegative ? '<div style="color: #ef5350; font-size: 12px; margin-top: 6px; font-style: italic;">Issue d\'une détection déclarée comme incorrecte par l\'utilisateur.<br/>Elle aide le modèle IA à apprendre de ses erreurs.</div>' : ''}
+            ${foundTooltipData.isNegative ? `<div style="color: ${theme.palette.chart.negativeSignature.main}; font-size: 12px; margin-top: 6px; font-style: italic;">Issue d'une détection déclarée comme incorrecte par l'utilisateur.<br/>Elle aide le modèle IA à apprendre de ses erreurs.</div>` : ''}
           `;
-          tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? '#ef5350' : foundTooltipData.color}`;
+          tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}`;
         } else if (foundTooltipData.type === 'consumption') {
           const dayName = foundTooltipData.time.toLocaleDateString('fr-FR', { weekday: 'long' });
           const formattedDate = foundTooltipData.time.toLocaleDateString('fr-FR', { 
@@ -227,13 +229,13 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <strong style="color: #0d6e00; font-size: 16px;">Consommation</strong><strong style="color: #777777ff; font-size: 16px;"> ${powerW} W</strong>
+              <strong style="color: ${theme.palette.chart.consumption.main}; font-size: 16px;">Consommation</strong><strong style="color: ${theme.palette.text.tertiary}; font-size: 16px;"> ${powerW} W</strong>
             </div>
-            <div style="color: #666; font-size: 12px; font-weight: 300; text-transform: capitalize;">
+            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; font-weight: 300; text-transform: capitalize;">
               ${dayName} ${formattedDate} à ${formattedTime}
             </div>
           `;
-          tooltip.style.borderLeft = `4px solid #0d6e00`;
+          tooltip.style.borderLeft = `4px solid ${theme.palette.chart.consumption.main}`;
         }
 
         tooltip.innerHTML = html;
@@ -457,7 +459,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           yMax: (s.row + 1) * rowHeight - 0.05,
           yScaleID: 'ySignatures',
           backgroundColor: `${color}`,
-          borderColor: isNegative ? 'rgba(255, 0, 0, 0.6)' : color,
+          borderColor: isNegative ? theme.palette.chart.negativeSignature.border : color,
           borderWidth: isNegative ? 3 : 5,
           borderRadius: 10,
           drawTime: 'beforeDatasetsDraw',
@@ -476,7 +478,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
     }
 
     return annotations;
-  }, [rawData, detections, signatures, getApplianceColor]);
+  }, [rawData, detections, signatures, getApplianceColor, theme]);
 
   // Handle right-click selection for signature creation
   useEffect(() => {
@@ -632,8 +634,8 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           label: 'Puissance moyenne (W)',
           data: powerData,
           yAxisID: 'yConsumption',
-          borderColor: '#0d6e00ff',
-          backgroundColor: '#BD2A2E50',
+          borderColor: theme.palette.chart.consumption.main,
+          backgroundColor: theme.palette.chart.consumption.background,
           fill: true,
           borderWidth: 0,
           tension: 0.4,
@@ -652,7 +654,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
       ],
     };
-  }, [rawData]);
+  }, [rawData, theme]);
 
   // Chart options
   const options = useMemo(() => {
@@ -730,7 +732,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             display: true, 
             text: 'Signatures',
             font: { size: 11, weight: 600 },
-            color: '#666',
+            color: theme.palette.text.tertiary,
           },
           stack: 'demo',
           stackWeight: 1,
@@ -764,7 +766,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             display: true, 
             text: 'Detections',
             font: { size: 11, weight: 600 },
-            color: '#666',
+            color: theme.palette.text.tertiary,
           },
           stack: 'demo',
           stackWeight: 1,
@@ -798,7 +800,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
       },
     };
-  }, [handleZoomPanComplete, rawData]);
+  }, [handleZoomPanComplete, rawData, theme]);
 
   if (!rawData || !chartData) return null;
 
@@ -817,8 +819,8 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             left: Math.min(selectionStart, selectionEnd),
             width: Math.abs(selectionEnd - selectionStart),
             height: '100%',
-            backgroundColor: 'rgba(33, 150, 243, 0.2)',
-            border: '2px solid rgba(33, 150, 243, 0.6)',
+            backgroundColor: (theme) => theme.palette.chart.selection.background,
+            border: (theme) => `2px solid ${theme.palette.chart.selection.border}`,
             pointerEvents: 'none',
             zIndex: 1000,
           }}

@@ -371,11 +371,11 @@ function AppliancesList() {
                       : 'transparent',
                   boxShadow:
                     applianceColors[selectedApplianceId] === color.value
-                      ? '0 0 0 2px rgba(189, 42, 46, 0.2)'
+                      ? (theme) => `0 0 0 2px ${theme.palette.overlay.primary[20]}`
                       : 'none',
                   '&:hover': {
                     transform: 'scale(1.15)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                    boxShadow: (theme) => theme.palette.utility.shadow.medium,
                   },
                 }}
               />
@@ -410,7 +410,7 @@ function AppliancesList() {
                 width: 28,
                 height: 28,
                 borderRadius: '50%',
-                backgroundColor: customColor || applianceColors[selectedApplianceId] || '#e0e0e0',
+                backgroundColor: customColor || applianceColors[selectedApplianceId] || ((theme) => theme.palette.utility.defaultGray),
                 border: '2px solid',
                 borderColor: 'divider',
                 flexShrink: 0,

@@ -19,6 +19,7 @@ import {
 import api, { apiService } from '../services/api';
 import { consumptionWS } from '../services/websocket';
 import websocket from '../services/websocket';
+import ThemeSelector from './ThemeSelector';
 
 // Animation de pulsation douce
 const pulse = keyframes`
@@ -255,7 +256,7 @@ const Header = () => {
                     sx={{
                       height: 6,
                       borderRadius: 1,
-                      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                      backgroundColor: (theme) => theme.palette.overlay.white[20],
                       '& .MuiLinearProgress-bar': {
                         backgroundColor: 'white',
                       },
@@ -270,7 +271,7 @@ const Header = () => {
                   label={`Dernier modèle entraîné ${formatHumanizedDate(model.training_date)}`}
                   variant="filled"
                   sx={{
-                    bgcolor: 'rgba(255, 255, 255, 0.15)',
+                    bgcolor: (theme) => theme.palette.overlay.white[15],
                     color: 'white',
                     fontWeight: 'bold',
                     fontSize: '0.85rem',
@@ -284,7 +285,7 @@ const Header = () => {
                 label="Aucun modèle entraîné"
                 variant="filled"
                 sx={{
-                  bgcolor: 'rgba(255, 255, 255, 0.15)',
+                  bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: 'white',
                   fontWeight: 'bold',
                   fontSize: '0.85rem',
@@ -300,7 +301,7 @@ const Header = () => {
                 label={formatDate(data.time)}
                 variant="filled"
                 sx={{
-                  bgcolor: 'rgba(255, 255, 255, 0.15)',
+                  bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: 'white',
                   fontWeight: 'bold',
                   fontSize: '0.85rem',
@@ -316,7 +317,7 @@ const Header = () => {
                 label={`${data.papp} W`}
                 variant="filled"
                 sx={{
-                  bgcolor: 'rgba(255, 255, 255, 0.15)',
+                  bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: 'white',
                   fontWeight: 'bold',
                   fontSize: '0.9rem',
@@ -333,7 +334,7 @@ const Header = () => {
                   label={`${data.temperature.toFixed(1)}°C`}
                   variant="filled"
                   sx={{
-                    bgcolor: 'rgba(255, 255, 255, 0.15)',
+                    bgcolor: (theme) => theme.palette.overlay.white[15],
                     color: 'white',
                     fontWeight: 'bold',
                     fontSize: '0.9rem',
@@ -366,6 +367,9 @@ const Header = () => {
                 />
               </Box>
             </Tooltip>
+
+            {/* Sélecteur de thème */}
+            <ThemeSelector />
           </Box>
         )}
       </Toolbar>

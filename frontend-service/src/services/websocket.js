@@ -3,7 +3,7 @@
  * Handles connection, reconnection, and event processing
  */
 
-// Use relative WebSocket URLs to go through Nginx proxy
+// WebSocket URL configuration
 // Automatically use ws:// or wss:// based on current protocol
 const getWsBaseUrl = () => {
   if (process.env.REACT_APP_WS_URL) {

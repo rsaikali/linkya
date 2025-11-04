@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// Use relative URLs to go through Nginx proxy
-// In production or when using Nginx, this will use the same origin
-// In dev without Nginx, you can override with REACT_APP_API_URL
+// API URL configuration
+// In production, use relative URLs to the same origin
+// In development, use REACT_APP_API_URL to connect to backend
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 const api = axios.create({

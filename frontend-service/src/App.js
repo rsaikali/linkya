@@ -2,7 +2,6 @@ import React from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { Box, Typography, Grid } from '@mui/material';
-import theme from './theme';
 import Header from './components/Header';
 import ChartsContainer from './components/ChartsContainer';
 import DetectionsList from './components/DetectionsList';
@@ -10,8 +9,11 @@ import SignaturesList from './components/SignaturesList';
 import AppliancesList from './components/AppliancesList';
 import { ChartProvider } from './context/ChartContext';
 import { ApplianceColorsProvider } from './context/ApplianceColorsContext';
+import { ThemeContextProvider, useThemeContext } from './context/ThemeContext';
 
-function App() {
+function AppContent() {
+  const { theme } = useThemeContext();
+  
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -59,10 +61,18 @@ function App() {
             Linkya © {new Date().getFullYear()} - Plateforme de monitoring intelligent
           </Typography>
         </Box>
-      </Box>
+        </Box>
         </ChartProvider>
       </ApplianceColorsProvider>
     </ThemeProvider>
+  );
+}
+
+function App() {
+  return (
+    <ThemeContextProvider>
+      <AppContent />
+    </ThemeContextProvider>
   );
 }
 

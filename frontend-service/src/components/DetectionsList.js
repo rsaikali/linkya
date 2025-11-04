@@ -29,6 +29,7 @@ import {
   ListItemText,
   Toolbar,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { Check, Close, Search, MoreVert } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
@@ -45,10 +46,12 @@ const DeleteIcon = () => (
 
 // Icône Google Material Symbols pour qualité de détection
 const QualityIcon = ({ confidence }) => {
+  const theme = useTheme();
+  
   const getColor = () => {
-    if (confidence < 0.6) return '#f44336'; // Rouge
-    if (confidence < 0.8) return '#ff9800'; // Orange
-    return '#4caf50'; // Vert
+    if (confidence < 0.6) return theme.palette.error.main;
+    if (confidence < 0.8) return theme.palette.warning.main;
+    return theme.palette.success.main;
   };
 
   return (

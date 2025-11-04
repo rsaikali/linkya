@@ -247,7 +247,7 @@ const ChartsContainer = () => {
             value={loadingProgress} 
             sx={{ 
               height: 2,
-              backgroundColor: 'rgba(0, 0, 0, 0.05)',
+              backgroundColor: (theme) => theme.palette.overlay.black[5],
             }} 
           />
         )}

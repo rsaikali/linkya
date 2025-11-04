@@ -6,22 +6,20 @@ Plateforme complète pour la synchronisation et l'analyse intelligente des donn�
 
 ### Services principaux
 
-- **nginx** : Reverse proxy et serveur de fichiers statiques
+- **frontend** : Interface web React avec Material-UI (dev server avec hot reload)
 - **sync-service** : Synchronisation des données Linky (MySQL → TimescaleDB)
 - **nilm-cnn-service** : Détection automatique d'appareils électriques par IA CNN (NILM)
-- **backend-service** : API REST FastAPI avec streaming SSE
-- **frontend-service** : Interface web React avec Material-UI (dev server avec hot reload)
+- **backend** : API REST FastAPI avec streaming SSE et WebSocket
 - **TimescaleDB** : Base de données locale optimisée pour les séries temporelles
 - **Redis** : Broker de messages pour Celery
 - **Celery** : Gestionnaire de tâches asynchrones (sync + NILM)
 
 ### Technologies
 
-- **Nginx** pour le reverse proxy et la compression/cache
+- **React 18** avec Material-UI, Chart.js et hot reload
 - **Python 3.13** avec `uv` pour la gestion des dépendances
 - **TensorFlow/Keras** pour les réseaux de neurones convolutifs (CNN 1D)
-- **React 18** avec Material-UI et Chart.js
-- **FastAPI** pour l'API REST avec streaming SSE
+- **FastAPI** pour l'API REST avec streaming SSE et WebSocket
 - **Docker Compose** pour l'orchestration
 
 ## 📊 Données synchronisées
@@ -133,28 +131,15 @@ Services démarrés :
 - Sync Worker + Beat
 - CNN Worker + Beat (avec GPU optionnel)
 - Backend API (port 8000)
-- Frontend React Dev Server (internal)
-- Nginx (port 3000) - Point d'accès principal
+- Frontend React Dev Server (port 3000)
 
 **Accès à l'application** : http://localhost:3000
 
-### 3. Rebuild du frontend
-
-Après modification du code frontend :
-
-```bash
-# Rebuild et redémarrage automatique de Nginx
-make frontend-build
-
-# Ou en mode watch (rebuild automatique)
-make frontend-watch
-```
-
-### 4. Utilisation du NILM
+### 3. Utilisation du NILM
 
 ```bash
 # Lancer le premier entraînement (nécessite 48h de données)
-make nilm-train
+make train
 
 # Consulter les détections
 make nilm-stats
