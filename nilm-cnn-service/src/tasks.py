@@ -318,12 +318,12 @@ def detect_cnn_appliances(
             active_model = row.model_name
             model_type = row.model_type
         
-        # Charger le modèle FiLM si pas déjà chargé
+        # Charger le modèle Multi-Output si pas déjà chargé
         model_path = os.path.join(
             settings.cnn_model_path,
             f"{active_model}.keras"
         )
-        if nilm_manager.film_model is None:
+        if nilm_manager.multioutput_model is None:
             if os.path.exists(model_path):
                 logger.info(f"📂 Chargement du modèle: {active_model}")
                 nilm_manager.load_model(model_path)
@@ -364,8 +364,8 @@ def detect_cnn_appliances(
             start_time = end_time - timedelta(hours=hours)
             logger.info(f"Détection sur les {hours} dernières heures...")
         
-        # Désagrégation FiLM
-        logger.info(f"🔍 Désagrégation FiLM: {start_time} -> {end_time}")
+        # Désagrégation Multi-Output
+        logger.info(f"🔍 Désagrégation Multi-Output: {start_time} -> {end_time}")
         
         # Publish detection_start event to Redis
         if redis_client:
@@ -384,12 +384,12 @@ def detect_cnn_appliances(
             except Exception as e:
                 logger.error(f"Failed to publish detection_start to Redis: {e}")
         
-        # Vérifier qu'un modèle FiLM est chargé
-        if nilm_manager.film_model is None:
-            logger.error("Aucun modèle FiLM chargé")
+        # Vérifier qu'un modèle Multi-Output est chargé
+        if nilm_manager.multioutput_model is None:
+            logger.error("Aucun modèle Multi-Output chargé")
             return {
                 'status': 'error',
-                'message': 'Aucun modèle FiLM disponible. Veuillez entraîner un modèle.'
+                'message': 'Aucun modèle Multi-Output disponible. Veuillez entraîner un modèle.'
             }
         
         # Désagrégation
