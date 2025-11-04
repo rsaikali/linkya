@@ -655,24 +655,8 @@ class Seq2PointFiLMModel:
             batch_update_freq=10
         )
         callbacks_list.append(redis_callback)
-        
-        # TensorBoard
-        tensorboard_root = Path(settings.cnn_model_path) / "tensorboard"
-        run_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        log_dir = tensorboard_root / f"film_{self.model_type}" / model_name / run_id
-        log_dir.mkdir(parents=True, exist_ok=True)
-        callbacks_list.append(
-            callbacks.TensorBoard(
-                log_dir=str(log_dir),
-                histogram_freq=0,
-                write_graph=False,
-                profile_batch=0
-            )
-        )
-        logger.info(f"📊 TensorBoard → {log_dir}")
-        logger.info(f"📡 Redis real-time logs → channel 'training:logs'")
+        logger.info("Real-time logs → channel 'training:logs'")
 
-        
         # Entraînement
         self.history = self.model.fit(
             [X_agg_train, X_app_train],

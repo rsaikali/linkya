@@ -82,51 +82,6 @@ services:
       - nilmia-network
     restart: unless-stopped
 
-  # Flower - Interface de monitoring Celery
-  flower:
-    build:
-      context: ./sync-service
-      dockerfile: Dockerfile
-    container_name: nilmia-flower
-    command: celery -A src.tasks.celery_app flower --port=5555
-    environment:
-      TZ: Europe/Paris
-    env_file:
-      - .env
-    ports:
-      - "5555:5555"
-    depends_on:
-      - redis
-      - sync-worker
-    networks:
-      - nilmia-network
-    restart: unless-stopped
-
-  # pgAdmin - Interface web d'administration TimescaleDB
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: nilmia-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
-      TZ: Europe/Paris
-    ports:
-      - "8080:80"
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-      - ./pgadmin-config/pgadmin-servers.json:/pgadmin4/servers.json:ro
-      - ./pgadmin-config/pgpass:/pgadmin4/pgpass:ro
-      - ./pgadmin-config/init-pgadmin.sh:/init-pgadmin.sh:ro
-    entrypoint: ["/init-pgadmin.sh"]
-    networks:
-      - nilmia-network
-    restart: unless-stopped
-
   # Initialisation de la base au démarrage
   init-db:
     build:
@@ -221,29 +176,6 @@ services:
       - nilmia-network
     restart: "no"
 
-  # TensorBoard pour visualisation des métriques CNN
-  tensorboard:
-    build:
-      context: ./nilm-cnn-service
-      dockerfile: Dockerfile
-    container_name: nilmia-tensorboard
-    command: tensorboard --logdir=/app/models/tensorboard --host=0.0.0.0 --port=6006
-    environment:
-      TZ: Europe/Paris
-    ports:
-      - "6006:6006"
-    volumes:
-      - ./models:/app/models
-    networks:
-      - nilmia-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6006"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
   # Backend API FastAPI
   backend:
     build:
@@ -298,7 +230,6 @@ services:
 volumes:
   timescaledb_data:
   redis_data:
-  pgadmin_data:
   nilm_uv_cache:
 
 networks:

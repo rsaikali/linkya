@@ -13,9 +13,6 @@ Plateforme complète pour la synchronisation et l'analyse intelligente des donn�
 - **TimescaleDB** : Base de données locale optimisée pour les séries temporelles
 - **Redis** : Broker de messages pour Celery
 - **Celery** : Gestionnaire de tâches asynchrones (sync + NILM)
-- **Flower** : Interface web de monitoring Celery
-- **TensorBoard** : Visualisation de l'entraînement des modèles CNN
-- **pgAdmin** : Interface d'administration TimescaleDB
 
 ### Technologies
 
@@ -58,7 +55,6 @@ La table `linky_realtime` contient les données de consommation Linky :
 - 🚀 Accélération GPU optionnelle (fallback CPU)
 - ✏️ Ajout manuel de signatures d'appareils via interface web
 - 📈 Statistiques de consommation par appareil
-- 🎨 Visualisation TensorBoard de l'entraînement
 
 ### Interface utilisateur (frontend)
 - 📱 Dashboard temps réel de consommation électrique
@@ -136,11 +132,6 @@ Services démarrés :
 - CNN Worker + Beat (avec GPU optionnel)
 - Backend API (port 8000)
 - Frontend React (port 3000)
-- TensorBoard (port 6006)
-- Flower (port 5555)
-- pgAdmin (port 8080)
-- Flower (port 5555)
-- pgAdmin (port 8080)
 
 ### 3. Utilisation du NILM
 
@@ -491,5 +482,3 @@ Ce projet utilise :
 - FastAPI pour l'API REST avec streaming SSE
 - Docker Compose avec support GPU optionnel
 - TimescaleDB pour l'optimisation temporelle
-
-Keep it simple, pas d'over engineering ! 🚀

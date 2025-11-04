@@ -24,9 +24,6 @@ Frontend (React) → Backend (FastAPI) → TimescaleDB
 - **TimescaleDB**: Time-series optimized PostgreSQL with ~48h Linky data (~98k rows)
 - **Redis**: Celery message broker + real-time event pub/sub
 - **Celery**: Async task orchestration (Beat scheduler + Workers)
-- **TensorBoard**: Model training visualization
-- **Flower**: Celery monitoring UI
-- **pgAdmin**: Database administration
 
 ### Technology Stack
 - **Python 3.13** with `uv` package manager
@@ -221,8 +218,7 @@ NILM_MODEL_TYPE=gru
 3. NILM Service: Fetch signatures, preprocess, train CNN
 4. Model: Saved to `/models/{timestamp}.keras` + metadata.json
 5. Database: Update `training_sessions` with metrics
-6. TensorBoard: Logs available for analysis
-7. SSE: Push training completion event to frontend
+6. SSE: Push training completion event to frontend
 
 ### Real-time Detection Flow
 1. Sync Service: New Linky data → TimescaleDB every 5s
@@ -238,9 +234,6 @@ NILM_MODEL_TYPE=gru
 ### Service Access
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
-- **Flower (Celery)**: http://localhost:5555
-- **pgAdmin**: http://localhost:8080 (admin@example.com / admin)
-- **TensorBoard**: http://localhost:6006
 
 ### Logs
 ```bash

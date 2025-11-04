@@ -723,18 +723,6 @@ async def delete_nilm_model(model_id: int):
                     os.remove(metadata_path)
                     deleted_files.append(metadata_path)
                     logger.info(f"Fichier metadata supprimé: {metadata_path}")
-                
-                # Supprimer le dossier logs TensorBoard si existant
-                if model_name:
-                    logs_dir = os.path.join(
-                        os.path.dirname(model_path),
-                        "tensorboard", "film_gru", model_name
-                    )
-                    if os.path.exists(logs_dir):
-                        import shutil
-                        shutil.rmtree(logs_dir)
-                        deleted_files.append(f"{logs_dir}/ (directory)")
-                        logger.info(f"Dossier logs supprimé: {logs_dir}")
                         
             except OSError as e:
                 logger.warning(f"Erreur lors de la suppression des fichiers: {e}")
