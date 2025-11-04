@@ -37,13 +37,48 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
   const theme = useTheme();
   const chartRef = useRef(null);
   const { zoomState, setZoomState, setVisibleTimeRange } = useChart();
-  const { getApplianceColor } = useApplianceColors();
+  const { getApplianceColor, getApplianceIcon } = useApplianceColors();
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(null);
   const [selectionEnd, setSelectionEnd] = useState(null);
   const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
   const isUpdatingZoomRef = useRef(false);
   const tooltipRef = useRef(null);
+
+  // Custom plugin to draw horizontal Y-axis labels
+  const horizontalYLabelsPlugin = useMemo(() => ({
+    id: 'horizontalYLabels',
+    afterDraw: (chart) => {
+      const ctx = chart.ctx;
+      const chartArea = chart.chartArea;
+      
+      // Draw "Signatures" label
+      const ySignaturesScale = chart.scales.ySignatures;
+      if (ySignaturesScale) {
+        const yPos = (ySignaturesScale.top + ySignaturesScale.bottom) / 2;
+        ctx.save();
+        ctx.font = '400 11px sans-serif';
+        ctx.fillStyle = theme.palette.text.tertiary;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Signatures', chartArea.left - 10, yPos);
+        ctx.restore();
+      }
+      
+      // Draw "Detections" label
+      const yDetectionsScale = chart.scales.yDetections;
+      if (yDetectionsScale) {
+        const yPos = (yDetectionsScale.top + yDetectionsScale.bottom) / 2;
+        ctx.save();
+        ctx.font = '400 11px sans-serif';
+        ctx.fillStyle = theme.palette.text.tertiary;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Detections', chartArea.left - 10, yPos);
+        ctx.restore();
+      }
+    },
+  }), [theme]);
 
   // Helper functions for formatting (copied from DetectionsList and SignaturesList)
   const formatTimeOnly = (date) => {
@@ -187,7 +222,9 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         if (foundTooltipData.type === 'detection') {
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0;"></div>
+              <span class="material-symbols-outlined" style="font-size: 36px; color: ${foundTooltipData.color}; flex-shrink: 0;">
+                ${foundTooltipData.icon || 'power'}
+              </span>
               <strong style="color: ${foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
               <div style="font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
@@ -205,7 +242,9 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         } else if (foundTooltipData.type === 'signature') {
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <div style="width: 20px; height: 20px; border-radius: 50%; background-color: ${foundTooltipData.color}; flex-shrink: 0; ${foundTooltipData.isNegative ? `box-shadow: 0 0 0 2px white, 0 0 0 4px ${theme.palette.chart.negativeSignature.main};` : ''}"></div>
+              <span class="material-symbols-outlined" style="font-size: 36px; color: ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}; flex-shrink: 0;">
+                ${foundTooltipData.icon || 'power'}
+              </span>
               <strong style="color: ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
               <div style="font-size: 14px;">
               à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
@@ -368,6 +407,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       
       detectionItems.forEach(d => {
         const color = getApplianceColor(d.appliance_id || d.name);
+        const icon = getApplianceIcon(d.appliance_id || d.name);
         const rowHeight = 1 / (maxDetectionRows);
         
         const startTime = new Date(d.start_time);
@@ -396,6 +436,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             durationSeconds,
             confidenceScore,
             color,
+            icon,
           },
         };
       });
@@ -444,6 +485,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       
       signatureItems.forEach(s => {
         const color = getApplianceColor(s.appliance_id || s.appliance_name);
+        const icon = getApplianceIcon(s.appliance_id || s.appliance_name);
         const isNegative = s.is_negative === true;
         const rowHeight = 1 / (maxSignatureRows);
         
@@ -472,13 +514,14 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             durationSeconds,
             color,
             isNegative,
+            icon,
           },
         };
       });
     }
 
     return annotations;
-  }, [rawData, detections, signatures, getApplianceColor, theme]);
+  }, [rawData, detections, signatures, getApplianceColor, getApplianceIcon, theme]);
 
   // Handle right-click selection for signature creation
   useEffect(() => {
@@ -729,10 +772,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           max: 1,
           display: true,
           title: { 
-            display: true, 
-            text: 'Signatures',
-            font: { size: 11, weight: 600 },
-            color: theme.palette.text.tertiary,
+            display: false,
           },
           stack: 'demo',
           stackWeight: 1,
@@ -763,10 +803,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           max: 1,
           display: true,
           title: { 
-            display: true, 
-            text: 'Detections',
-            font: { size: 11, weight: 600 },
-            color: theme.palette.text.tertiary,
+            display: false,
           },
           stack: 'demo',
           stackWeight: 1,
@@ -809,7 +846,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       sx={{ height: 600, position: 'relative' }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <Line ref={chartRef} data={chartData} options={options} />
+      <Line ref={chartRef} data={chartData} options={options} plugins={[horizontalYLabelsPlugin]} />
       
       {isSelecting && selectionStart !== null && selectionEnd !== null && (
         <Box
