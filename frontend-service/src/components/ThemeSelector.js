@@ -42,6 +42,7 @@ const ThemeSelector = () => {
     fern: '#656d4a',
     forest: '#414833',
     darkForest: '#333d29',
+    charcoal: '#4e4c57',
   };
 
   const createThemeIcon = (color, isSelected) => (
