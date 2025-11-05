@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -88,10 +88,19 @@ const QualityIcon = ({ confidence }) => {
  */
 function DetectionsList() {
   const { visibleDetections, loading, errors, refreshDetections } = useData();
+  const { ensureApplianceColors } = useApplianceColors();
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
+
+  // Initialize colors/icons for all appliances when detections load
+  useEffect(() => {
+    if (visibleDetections.length > 0) {
+      const applianceIds = [...new Set(visibleDetections.map(d => d.appliance_id))];
+      ensureApplianceColors(applianceIds);
+    }
+  }, [visibleDetections, ensureApplianceColors]);
 
   // No need to fetch detections or setup WebSocket - DataContext handles it all
   const totalDetections = visibleDetections.length;

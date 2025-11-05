@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 // French Palette from flatuicolors.com
 const COLOR_PALETTE = [
@@ -134,7 +134,7 @@ export function ApplianceColorsProvider({ children }) {
     setCookie('applianceIcons', JSON.stringify(newIcons));
   };
 
-  // Fonction pour obtenir la couleur d'un appareil
+  // Fonction pour obtenir la couleur d'un appareil (pure - ne modifie pas l'état)
   const getApplianceColor = (applianceId) => {
     console.log('[ApplianceColors] getApplianceColor called with ID:', applianceId, 'Available colors:', Object.keys(applianceColors));
     
@@ -142,42 +142,54 @@ export function ApplianceColorsProvider({ children }) {
       return applianceColors[applianceId];
     }
     
-    // Si l'appareil n'a pas de couleur, en attribuer une aléatoire non utilisée
+    // Si l'appareil n'a pas de couleur, en retourner une aléatoire
+    // (elle sera sauvegardée par l'appelant si nécessaire)
     const usedColors = Object.values(applianceColors);
     const newColor = getRandomUnusedColor(usedColors);
     
-    // Sauvegarder la nouvelle couleur
-    const newColors = {
-      ...applianceColors,
-      [applianceId]: newColor,
-    };
-    setApplianceColors(newColors);
-    setCookie('applianceColors', JSON.stringify(newColors));
-    
-    console.log('[ApplianceColors] Assigned new color:', newColor, 'to ID:', applianceId);
+    console.log('[ApplianceColors] Would assign color:', newColor, 'to ID:', applianceId);
     
     return newColor;
   };
 
-  // Fonction pour obtenir l'icône d'un appareil
+  // Fonction pour obtenir l'icône d'un appareil (pure - ne modifie pas l'état)
   const getApplianceIcon = (applianceId) => {
     if (applianceIcons[applianceId]) {
       return applianceIcons[applianceId];
     }
     
-    // Si l'appareil n'a pas d'icône, en attribuer une par défaut
-    const defaultIcon = getDefaultIcon();
-    
-    // Sauvegarder l'icône par défaut
-    const newIcons = {
-      ...applianceIcons,
-      [applianceId]: defaultIcon,
-    };
-    setApplianceIcons(newIcons);
-    setCookie('applianceIcons', JSON.stringify(newIcons));
-    
-    return defaultIcon;
+    // Si l'appareil n'a pas d'icône, en retourner une par défaut
+    return getDefaultIcon();
   };
+
+  // Initialiser les couleurs/icônes manquantes pour les nouveaux appareils
+  const ensureApplianceColors = useCallback((applianceIds) => {
+    let colorsUpdated = false;
+    let iconsUpdated = false;
+    let newColors = { ...applianceColors };
+    let newIcons = { ...applianceIcons };
+
+    applianceIds.forEach(id => {
+      if (!newColors[id]) {
+        const usedColors = Object.values(newColors);
+        newColors[id] = getRandomUnusedColor(usedColors);
+        colorsUpdated = true;
+      }
+      if (!newIcons[id]) {
+        newIcons[id] = getDefaultIcon();
+        iconsUpdated = true;
+      }
+    });
+
+    if (colorsUpdated) {
+      setApplianceColors(newColors);
+      setCookie('applianceColors', JSON.stringify(newColors));
+    }
+    if (iconsUpdated) {
+      setApplianceIcons(newIcons);
+      setCookie('applianceIcons', JSON.stringify(newIcons));
+    }
+  }, [applianceColors, applianceIcons]);
 
   const value = {
     applianceColors,
@@ -186,6 +198,7 @@ export function ApplianceColorsProvider({ children }) {
     updateApplianceIcon,
     getApplianceColor,
     getApplianceIcon,
+    ensureApplianceColors,
     availableIcons: ICON_LIST,
   };
 

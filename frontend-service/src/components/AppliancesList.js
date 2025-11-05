@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -75,6 +75,7 @@ function AppliancesList() {
     updateApplianceIcon,
     getApplianceColor,
     getApplianceIcon,
+    ensureApplianceColors,
     availableIcons,
   } = useApplianceColors();
   const { appliances, loading, errors, refreshAppliances } = useData();
@@ -90,6 +91,14 @@ function AppliancesList() {
   // Use data from context
   const isLoading = loading.appliances;
   const error = errors.appliances;
+
+  // Initialize colors/icons for all appliances when they load
+  useEffect(() => {
+    if (appliances.length > 0) {
+      const applianceIds = appliances.map(a => a.id);
+      ensureApplianceColors(applianceIds);
+    }
+  }, [appliances, ensureApplianceColors]);
 
   // No need to fetch appliances - DataContext handles it all
 

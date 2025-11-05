@@ -56,7 +56,7 @@ const MaterialIcon = ({ children, sx = {} }) => (
  * Composant affichant la liste des signatures
  */
 function SignaturesList() {
-  const { getApplianceColor, getApplianceIcon } = useApplianceColors();
+  const { getApplianceColor, getApplianceIcon, ensureApplianceColors } = useApplianceColors();
   const { signatures, loading, errors, importProgress, setImportProgress, refreshSignatures } = useData();
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -74,7 +74,13 @@ function SignaturesList() {
   const totalSignatures = signatures.length;
   const error = errors.signatures;
 
-  // No need to fetch signatures or setup WebSocket - DataContext handles it all
+  // Initialize colors/icons for all appliances when signatures load
+  useEffect(() => {
+    if (signatures.length > 0) {
+      const applianceIds = [...new Set(signatures.map(s => s.appliance_id))];
+      ensureApplianceColors(applianceIds);
+    }
+  }, [signatures, ensureApplianceColors]);
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
