@@ -66,7 +66,7 @@ services:
       context: ./sync-service
       dockerfile: Dockerfile
     container_name: sync-beat
-    command: /app/entrypoint-beat.sh
+    command: /app/scripts/entrypoint-beat.sh
     environment:
       TZ: Europe/Paris
     env_file:
@@ -78,7 +78,7 @@ services:
         condition: service_healthy
     volumes:
       - ./sync-service/src:/app/src
-      - ./sync-service/entrypoint-beat.sh:/app/entrypoint-beat.sh
+      - ./sync-service/scripts/entrypoint-beat.sh:/app/scripts/entrypoint-beat.sh
     networks:
       - nilmia-network
     restart: unless-stopped
@@ -120,7 +120,7 @@ services:
       context: ./nilm-service
       dockerfile: Dockerfile
     container_name: nilm-beat
-    command: /app/entrypoint-beat.sh
+    command: /app/scripts/entrypoint-beat.sh
     environment:
       TZ: Europe/Paris
       C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
@@ -136,7 +136,7 @@ services:
         condition: service_started
     volumes:
       - ./nilm-service/src:/app/src
-      - ./nilm-service/entrypoint-beat.sh:/app/entrypoint-beat.sh
+      - ./nilm-service/scripts/entrypoint-beat.sh:/app/scripts/entrypoint-beat.sh
       - ./.data/models:/app/models
     networks:
       - nilmia-network

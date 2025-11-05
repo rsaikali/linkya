@@ -50,8 +50,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src/ ./src/
 
 # Copie du script entrypoint pour beat
-COPY entrypoint-beat.sh /app/
-RUN chmod +x /app/entrypoint-beat.sh
+COPY scripts/entrypoint-beat.sh /app/scripts/
+RUN chmod +x /app/scripts/entrypoint-beat.sh
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

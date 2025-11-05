@@ -20,8 +20,8 @@ RUN uv pip install --system -r pyproject.toml
 COPY src/ ./src/
 
 # Copie du script entrypoint pour beat
-COPY entrypoint-beat.sh /app/
-RUN chmod +x /app/entrypoint-beat.sh
+COPY scripts/entrypoint-beat.sh /app/scripts/
+RUN chmod +x /app/scripts/entrypoint-beat.sh
 
 # Variables d'environnement par défaut
 ENV PYTHONUNBUFFERED=1
