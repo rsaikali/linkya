@@ -216,11 +216,6 @@ services:
       TZ: Europe/Paris
       REACT_APP_API_URL: ${REACT_APP_API_URL}
       REACT_APP_WS_URL: ${REACT_APP_WS_URL}
-      CHOKIDAR_USEPOLLING: "true"
-      CHOKIDAR_INTERVAL: 1000
-      WATCHPACK_POLLING: "true"
-      WDS_SOCKET_PORT: 3000
-      FAST_REFRESH: "true"
     ports:
       - "3000:3000"
     depends_on:
