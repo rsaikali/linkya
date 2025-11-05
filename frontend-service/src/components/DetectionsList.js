@@ -555,7 +555,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
               <Close fontSize="small" color="error" />
             </Tooltip>
           )}
-          <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(detection.appliance_id) }}>
+          <Typography variant="body1" sx={{ fontWeight: 500 }}>
             {detection.name || 'Inconnu'}
           </Typography>
         </Box>
