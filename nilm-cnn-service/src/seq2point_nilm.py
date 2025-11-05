@@ -1205,7 +1205,7 @@ class ChangePointPatternDetector:
         Returns:
             Liste de patterns avec séquences et métadonnées
         """
-        from morphology import MorphologyAnalyzer
+        from src.morphology import MorphologyAnalyzer
         
         if len(change_points) < 2:
             return []
