@@ -30,6 +30,7 @@ import {
   Toolbar,
   Autocomplete,
   TextField,
+  Skeleton,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { Check, Close, Search, MoreVert, SwapHoriz } from '@mui/icons-material';
@@ -263,16 +264,28 @@ function DetectionsList() {
           </Tooltip>
         </Toolbar>
 
-        <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 0, display: 'flex', flexDirection: 'column' }}>
-          {((loading.detections && visibleDetections.length === 0) || totalDetections === 0) && (
-            <Box sx={{ p: 2 }}>
-              {loading.detections && visibleDetections.length === 0 && <LinearProgress />}
+        {loading.detections && <LinearProgress sx={{ height: 2 }} />}
 
-              {totalDetections === 0 && !loading.detections && (
-                <Typography color="textSecondary" align="center" variant="body2">
-                  Aucune détection
-                </Typography>
-              )}
+        <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 0, display: 'flex', flexDirection: 'column' }}>
+          {error && (
+            <Box sx={{ p: 2 }}>
+              <Alert severity="error">{error}</Alert>
+            </Box>
+          )}
+
+          {loading.detections && visibleDetections.length === 0 && (
+            <Box sx={{ p: 2 }}>
+              <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+              <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+              <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+            </Box>
+          )}
+
+          {!loading.detections && totalDetections === 0 && (
+            <Box sx={{ p: 2 }}>
+              <Typography color="textSecondary" align="center" variant="body2">
+                Aucune détection
+              </Typography>
             </Box>
           )}
 

@@ -4,12 +4,13 @@ import {
   CardContent,
   CardHeader,
   Typography,
-  CircularProgress,
   Alert,
   Tooltip as MuiTooltip,
   LinearProgress,
   Toolbar,
   Button,
+  Skeleton,
+  Box,
 } from '@mui/material';
 import { ZoomOutMap } from '@mui/icons-material';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
@@ -67,39 +68,6 @@ const ChartsContainer = () => {
   const isLoading = loading.consumption;
   const error = errors.consumption;
 
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent sx={{ textAlign: 'center', py: 4 }}>
-          <CircularProgress />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            Chargement des donnees...
-          </Typography>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card>
-        <CardContent>
-          <Alert severity="error">{error}</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!rawData || !rawData.data || rawData.data.length === 0) {
-    return (
-      <Card>
-        <CardContent>
-          <Alert severity="info">Aucune donnee disponible</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <>
       <Card>
@@ -136,7 +104,7 @@ const ChartsContainer = () => {
                 size="small"
                 startIcon={<ZoomOutMap />}
                 onClick={handleResetZoom}
-                disabled={isLoading}
+                disabled={isLoading || !rawData}
                 sx={{ textTransform: 'none' }}
               >
                 Réinitialiser la vue
@@ -151,18 +119,35 @@ const ChartsContainer = () => {
             value={loadingProgress} 
             sx={{ 
               height: 2,
-              backgroundColor: (theme) => theme.palette.overlay.black[5],
+              backgroundColor: (theme) => theme.palette.overlay?.black?.[5] || 'rgba(0,0,0,0.05)',
             }} 
           />
         )}
+
         <CardContent sx={{ p: 2 }}>
-          <CombinedChart 
-            rawData={rawData} 
-            detections={detections}
-            signatures={signatures}
-            onSignatureModalOpen={handleSignatureModalOpen}
-            isModalOpen={showSignatureModal}
-          />
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+          )}
+
+          {isLoading && (
+            <Box>
+              <Skeleton variant="rectangular" height={400} sx={{ borderRadius: 1 }} />
+            </Box>
+          )}
+
+          {!isLoading && (!rawData || !rawData.data || rawData.data.length === 0) && (
+            <Alert severity="info">Aucune donnee disponible</Alert>
+          )}
+
+          {!isLoading && rawData?.data && rawData.data.length > 0 && (
+            <CombinedChart 
+              rawData={rawData} 
+              detections={detections}
+              signatures={signatures}
+              onSignatureModalOpen={handleSignatureModalOpen}
+              isModalOpen={showSignatureModal}
+            />
+          )}
         </CardContent>
       </Card>
 

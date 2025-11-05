@@ -29,6 +29,7 @@ import {
   ListItemText,
   Toolbar,
   Divider,
+  Skeleton,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { FileDownload, FileUpload, MoreVert } from '@mui/icons-material';
@@ -383,8 +384,10 @@ function SignaturesList() {
         </Tooltip>
       </Toolbar>
 
+      {loading.signatures && <LinearProgress sx={{ height: 2 }} />}
+
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
-        {(error || importProgress.status !== 'idle' || loading.signatures) && (
+        {(error || importProgress.status !== 'idle') && (
           <Box sx={{ p: 2 }}>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
@@ -459,16 +462,19 @@ function SignaturesList() {
               </Typography>
             </Alert>
           )}
-
-          {loading.signatures && (
-            <Box sx={{ mb: 2 }}>
-              <LinearProgress />
-            </Box>
-          )}
           </Box>
         )}
 
-        <TableContainer>
+        {loading.signatures && signatures.length === 0 && (
+          <Box sx={{ p: 2 }}>
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+          </Box>
+        )}
+
+        {!loading.signatures && (
+          <TableContainer>
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
@@ -504,6 +510,7 @@ function SignaturesList() {
             </TableBody>
           </Table>
         </TableContainer>
+        )}
 
       </CardContent>
 

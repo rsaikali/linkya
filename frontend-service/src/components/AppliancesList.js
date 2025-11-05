@@ -23,6 +23,7 @@ import {
   ListItemText,
   Divider,
   Grid,
+  Skeleton,
 } from '@mui/material';
 import { Edit, Close } from '@mui/icons-material';
 import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
@@ -145,52 +146,45 @@ function AppliancesList() {
     handleStyleMenuClose();
   };
 
-  if (isLoading) {
-    return (
-      <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <CardHeader 
-          title="Mes appareils électriques"
-          titleTypographyProps={{ variant: 'h5' }}
-          avatar={<ElectricalServicesIcon />}
-        />
-        <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
-          <LinearProgress />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <CardHeader 
-          title="Mes appareils électriques"
-          titleTypographyProps={{ variant: 'h5' }}
-          avatar={<ElectricalServicesIcon />}
-        />
-        <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
-          <Alert severity="error">{error}</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       <CardHeader
         title="Mes appareils électriques"
         titleTypographyProps={{ variant: 'h5' }}
-        subheader={`${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} disponibles`}
+        subheader={
+          isLoading 
+            ? 'Chargement...' 
+            : `${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} disponibles`
+        }
         avatar={<ElectricalServicesIcon />}
       />
+      
+      {isLoading && <LinearProgress sx={{ height: 2 }} />}
+      
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
-        {appliances.length === 0 ? (
+        {error && (
+          <Box sx={{ p: 2 }}>
+            <Alert severity="error">{error}</Alert>
+          </Box>
+        )}
+
+        {isLoading && (
+          <Box sx={{ p: 2 }}>
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+          </Box>
+        )}
+
+        {!isLoading && appliances.length === 0 && !error && (
           <Box sx={{ p: 2 }}>
             <Typography variant="body2" color="text.secondary">
               No appliance configured yet
             </Typography>
           </Box>
-        ) : (
+        )}
+
+        {!isLoading && appliances.length > 0 && (
           <TableContainer>
             <Table size="small" stickyHeader>
               <TableHead>
