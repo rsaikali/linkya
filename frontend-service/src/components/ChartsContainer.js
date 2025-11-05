@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import { ZoomOutMap } from '@mui/icons-material';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
-import { apiService } from '../services/api';
 import CombinedChart from './CombinedChart';
 import SignatureModal from './SignatureModal';
 import { useData } from '../context/DataContext';
@@ -26,9 +25,7 @@ const ChartsContainer = () => {
     loading,
     loadingProgress,
     errors,
-    zoomState,
     setZoomState,
-    setVisibleTimeRange,
     refreshSignatures,
   } = useData();
   

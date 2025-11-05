@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -115,7 +115,7 @@ function AppliancesList() {
       setEditingName('');
     } catch (err) {
       console.error('Error updating appliance:', err);
-      setError('Unable to update appliance name');
+      // Error is already in context, no need to set it locally
     }
   };
 

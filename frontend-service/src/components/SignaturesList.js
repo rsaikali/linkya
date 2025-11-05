@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -31,7 +31,7 @@ import {
   Divider,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
+import { FileDownload, FileUpload, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
 import { useData } from '../context/DataContext';
@@ -56,7 +56,7 @@ const MaterialIcon = ({ children, sx = {} }) => (
  */
 function SignaturesList() {
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
-  const { signatures, loading, errors, importProgress, refreshSignatures } = useData();
+  const { signatures, loading, errors, importProgress, setImportProgress, refreshSignatures } = useData();
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [signatureToDelete, setSignatureToDelete] = useState(null);
@@ -71,7 +71,6 @@ function SignaturesList() {
 
   // Use data from context
   const totalSignatures = signatures.length;
-  const isLoading = loading.signatures;
   const error = errors.signatures;
 
   // No need to fetch signatures or setup WebSocket - DataContext handles it all
