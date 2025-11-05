@@ -384,7 +384,7 @@ function SignaturesList() {
       </Toolbar>
 
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
-        {(error || importProgress.status !== 'idle' || loading) && (
+        {(error || importProgress.status !== 'idle' || loading.signatures) && (
           <Box sx={{ p: 2 }}>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
