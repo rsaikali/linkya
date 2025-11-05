@@ -460,7 +460,7 @@ function SignaturesList() {
             </Alert>
           )}
 
-          {loading && <LinearProgress sx={{ mb: 2 }} />}
+          {loading.signatures && <LinearProgress sx={{ mb: 2 }} />}
           </Box>
         )}
 
