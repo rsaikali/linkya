@@ -153,7 +153,7 @@ const theme = createTheme({
         },
         title: {
           color: '#fff',
-          fontWeight: 600,
+          fontWeight: 500,
           fontSize: '1rem',
         },
         subheader: {

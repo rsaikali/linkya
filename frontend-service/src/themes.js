@@ -223,6 +223,7 @@ export const oliveGreenTheme = createCustomTheme('Olive Green', '#a4ac86');
 export const fernTheme = createCustomTheme('Fern', '#656d4a');
 export const forestTheme = createCustomTheme('Forest', '#414833');
 export const darkForestTheme = createCustomTheme('Dark Forest', '#333d29');
+export const charcoalTheme = createCustomTheme('Charcoal', '#4e4c57');
 
 export const themes = {
   darkBrown: darkBrownTheme,
@@ -235,6 +236,7 @@ export const themes = {
   fern: fernTheme,
   forest: forestTheme,
   darkForest: darkForestTheme,
+  charcoal: charcoalTheme,
 };
 
 export default darkBrownTheme;
