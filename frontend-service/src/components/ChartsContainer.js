@@ -3,7 +3,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Typography,
   Alert,
   Tooltip as MuiTooltip,
   LinearProgress,

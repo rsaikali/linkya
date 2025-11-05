@@ -16,10 +16,3 @@ No emojis nor emoticons in the codebase, neither in logs.
 Do not create unnecessary documentation or markdown files to report your implementations.
 Do not create unnecessary scripts, or delete them once they are no longer needed.
 When modifying a service, ensure that all related services are also updated accordingly.
-
-## Context Documentation
-The "docs/DOC.md" file contains everything you need to know about the project to quickly get a good understanding as an expert coding assistant.
-Create the "docs/DOC.md" file, populate it with relevant information and update it periodically as the project evolves.
-In this file, do not be too detailed to avoid overloading your context, but be precise enough to help you understand the whole application quickly.
-Keep only the essentials such as the overall architecture and structure of the project, the main technologies used, and any specific conventions or patterns followed in the codebase.
-

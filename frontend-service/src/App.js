@@ -9,11 +9,9 @@ import SignaturesList from './components/SignaturesList';
 import AppliancesList from './components/AppliancesList';
 import { DataProvider } from './context/DataContext';
 import { ApplianceColorsProvider } from './context/ApplianceColorsContext';
-import { ThemeContextProvider, useThemeContext } from './context/ThemeContext';
+import theme from './themes';
 
-function AppContent() {
-  const { theme } = useThemeContext();
-  
+function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -65,14 +63,6 @@ function AppContent() {
         </DataProvider>
       </ApplianceColorsProvider>
     </ThemeProvider>
-  );
-}
-
-function App() {
-  return (
-    <ThemeContextProvider>
-      <AppContent />
-    </ThemeContextProvider>
   );
 }
 

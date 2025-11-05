@@ -1,7 +1,18 @@
 import { createTheme } from '@mui/material/styles';
 
-// Base theme configuration (shared by all themes)
-const baseThemeConfig = {
+const THEME_COLOR = '#4e4c57';
+
+// Helper function to convert hex to rgba
+const hexToRgba = (hex, alpha) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+// Single theme configuration
+const theme = createTheme({
+  name: 'Charcoal',
   palette: {
     primary: {
       main: '#BD2A2E',
@@ -44,8 +55,8 @@ const baseThemeConfig = {
     },
     chart: {
       consumption: {
-        main: '#0d6e00',
-        background: 'rgba(189, 42, 46, 0.31)',
+        main: THEME_COLOR,
+        background: hexToRgba(THEME_COLOR, 0.31),
       },
       selection: {
         background: 'rgba(33, 150, 243, 0.2)',
@@ -125,118 +136,62 @@ const baseThemeConfig = {
         },
       },
     },
+    MuiCardHeader: {
+      styleOverrides: {
+        root: {
+          backgroundColor: THEME_COLOR,
+          color: '#fff',
+          paddingTop: '10px',
+          paddingBottom: '10px',
+          '& .MuiIconButton-root': {
+            color: '#fff',
+            '&:hover': {
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            },
+            '& .MuiSvgIcon-root': {
+              color: '#fff',
+            },
+          },
+          '& .MuiSvgIcon-root': {
+            color: '#fff',
+          },
+          '& .MuiSwitch-root': {
+            '& .MuiSwitch-switchBase': {
+              color: '#fff',
+              '&.Mui-checked': {
+                color: '#fff',
+              },
+            },
+            '& .MuiSwitch-track': {
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            },
+          },
+          '& .MuiTypography-caption': {
+            color: 'rgba(255, 255, 255, 0.9)',
+          },
+        },
+        title: {
+          color: '#fff',
+          fontWeight: 600,
+        },
+        subheader: {
+          color: 'rgba(255, 255, 255, 0.8)',
+        },
+        avatar: {
+          '& .MuiSvgIcon-root': {
+            color: '#fff',
+          },
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: THEME_COLOR,
+        },
+      },
+    },
   },
-};
+});
 
-// Helper function to convert hex to rgba
-const hexToRgba = (hex, alpha) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-// Helper function to create a theme with custom header color
-const createCustomTheme = (name, headerColor) => {
-  return createTheme({
-    ...baseThemeConfig,
-    name,
-    palette: {
-      ...baseThemeConfig.palette,
-      chart: {
-        ...baseThemeConfig.palette.chart,
-        consumption: {
-          main: headerColor,
-          background: hexToRgba(headerColor, 0.31),
-        },
-      },
-    },
-    components: {
-      ...baseThemeConfig.components,
-      MuiCardHeader: {
-        styleOverrides: {
-          root: {
-            backgroundColor: headerColor,
-            color: '#fff',
-            paddingTop: '10px',
-            paddingBottom: '10px',
-            '& .MuiIconButton-root': {
-              color: '#fff',
-              '&:hover': {
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              },
-              '& .MuiSvgIcon-root': {
-                color: '#fff',
-              },
-            },
-            '& .MuiSvgIcon-root': {
-              color: '#fff',
-            },
-            '& .MuiSwitch-root': {
-              '& .MuiSwitch-switchBase': {
-                color: '#fff',
-                '&.Mui-checked': {
-                  color: '#fff',
-                },
-              },
-              '& .MuiSwitch-track': {
-                backgroundColor: 'rgba(255, 255, 255, 0.3)',
-              },
-            },
-            '& .MuiTypography-caption': {
-              color: 'rgba(255, 255, 255, 0.9)',
-            },
-          },
-          title: {
-            color: '#fff',
-            fontWeight: 600,
-          },
-          subheader: {
-            color: 'rgba(255, 255, 255, 0.8)',
-          },
-          avatar: {
-            '& .MuiSvgIcon-root': {
-              color: '#fff',
-            },
-          },
-        },
-      },
-      MuiAppBar: {
-        styleOverrides: {
-          root: {
-            backgroundColor: headerColor,
-          },
-        },
-      },
-    },
-  });
-};
-
-// Theme definitions with different header colors from the palette
-export const darkBrownTheme = createCustomTheme('Dark Brown', '#582f0e');
-export const brownTheme = createCustomTheme('Brown', '#7f4f24');
-export const lightBrownTheme = createCustomTheme('Light Brown', '#936639');
-export const sandTheme = createCustomTheme('Sand', '#a68a64');
-export const khakiTheme = createCustomTheme('Khaki', '#b6ad90');
-export const sageTheme = createCustomTheme('Sage', '#c2c5aa');
-export const oliveGreenTheme = createCustomTheme('Olive Green', '#a4ac86');
-export const fernTheme = createCustomTheme('Fern', '#656d4a');
-export const forestTheme = createCustomTheme('Forest', '#414833');
-export const darkForestTheme = createCustomTheme('Dark Forest', '#333d29');
-export const charcoalTheme = createCustomTheme('Charcoal', '#4e4c57');
-
-export const themes = {
-  darkBrown: darkBrownTheme,
-  brown: brownTheme,
-  lightBrown: lightBrownTheme,
-  sand: sandTheme,
-  khaki: khakiTheme,
-  sage: sageTheme,
-  oliveGreen: oliveGreenTheme,
-  fern: fernTheme,
-  forest: forestTheme,
-  darkForest: darkForestTheme,
-  charcoal: charcoalTheme,
-};
-
-export default darkBrownTheme;
+export default theme;

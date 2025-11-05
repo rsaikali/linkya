@@ -837,7 +837,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
       },
     };
-  }, [handleZoomPanComplete, rawData, theme]);
+  }, [handleZoomPanComplete, rawData]);
 
   if (!rawData || !chartData) return null;
 
