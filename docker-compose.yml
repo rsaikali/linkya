@@ -237,6 +237,22 @@ services:
     stdin_open: true
     tty: true
 
+  # pgweb - Interface web PostgreSQL/TimescaleDB
+  pgweb:
+    image: sosedoff/pgweb:latest
+    container_name: nilmia-pgweb
+    environment:
+      PGWEB_DATABASE_URL: postgres://${LOCAL_DB_USER}:${LOCAL_DB_PASSWORD}@${LOCAL_DB_HOST}:${LOCAL_DB_PORT}/${LOCAL_DB_NAME}?sslmode=disable
+      TZ: Europe/Paris
+    ports:
+      - "8081:8081"
+    networks:
+      - nilmia-network
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   timescaledb_data:
   redis_data:
