@@ -40,8 +40,8 @@ feedback-stats: ## Affiche les statistiques des feedbacks utilisateur
 			COUNT(CASE WHEN cd.is_correct = TRUE THEN 1 END) AS validations, \
 			COUNT(CASE WHEN cd.is_correct = FALSE THEN 1 END) AS invalidations, \
 			COUNT(CASE WHEN cd.user_validated IS NULL THEN 1 END) AS non_validees \
-		FROM cnn_detections cd \
-		JOIN cnn_appliances ca ON cd.appliance_id = ca.id \
+		FROM nilm_detections cd \
+		JOIN nilm_appliances ca ON cd.appliance_id = ca.id \
 		GROUP BY ca.name \
 		ORDER BY (COUNT(CASE WHEN cd.is_correct = FALSE THEN 1 END)) DESC;"
 
@@ -52,15 +52,15 @@ signatures-stats: ## Affiche les statistiques des signatures (positives et néga
 			ca.name AS appareil, \
 			COUNT(CASE WHEN cs.is_negative = FALSE THEN 1 END) AS positives, \
 			COUNT(CASE WHEN cs.is_negative = TRUE THEN 1 END) AS negatives \
-		FROM cnn_signatures cs \
-		JOIN cnn_appliances ca ON cs.appliance_id = ca.id \
+		FROM nilm_signatures cs \
+		JOIN nilm_appliances ca ON cs.appliance_id = ca.id \
 		GROUP BY ca.name \
 		ORDER BY ca.name;"
 
 detections-clean: ## Vide la table des détections (les signatures négatives sont préservées)
 	@echo "⚠️  Nettoyage de la table des détections..."
 	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		DELETE FROM cnn_detections; \
+		DELETE FROM nilm_detections; \
 		SELECT 'Toutes les détections ont été supprimées. Les signatures négatives sont préservées.' AS status;"
 	@echo "✅ Nettoyage terminé. Vous pouvez relancer make detect pour générer de nouvelles détections."
 
@@ -78,7 +78,7 @@ model-compare: ## Compare les métriques du modèle current vs backup
 			num_classes as appareils, \
 			training_duration_seconds as duree_s, \
 			metrics->'appliances' as details_appareils \
-		FROM cnn_models \
+		FROM nilm_models \
 		WHERE model_status IN ('current', 'backup') \
 		ORDER BY CASE model_status WHEN 'current' THEN 1 WHEN 'backup' THEN 2 END;"
 
@@ -86,8 +86,8 @@ model-rollback: ## Revient au modèle backup (annule le dernier entraînement)
 	@echo "⚠️  Rollback vers le modèle backup..."
 	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		BEGIN; \
-		UPDATE cnn_models SET model_status = 'archived' WHERE model_status = 'current'; \
-		UPDATE cnn_models SET model_status = 'current' WHERE model_status = 'backup'; \
+		UPDATE nilm_models SET model_status = 'archived' WHERE model_status = 'current'; \
+		UPDATE nilm_models SET model_status = 'current' WHERE model_status = 'backup'; \
 		COMMIT; \
 		SELECT 'Rollback effectué ! Modèle backup promu en current.' AS status;"
 	@echo "✅ Rollback terminé. Relancez make detect pour utiliser le modèle restauré."
@@ -102,7 +102,7 @@ model-status: ## Affiche le statut actuel des modèles (current/backup/archived)
 			training_date, \
 			num_signatures, \
 			num_classes as appareils \
-		FROM cnn_models \
+		FROM nilm_models \
 		ORDER BY CASE model_status WHEN 'current' THEN 1 WHEN 'backup' THEN 2 ELSE 3 END, training_date DESC;"
 
 frontend-logs: ## Affiche les logs du frontend

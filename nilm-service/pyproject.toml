@@ -1,5 +1,5 @@
 [project]
-name = "nilm-cnn-service"
+name = "nilm-service"
 version = "0.1.0"
 description = "Service NILM Sequence-to-Point pour désagrégation d'appareils concurrents"
 requires-python = ">=3.12"

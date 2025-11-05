@@ -476,7 +476,7 @@ async def create_signature(signature: SignatureCreate):
 @app.post("/api/nilm/train", tags=["NILM"])
 async def trigger_nilm_training():
     """
-    Lance l'entraînement manuel du modèle NILM-CNN.
+    Lance l'entraînement manuel du modèle NILM.
     
     Annule automatiquement tous les entraînements en cours ou en attente
     avant de lancer le nouveau.
@@ -488,7 +488,7 @@ async def trigger_nilm_training():
         from .config import get_celery_app
         
         celery_app = get_celery_app()
-        logger.info("Lancement de l'entraînement NILM-CNN")
+        logger.info("Lancement de l'entraînement NILM")
         
         # Incrémenter un compteur pour marquer ce training comme légitime
         training_generation = 0
@@ -508,17 +508,17 @@ async def trigger_nilm_training():
         
         # 4. Envoyer la nouvelle tâche avec la génération en argument
         task = celery_app.send_task(
-            'train_cnn_model',
+            'train_nilm_model',
             args=[2, training_generation],  # min_signatures, generation
-            queue='nilm_cnn',
-            routing_key='nilm_cnn.train_cnn_model'
+            queue='nilm',
+            routing_key='nilm.train_nilm_model'
         )
         
         logger.info(f"Tâche d'entraînement créée: {task.id}")
         
         return {
             "status": "pending",
-            "message": "Entraînement du modèle NILM-CNN lancé",
+            "message": "Entraînement du modèle NILM lancé",
             "task_id": str(task.id),
         }
         
@@ -538,7 +538,7 @@ async def trigger_nilm_training():
 @app.post("/api/nilm/detect", tags=["NILM"])
 async def trigger_nilm_detection():
     """
-    Lance la détection automatique d'appareils par NILM-CNN.
+    Lance la détection automatique d'appareils par NILM.
     
     Returns:
         Task ID and status
@@ -547,20 +547,20 @@ async def trigger_nilm_detection():
         from .config import get_celery_app
         
         celery_app = get_celery_app()
-        logger.info("Lancement de la détection NILM-CNN")
+        logger.info("Lancement de la détection NILM")
         
-        # Envoyer la tâche à la queue NILM-CNN
+        # Envoyer la tâche à la queue NILM
         task = celery_app.send_task(
-            'detect_cnn_appliances',
-            queue='nilm_cnn',
-            routing_key='nilm_cnn.detect_cnn_appliances'
+            'detect_nilm_appliances',
+            queue='nilm',
+            routing_key='nilm.detect_nilm_appliances'
         )
         
         logger.info(f"Tâche de détection créée: {task.id}")
         
         return {
             "status": "pending",
-            "message": "Détection NILM-CNN lancée",
+            "message": "Détection NILM lancée",
             "task_id": str(task.id),
         }
         
@@ -578,7 +578,7 @@ async def get_nilm_models(
     per_page: int = Query(default=10, ge=1, le=100, description="Nombre d'éléments par page"),
 ):
     """
-    Récupère l'historique des modèles NILM-CNN entraînés avec pagination.
+    Récupère l'historique des modèles NILM entraînés avec pagination.
     
     Args:
         page: Numéro de page (commence à 1)
@@ -588,7 +588,7 @@ async def get_nilm_models(
         Liste paginée des modèles avec leurs métriques
     """
     try:
-        models = db_manager.get_cnn_models_paginated(page=page, per_page=per_page)
+        models = db_manager.get_nilm_models_paginated(page=page, per_page=per_page)
         
         return {
             "page": page,
@@ -609,7 +609,7 @@ async def get_nilm_models(
 @app.delete("/api/nilm/models/{model_id}", tags=["NILM"])
 async def delete_nilm_model(model_id: int):
     """
-    Supprime un modèle NILM-CNN de la base de données et du filesystem.
+    Supprime un modèle NILM de la base de données et du filesystem.
 
     Args:
         model_id: ID du modèle à supprimer
@@ -625,7 +625,7 @@ async def delete_nilm_model(model_id: int):
 
     try:
         # Supprimer de la base de données
-        result = db_manager.delete_cnn_model(model_id)
+        result = db_manager.delete_nilm_model(model_id)
         
         # Supprimer les fichiers du filesystem
         model_name = result.get("model_name")
@@ -676,7 +676,7 @@ async def delete_nilm_model(model_id: int):
 @app.delete("/api/nilm/models", tags=["NILM"])
 async def delete_all_nilm_models():
     """
-    Supprime TOUS les modèles NILM-CNN de la base de données et
+    Supprime TOUS les modèles NILM de la base de données et
     du filesystem.
 
     Returns:
@@ -690,7 +690,7 @@ async def delete_all_nilm_models():
 
     try:
         # Récupérer tous les modèles avant de les supprimer
-        models_data = db_manager.get_cnn_models_paginated(
+        models_data = db_manager.get_nilm_models_paginated(
             page=1, per_page=1000
         )
         all_models = models_data.get("models", [])
@@ -706,7 +706,7 @@ async def delete_all_nilm_models():
                 model_path = model.get("model_path")
                 
                 # Supprimer de la base de données
-                db_manager.delete_cnn_model(model_id)
+                db_manager.delete_nilm_model(model_id)
                 deleted_count += 1
                 
                 # Supprimer les fichiers du filesystem
@@ -954,7 +954,7 @@ async def import_signatures(file: UploadFile):
 
                 # Créer la signature via Celery
                 celery_app.send_task(
-                    'add_cnn_signature',
+                    'add_nilm_signature',
                     args=(
                         appliance_name,
                         start_time,
@@ -962,7 +962,7 @@ async def import_signatures(file: UploadFile):
                     ),
                     kwargs={'is_negative': is_negative},
                     queue='nilm_cnn',
-                    routing_key='nilm_cnn.add_cnn_signature'
+                    routing_key="nilm.add_nilm_signature"
                 )
 
                 success_count += 1

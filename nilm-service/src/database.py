@@ -1,5 +1,5 @@
 """
-Gestion de la base de données TimescaleDB pour nilm-cnn-service
+Gestion de la base de données TimescaleDB pour nilm-service
 """
 import logging
 from typing import List, Dict, Any, Optional
@@ -36,25 +36,25 @@ class DatabaseManager:
         self._define_tables()
     
     def _define_tables(self):
-        """Définit les tables pour le service NILM CNN"""
+        """Définit les tables pour le service NILM"""
         
         # Table des appareils
-        self.cnn_appliances = Table(
-            'cnn_appliances',
+        self.nilm_appliances = Table(
+            'nilm_appliances',
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
             Column('name', String(255), nullable=False),
             Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
             Column('updated_at', DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
-            Index('idx_cnn_appliances_name', 'name')
+            Index('idx_nilm_appliances_name', 'name')
         )
         
         # Table des signatures de courbes (soumises par utilisateur)
-        self.cnn_signatures = Table(
-            'cnn_signatures',
+        self.nilm_signatures = Table(
+            'nilm_signatures',
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
-            Column('appliance_id', Integer, ForeignKey('cnn_appliances.id', ondelete='CASCADE')),
+            Column('appliance_id', Integer, ForeignKey('nilm_appliances.id', ondelete='CASCADE')),
             Column('start_time', DateTime(timezone=True), nullable=False),
             Column('end_time', DateTime(timezone=True), nullable=False),
             
@@ -74,37 +74,37 @@ class DatabaseManager:
             
             Column('is_negative', Boolean, default=False, nullable=False),
             Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
-            Index('idx_cnn_signatures_appliance', 'appliance_id'),
-            Index('idx_cnn_signatures_time', 'start_time', 'end_time')
+            Index('idx_nilm_signatures_appliance', 'appliance_id'),
+            Index('idx_nilm_signatures_time', 'start_time', 'end_time')
         )
         
         # Table des détections d'appareils
-        self.cnn_detections = Table(
-            'cnn_detections',
+        self.nilm_detections = Table(
+            'nilm_detections',
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
-            Column('appliance_id', Integer, ForeignKey('cnn_appliances.id', ondelete='SET NULL'), nullable=True),
-            Column('signature_id', Integer, ForeignKey('cnn_signatures.id', ondelete='SET NULL'), nullable=True),
+            Column('appliance_id', Integer, ForeignKey('nilm_appliances.id', ondelete='SET NULL'), nullable=True),
+            Column('signature_id', Integer, ForeignKey('nilm_signatures.id', ondelete='SET NULL'), nullable=True),
             Column('start_time', DateTime(timezone=True), nullable=False),
             Column('end_time', DateTime(timezone=True), nullable=False),
             Column('avg_power', Float),
             Column('energy_consumed', Float),  # Énergie désagrégée (Wh)
             Column('confidence_score', Float),  # Score de confiance [0-1]
-            Column('prediction_class', Integer),  # Classe prédite par CNN
+            Column('prediction_class', Integer),  # Classe prédite
             Column('features', JSON),  # Features de la détection
             Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
             # Champs de validation utilisateur pour apprentissage par feedback
             Column('user_validated', Boolean, default=None, nullable=True),  # NULL = pas encore validée
             Column('is_correct', Boolean, default=None, nullable=True),  # True = correcte, False = incorrecte
             Column('validated_at', DateTime(timezone=True), nullable=True),  # Timestamp de validation
-            Index('idx_cnn_detections_appliance', 'appliance_id'),
-            Index('idx_cnn_detections_time', 'start_time', 'end_time'),
-            Index('idx_cnn_detections_validation', 'user_validated', 'is_correct')
+            Index('idx_nilm_detections_appliance', 'appliance_id'),
+            Index('idx_nilm_detections_time', 'start_time', 'end_time'),
+            Index('idx_nilm_detections_validation', 'user_validated', 'is_correct')
         )
         
-        # Table des modèles CNN (un seul modèle actif à la fois)
-        self.cnn_models = Table(
-            'cnn_models',
+        # Table des modèles NILM (un seul modèle actif à la fois)
+        self.nilm_models = Table(
+            'nilm_models',
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
             Column('model_name', String(255), unique=True, nullable=False),  # Format: linkya_model_<timestamp>
@@ -116,7 +116,7 @@ class DatabaseManager:
             Column('metrics', JSON),  # Métriques de performance (accuracy, loss, etc.)
             Column('model_path', String(500)),
             Column('training_duration_seconds', Integer),  # Durée d'entraînement (secondes)
-            Index('idx_cnn_models_name', 'model_name')
+            Index('idx_nilm_models_name', 'model_name')
         )
     
     @contextmanager
@@ -145,15 +145,15 @@ class DatabaseManager:
             return False
     
     def init_tables(self):
-        """Initialise les tables CNN NILM dans TimescaleDB"""
+        """Initialise les tables NILM dans TimescaleDB"""
         try:
             with self.engine.connect() as conn:
                 # Créer les tables si elles n'existent pas
                 self.metadata.create_all(self.engine)
-                logger.info("Tables CNN NILM créées avec succès")
+                logger.info("Tables NILM créées avec succès")
                 
                 # Vérifier si les tables existent
-                for table_name in ['cnn_appliances', 'cnn_signatures', 'cnn_detections', 'cnn_models']:
+                for table_name in ['nilm_appliances', 'nilm_signatures', 'nilm_detections', 'nilm_models']:
                     result = conn.execute(text(
                         f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}')"
                     ))
@@ -242,7 +242,7 @@ class DatabaseManager:
             with self.engine.connect() as conn:
                 overlap_query = text("""
                     SELECT id, start_time, end_time
-                    FROM cnn_signatures
+                    FROM nilm_signatures
                     WHERE appliance_id = :appliance_id
                     AND (
                         (start_time <= :start_time AND end_time > :start_time)
@@ -313,7 +313,7 @@ class DatabaseManager:
             
             with self.get_session() as session:
                 query = text("""
-                    INSERT INTO cnn_signatures
+                    INSERT INTO nilm_signatures
                     (appliance_id, start_time, end_time, power_data,
                      avg_power, power_std, energy_consumed, num_points,
                      morphology_analysis, is_negative, created_at)
@@ -370,8 +370,8 @@ class DatabaseManager:
                     SELECT
                         s.id, s.appliance_id, s.start_time, s.end_time,
                         a.name as appliance_name
-                    FROM cnn_signatures s
-                    JOIN cnn_appliances a ON s.appliance_id = a.id
+                    FROM nilm_signatures s
+                    JOIN nilm_appliances a ON s.appliance_id = a.id
                     ORDER BY s.created_at DESC
                 """
 

@@ -100,13 +100,13 @@ services:
       - nilmia-network
     restart: "no"
 
-  # Service NILM-CNN - Worker Celery
-  cnn-worker:
+  # Service NILM - Worker Celery
+  nilm-worker:
     build:
-      context: ./nilm-cnn-service
+      context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilmia-cnn-worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm_cnn
+    container_name: nilmia-nilm-worker
+    command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
     runtime: nvidia
     environment:
       TZ: Europe/Paris
@@ -124,19 +124,19 @@ services:
       sync-worker:
         condition: service_started
     volumes:
-      - ./nilm-cnn-service/src:/app/src
+      - ./nilm-service/src:/app/src
       - ./.data/models:/app/models
       - nilm_uv_cache:/root/.cache/uv
     networks:
       - nilmia-network
     restart: unless-stopped
 
-  # Celery Beat pour NILM-CNN
-  cnn-beat:
+  # Celery Beat pour NILM
+  nilm-beat:
     build:
-      context: ./nilm-cnn-service
+      context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilmia-cnn-beat
+    container_name: nilmia-nilm-beat
     command: celery -A src.tasks.celery_app beat --loglevel=info
     environment:
       TZ: Europe/Paris
@@ -150,19 +150,19 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./nilm-cnn-service/src:/app/src
+      - ./nilm-service/src:/app/src
       - ./.data/models:/app/models
     networks:
       - nilmia-network
     restart: unless-stopped
 
-  # Initialisation de la base NILM-CNN au démarrage
-  init-cnn-db:
+  # Initialisation de la base NILM au démarrage
+  init-nilm-db:
     build:
-      context: ./nilm-cnn-service
+      context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilmia-init-cnn-db
-    command: python -c "from src.database import db_manager; db_manager.init_tables(); print('CNN NILM database initialized')"
+    container_name: nilmia-init-nilm-db
+    command: python -c "from src.database import db_manager; db_manager.init_tables(); print('NILM database initialized')"
     environment:
       TZ: Europe/Paris
     env_file:

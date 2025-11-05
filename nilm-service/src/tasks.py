@@ -1,5 +1,5 @@
 """
-Tâches Celery pour nilm-cnn-service
+Tâches Celery pour nilm-service
 """
 import json
 import logging
@@ -56,7 +56,7 @@ else:
 
 # Initialisation de Celery
 celery_app = Celery(
-    'nilm_cnn_tasks',
+    'nilm_tasks',
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend
 )
@@ -85,16 +85,16 @@ except Exception as e:
     redis_client = None
 
 
-@celery_app.task(name='init_cnn_database')
-def init_cnn_database() -> Dict[str, Any]:
+@celery_app.task(name='init_nilm_database')
+def init_nilm_database() -> Dict[str, Any]:
     """
-    Initialise les tables CNN NILM dans TimescaleDB
+    Initialise les tables NILM dans TimescaleDB
     
     Returns:
         Statut de l'initialisation
     """
     try:
-        logger.info("Initialisation des tables CNN NILM...")
+        logger.info("Initialisation des tables NILM...")
         
         # Tester la connexion
         if not db_manager.test_connection():
@@ -103,11 +103,11 @@ def init_cnn_database() -> Dict[str, Any]:
         # Créer les tables
         db_manager.init_tables()
         
-        logger.info("Tables CNN NILM initialisées avec succès")
+        logger.info("Tables NILM initialisées avec succès")
         
         return {
             'status': 'success',
-            'message': 'Tables CNN NILM créées',
+            'message': 'Tables NILM créées',
             'timestamp': datetime.utcnow().isoformat()
         }
         
@@ -116,8 +116,8 @@ def init_cnn_database() -> Dict[str, Any]:
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='train_cnn_model', bind=True)
-def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[str, Any]:
+@celery_app.task(name='train_nilm_model', bind=True)
+def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[str, Any]:
     """
     Entraîne un nouveau modèle NILM (S2P) - remplace l'ancien modèle
 
@@ -202,7 +202,7 @@ def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[
         # Supprimer l'ancien modèle s'il existe
         with db_manager.get_session() as session:
             old_models = session.execute(
-                text("SELECT id, model_path FROM cnn_models")
+                text("SELECT id, model_path FROM nilm_models")
             ).fetchall()
             
             for old_model in old_models:
@@ -224,7 +224,7 @@ def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[
                         logger.warning(f"⚠️  Impossible de supprimer metadata: {e}")
             
             # Supprimer toutes les entrées de la table
-            session.execute(text("DELETE FROM cnn_models"))
+            session.execute(text("DELETE FROM nilm_models"))
             session.commit()
             
             logger.info("✅ Ancien modèle supprimé")
@@ -232,7 +232,7 @@ def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[
         # Sauvegarder le nouveau modèle en base
         with db_manager.get_session() as session:
             query = text("""
-                INSERT INTO cnn_models
+                INSERT INTO nilm_models
                 (model_name, model_type, architecture, training_date,
                  num_signatures, num_classes, metrics, model_path,
                  training_duration_seconds)
@@ -254,7 +254,7 @@ def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[
                     'num_signatures': total_signatures,
                     'num_classes': num_appliances,
                     'metrics': json.dumps(metrics, default=str),
-                    'model_path': metrics.get('model_path', f"{settings.cnn_model_path}/{model_name}.keras"),
+                    'model_path': metrics.get('model_path', f"{settings.nilm_model_path}/{model_name}.keras"),
                     'training_duration_seconds': training_duration
                 }
             )
@@ -283,13 +283,13 @@ def train_cnn_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='detect_cnn_appliances')
-def detect_cnn_appliances(
+@celery_app.task(name='detect_nilm_appliances')
+def detect_nilm_appliances(
     hours: int = None,
     min_confidence: float = 0.3
 ) -> Dict[str, Any]:
     """
-    Détecte et désagrège les appareils (S2P ou CNN legacy)
+    Détecte et désagrège les appareils (S2P)
     
     Args:
         hours: Nombre d'heures à analyser (défaut: depuis config)
@@ -305,7 +305,7 @@ def detect_cnn_appliances(
         # Vérifier qu'un modèle est disponible
         with db_manager.engine.connect() as conn:
             result = conn.execute(
-                text("SELECT model_name, model_type FROM cnn_models "
+                text("SELECT model_name, model_type FROM nilm_models "
                      "ORDER BY training_date DESC LIMIT 1")
             )
             row = result.first()
@@ -320,7 +320,7 @@ def detect_cnn_appliances(
         
         # Charger le modèle Multi-Output si pas déjà chargé
         model_path = os.path.join(
-            settings.cnn_model_path,
+            settings.nilm_model_path,
             f"{active_model}.keras"
         )
         if nilm_manager.multioutput_model is None:
@@ -355,7 +355,7 @@ def detect_cnn_appliances(
                     )
                 else:
                     # Fallback sur la config par défaut si pas de données
-                    hours = settings.cnn_detection_period_hours or 240
+                    hours = settings.nilm_detection_period_hours or 240
                     start_time = end_time - timedelta(hours=hours)
                     logger.info(
                         f"Détection sur les {hours} dernières heures..."
@@ -421,7 +421,7 @@ def detect_cnn_appliances(
                 # Si pas d'appliance_id, chercher par nom (mode legacy)
                 if not appliance_id:
                     result = session.execute(
-                        text("SELECT id FROM cnn_appliances "
+                        text("SELECT id FROM nilm_appliances "
                              "WHERE name = :name LIMIT 1"),
                         {'name': event['appliance_name']}
                     )
@@ -438,7 +438,7 @@ def detect_cnn_appliances(
                 # Vérifier chevauchements pour cet appareil
                 check_overlap_query = text("""
                     SELECT id, confidence_score, start_time, end_time
-                    FROM cnn_detections
+                    FROM nilm_detections
                     WHERE appliance_id = :appliance_id
                     AND (
                         (:start_time <= end_time AND :end_time >= start_time)
@@ -466,7 +466,7 @@ def detect_cnn_appliances(
                     if new_confidence > existing_confidence:
                         # Mettre à jour la détection existante avec de meilleures données
                         update_query = text("""
-                            UPDATE cnn_detections
+                            UPDATE nilm_detections
                             SET start_time = :start_time,
                                 end_time = :end_time,
                                 avg_power = :avg_power,
@@ -519,7 +519,7 @@ def detect_cnn_appliances(
                         features_data['probabilities'] = event['probabilities']
                     
                     insert_query = text("""
-                        INSERT INTO cnn_detections
+                        INSERT INTO nilm_detections
                         (appliance_id, start_time, end_time,
                          confidence_score, prediction_class, 
                          features, created_at)
@@ -622,8 +622,8 @@ def detect_cnn_appliances(
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='add_cnn_signature')
-def add_cnn_signature(
+@celery_app.task(name='add_nilm_signature')
+def add_nilm_signature(
     appliance_name: str,
     start_time_str: str,
     end_time_str: str,
@@ -650,10 +650,10 @@ def add_cnn_signature(
         
         # Vérifier la durée
         duration = (end_time - start_time).total_seconds()
-        if duration < settings.cnn_min_duration_seconds:
+        if duration < settings.nilm_min_duration_seconds:
             return {
                 'status': 'error',
-                'message': f'Durée trop courte (minimum {settings.cnn_min_duration_seconds}s)'
+                'message': f'Durée trop courte (minimum {settings.nilm_min_duration_seconds}s)'
             }
         
         from sqlalchemy import text
@@ -661,7 +661,7 @@ def add_cnn_signature(
         # Trouver ou créer l'appareil
         with db_manager.get_session() as session:
             result = session.execute(
-                text("SELECT id FROM cnn_appliances WHERE name = :name LIMIT 1"),
+                text("SELECT id FROM nilm_appliances WHERE name = :name LIMIT 1"),
                 {'name': appliance_name}
             )
             row = result.first()
@@ -672,7 +672,7 @@ def add_cnn_signature(
                 # Créer un nouvel appareil
                 result = session.execute(
                     text("""
-                        INSERT INTO cnn_appliances
+                        INSERT INTO nilm_appliances
                         (name, created_at, updated_at)
                         VALUES (:name, NOW(), NOW())
                         RETURNING id
@@ -712,7 +712,7 @@ def add_cnn_signature(
         # Déclencher un réentraînement si assez de signatures
         signatures = db_manager.get_all_signatures()
         if len(signatures) >= 10 and len(signatures) % 5 == 0:
-            train_cnn_model.delay()
+            train_nilm_model.delay()
             logger.info("Réentraînement du modèle déclenché")
         
         return {
@@ -731,10 +731,10 @@ def add_cnn_signature(
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='get_cnn_stats')
-def get_cnn_stats() -> Dict[str, Any]:
+@celery_app.task(name='get_nilm_stats')
+def get_nilm_stats() -> Dict[str, Any]:
     """
-    Récupère les statistiques du service CNN NILM
+    Récupère les statistiques du service NILM
     
     Returns:
         Statistiques complètes
@@ -746,24 +746,24 @@ def get_cnn_stats() -> Dict[str, Any]:
         
         with db_manager.engine.connect() as conn:
             # Nombre d'appareils
-            result = conn.execute(text("SELECT COUNT(*) FROM cnn_appliances"))
+            result = conn.execute(text("SELECT COUNT(*) FROM nilm_appliances"))
             stats['num_appliances'] = result.scalar()
             
             # Nombre de signatures
-            result = conn.execute(text("SELECT COUNT(*) FROM cnn_signatures"))
+            result = conn.execute(text("SELECT COUNT(*) FROM nilm_signatures"))
             stats['num_signatures'] = result.scalar()
             
             # Nombre de détections
-            result = conn.execute(text("SELECT COUNT(*) FROM cnn_detections"))
+            result = conn.execute(text("SELECT COUNT(*) FROM nilm_detections"))
             stats['num_detections'] = result.scalar()
             
             # Nombre de modèles
-            result = conn.execute(text("SELECT COUNT(*) FROM cnn_models"))
+            result = conn.execute(text("SELECT COUNT(*) FROM nilm_models"))
             stats['num_models'] = result.scalar()
             
             # Modèle actif
             result = conn.execute(
-                text("SELECT version, num_classes, metrics FROM cnn_models WHERE model_status = 'current' LIMIT 1")
+                text("SELECT version, num_classes, metrics FROM nilm_models WHERE model_status = 'current' LIMIT 1")
             )
             row = result.first()
             if row:
@@ -779,9 +779,9 @@ def get_cnn_stats() -> Dict[str, Any]:
                     a.name,
                     COUNT(DISTINCT s.id) as num_signatures,
                     COUNT(DISTINCT d.id) as num_detections
-                FROM cnn_appliances a
-                LEFT JOIN cnn_signatures s ON a.id = s.appliance_id
-                LEFT JOIN cnn_detections d ON a.id = d.appliance_id
+                FROM nilm_appliances a
+                LEFT JOIN nilm_signatures s ON a.id = s.appliance_id
+                LEFT JOIN nilm_detections d ON a.id = d.appliance_id
                 GROUP BY a.id, a.name
                 ORDER BY a.name
             """))
@@ -797,7 +797,7 @@ def get_cnn_stats() -> Dict[str, Any]:
         
         stats['timestamp'] = datetime.utcnow().isoformat()
         
-        logger.info(f"Statistiques CNN: {stats['num_appliances']} appareils, {stats['num_signatures']} signatures")
+        logger.info(f"Statistiques NILM: {stats['num_appliances']} appareils, {stats['num_signatures']} signatures")
         
         return stats
         
@@ -808,17 +808,17 @@ def get_cnn_stats() -> Dict[str, Any]:
 
 # Configuration des tâches périodiques
 celery_app.conf.beat_schedule = {
-    'train-cnn-model': {
-        'task': 'train_cnn_model',
-        'schedule': crontab(hour=f'*/{settings.cnn_training_interval_hours}', minute=0),
+    'train-nilm-model': {
+        'task': 'train_nilm_model',
+        'schedule': crontab(hour=f'*/{settings.nilm_training_interval_hours}', minute=0),
     },
-    'detect-cnn-appliances': {
-        'task': 'detect_cnn_appliances',
-        'schedule': settings.cnn_detection_interval_minutes * 60.0,
+    'detect-nilm-appliances': {
+        'task': 'detect_nilm_appliances',
+        'schedule': settings.nilm_detection_interval_minutes * 60.0,
         'kwargs': {'hours': 2, 'min_confidence': 0.6}  # Analyse 2h pour couvrir les cycles HC/HP
     },
-    'get-cnn-stats': {
-        'task': 'get_cnn_stats',
+    'get-nilm-stats': {
+        'task': 'get_nilm_stats',
         'schedule': 300.0,  # Toutes les 5 minutes
     },
 }

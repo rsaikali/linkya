@@ -1,4 +1,4 @@
-# Dockerfile pour nilm-cnn-service
+# Dockerfile pour nilm-service
 # Python 3.12 avec TensorFlow/Keras + CUDA
 
 FROM tensorflow/tensorflow:latest-gpu

@@ -193,8 +193,8 @@ class DatabaseManager:
                 cd.user_validated,
                 cd.is_correct,
                 cd.validated_at
-            FROM cnn_detections cd
-            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            FROM nilm_detections cd
+            JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
               AND (:end_time IS NULL OR cd.end_time <= :end_time)
               AND (cd.user_validated IS NULL 
@@ -254,7 +254,7 @@ class DatabaseManager:
                          WHERE time >= cs.start_time 
                            AND time <= cs.end_time)
                     )
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE cs.appliance_id = ca.id
                       AND cs.is_negative = false
                 ) as avg_power,
@@ -266,7 +266,7 @@ class DatabaseManager:
                          WHERE time >= cs.start_time 
                            AND time <= cs.end_time)
                     )
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE cs.appliance_id = ca.id
                       AND cs.is_negative = false
                 ) as power_std,
@@ -274,31 +274,31 @@ class DatabaseManager:
                     SELECT AVG(
                         EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))
                     )
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE cs.appliance_id = ca.id
                       AND cs.is_negative = false
                 ) as avg_duration,
                 (
                     SELECT COUNT(*)
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE cs.appliance_id = ca.id
                 ) as num_signatures,
                 (
                     SELECT MAX(start_time)
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE cs.appliance_id = ca.id
                 ) as last_signature_start,
                 (
                     SELECT MAX(end_time)
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE cs.appliance_id = ca.id
                 ) as last_signature_end,
                 (
                     SELECT COUNT(*)
-                    FROM cnn_detections cd
+                    FROM nilm_detections cd
                     WHERE cd.appliance_id = ca.id
                 ) as detection_count
-            FROM cnn_appliances ca
+            FROM nilm_appliances ca
             ORDER BY ca.name ASC
         """)
 
@@ -361,7 +361,7 @@ class DatabaseManager:
                 cs.created_at,
                 EXTRACT(EPOCH FROM (cs.end_time - cs.start_time))
                     as duration_seconds
-            FROM cnn_signatures cs
+            FROM nilm_signatures cs
             WHERE cs.appliance_id = :appliance_id
             ORDER BY cs.start_time DESC
         """)
@@ -420,7 +420,7 @@ class DatabaseManager:
             # Rien à mettre à jour, récupérer l'appareil actuel
             select_query = text("""
                 SELECT id, name, created_at, updated_at
-                FROM cnn_appliances
+                FROM nilm_appliances
                 WHERE id = :appliance_id
             """)
             with self.engine.connect() as conn:
@@ -436,7 +436,7 @@ class DatabaseManager:
         
         set_clauses.append("updated_at = NOW()")
         update_query = text(f"""
-            UPDATE cnn_appliances
+            UPDATE nilm_appliances
             SET {", ".join(set_clauses)}
             WHERE id = :appliance_id
             RETURNING id, name, created_at, updated_at
@@ -467,7 +467,7 @@ class DatabaseManager:
         """
         # First check that the appliance exists
         check_query = text("""
-            SELECT id FROM cnn_appliances WHERE id = :appliance_id
+            SELECT id FROM nilm_appliances WHERE id = :appliance_id
         """)
 
         with self.engine.connect() as conn:
@@ -481,10 +481,10 @@ class DatabaseManager:
 
             # Compter les éléments à supprimer
             count_signatures_query = text("""
-                SELECT COUNT(*) FROM cnn_signatures WHERE appliance_id = :appliance_id
+                SELECT COUNT(*) FROM nilm_signatures WHERE appliance_id = :appliance_id
             """)
             count_detections_query = text("""
-                SELECT COUNT(*) FROM cnn_detections WHERE appliance_id = :appliance_id
+                SELECT COUNT(*) FROM nilm_detections WHERE appliance_id = :appliance_id
             """)
 
             signatures_count = conn.execute(
@@ -499,13 +499,13 @@ class DatabaseManager:
 
             # Supprimer dans l'ordre (FK constraints)
             delete_detections_query = text("""
-                DELETE FROM cnn_detections WHERE appliance_id = :appliance_id
+                DELETE FROM nilm_detections WHERE appliance_id = :appliance_id
             """)
             delete_signatures_query = text("""
-                DELETE FROM cnn_signatures WHERE appliance_id = :appliance_id
+                DELETE FROM nilm_signatures WHERE appliance_id = :appliance_id
             """)
             delete_appliance_query = text("""
-                DELETE FROM cnn_appliances WHERE id = :appliance_id
+                DELETE FROM nilm_appliances WHERE id = :appliance_id
             """)
 
             conn.execute(delete_detections_query, {"appliance_id": appliance_id})
@@ -533,11 +533,11 @@ class DatabaseManager:
                 return float(result[0])
             return None
 
-    def get_cnn_models_paginated(
+    def get_nilm_models_paginated(
         self, page: int = 1, per_page: int = 10
     ) -> dict[str, Any]:
         """
-        Retrieves CNN models with pagination.
+        Retrieves NILM models with pagination.
 
         Args:
             page: Page number (starts at 1)
@@ -551,7 +551,7 @@ class DatabaseManager:
 
         # Requête pour le total
         count_query = text("""
-            SELECT COUNT(*) FROM cnn_models
+            SELECT COUNT(*) FROM nilm_models
         """)
 
         # Requête pour les modèles paginés
@@ -567,7 +567,7 @@ class DatabaseManager:
                 metrics,
                 model_path,
                 training_duration_seconds
-            FROM cnn_models
+            FROM nilm_models
             ORDER BY training_date DESC
             LIMIT :limit OFFSET :offset
         """)
@@ -608,9 +608,9 @@ class DatabaseManager:
                 "models": models,
             }
 
-    def delete_cnn_model(self, model_id: int) -> dict[str, Any]:
+    def delete_nilm_model(self, model_id: int) -> dict[str, Any]:
         """
-        Deletes a CNN model from the database.
+        Deletes a NILM model from the database.
 
         Args:
             model_id: ID of the model to delete
@@ -624,7 +624,7 @@ class DatabaseManager:
         # Check that the model exists
         check_query = text("""
             SELECT id, model_name, model_path
-            FROM cnn_models
+            FROM nilm_models
             WHERE id = :model_id
         """)
 
@@ -640,7 +640,7 @@ class DatabaseManager:
 
             # Supprimer le modèle de la base de données
             delete_query = text("""
-                DELETE FROM cnn_models
+                DELETE FROM nilm_models
                 WHERE id = :model_id
             """)
 
@@ -673,8 +673,8 @@ class DatabaseManager:
                 ca.name,
                 cd.start_time,
                 cd.end_time
-            FROM cnn_detections cd
-            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            FROM nilm_detections cd
+            JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
         """)
 
@@ -697,7 +697,7 @@ class DatabaseManager:
 
             # Supprimer la détection
             delete_query = text("""
-                DELETE FROM cnn_detections
+                DELETE FROM nilm_detections
                 WHERE id = :detection_id
             """)
 
@@ -716,13 +716,13 @@ class DatabaseManager:
         with self.engine.connect() as conn:
             # Compter d'abord le nombre de détections
             count_query = text("""
-                SELECT COUNT(*) FROM cnn_detections
+                SELECT COUNT(*) FROM nilm_detections
             """)
             count = conn.execute(count_query).scalar() or 0
 
             # Supprimer toutes les détections
             delete_query = text("""
-                DELETE FROM cnn_detections
+                DELETE FROM nilm_detections
             """)
             conn.execute(delete_query)
             conn.commit()
@@ -757,8 +757,8 @@ class DatabaseManager:
                 cd.start_time,
                 cd.end_time,
                 cd.confidence_score
-            FROM cnn_detections cd
-            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            FROM nilm_detections cd
+            JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
         """)
 
@@ -789,7 +789,7 @@ class DatabaseManager:
                 # Créer une signature positive à partir de la détection validée
                 # Vérifier qu'une signature similaire n'existe pas déjà
                 check_signature_query = text("""
-                    SELECT COUNT(*) FROM cnn_signatures
+                    SELECT COUNT(*) FROM nilm_signatures
                     WHERE appliance_id = :appliance_id
                       AND start_time = :start_time
                       AND end_time = :end_time
@@ -808,7 +808,7 @@ class DatabaseManager:
                 if existing == 0:
                     # Create positive signature from validated detection
                     create_signature_query = text("""
-                        INSERT INTO cnn_signatures
+                        INSERT INTO nilm_signatures
                         (appliance_id, start_time, end_time, is_negative,
                          created_at)
                         VALUES
@@ -830,7 +830,7 @@ class DatabaseManager:
 
                 # Mettre à jour la détection avec les champs de validation
                 update_query = text("""
-                    UPDATE cnn_detections
+                    UPDATE nilm_detections
                     SET user_validated = :user_validated,
                         is_correct = :is_correct,
                         validated_at = NOW()
@@ -851,7 +851,7 @@ class DatabaseManager:
                 if result[5] is not None and result[5] >= 0.6:
                     # Check that similar negative signature doesn't exist
                     check_negative_query = text("""
-                        SELECT COUNT(*) FROM cnn_signatures
+                        SELECT COUNT(*) FROM nilm_signatures
                         WHERE appliance_id = :appliance_id
                           AND is_negative = TRUE
                           AND start_time = :start_time
@@ -870,7 +870,7 @@ class DatabaseManager:
                     if existing == 0:
                         # Create negative signature from detection data
                         create_negative_query = text("""
-                            INSERT INTO cnn_signatures
+                            INSERT INTO nilm_signatures
                             (appliance_id, start_time, end_time,
                              is_negative, created_at)
                             VALUES
@@ -893,7 +893,7 @@ class DatabaseManager:
 
                 # Mark detection as incorrect (do not delete)
                 update_query = text("""
-                    UPDATE cnn_detections
+                    UPDATE nilm_detections
                     SET user_validated = :user_validated,
                         is_correct = :is_correct,
                         validated_at = NOW()
@@ -929,7 +929,7 @@ class DatabaseManager:
         with self.engine.connect() as conn:
             # Try to find the appliance
             select_query = text("""
-                SELECT id FROM cnn_appliances
+                SELECT id FROM nilm_appliances
                 WHERE name = :name
                 LIMIT 1
             """)
@@ -944,7 +944,7 @@ class DatabaseManager:
 
             # Create a new appliance if it doesn't exist
             insert_query = text("""
-                INSERT INTO cnn_appliances
+                INSERT INTO nilm_appliances
                 (name, created_at, updated_at)
                 VALUES (:name, NOW(), NOW())
                 RETURNING id
@@ -987,8 +987,8 @@ class DatabaseManager:
                 ca.name,
                 cd.start_time,
                 cd.end_time
-            FROM cnn_detections cd
-            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            FROM nilm_detections cd
+            JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
         """)
 
@@ -1012,7 +1012,7 @@ class DatabaseManager:
 
             # Create positive signature for the correct appliance
             check_positive_query = text("""
-                SELECT COUNT(*) FROM cnn_signatures
+                SELECT COUNT(*) FROM nilm_signatures
                 WHERE appliance_id = :appliance_id
                   AND start_time = :start_time
                   AND end_time = :end_time
@@ -1030,7 +1030,7 @@ class DatabaseManager:
 
             if existing_positive == 0:
                 create_positive_query = text("""
-                    INSERT INTO cnn_signatures
+                    INSERT INTO nilm_signatures
                     (appliance_id, start_time, end_time, is_negative,
                      created_at)
                     VALUES
@@ -1052,7 +1052,7 @@ class DatabaseManager:
 
             # Mark detection as incorrect to hide it from the list
             update_query = text("""
-                UPDATE cnn_detections
+                UPDATE nilm_detections
                 SET user_validated = :user_validated,
                     is_correct = :is_correct,
                     validated_at = NOW()
@@ -1090,11 +1090,11 @@ class DatabaseManager:
             Dictionary with the number of deleted signatures
         """
         count_query = text("""
-            SELECT COUNT(*) FROM cnn_signatures
+            SELECT COUNT(*) FROM nilm_signatures
         """)
 
         delete_query = text("""
-            DELETE FROM cnn_signatures
+            DELETE FROM nilm_signatures
         """)
 
         with self.engine.connect() as conn:
@@ -1129,13 +1129,13 @@ class DatabaseManager:
                 s.end_time,
                 s.is_negative,
                 s.created_at
-            FROM cnn_signatures s
-            JOIN cnn_appliances a ON s.appliance_id = a.id
+            FROM nilm_signatures s
+            JOIN nilm_appliances a ON s.appliance_id = a.id
             WHERE s.id = :signature_id
         """)
 
         delete_query = text("""
-            DELETE FROM cnn_signatures
+            DELETE FROM nilm_signatures
             WHERE id = :signature_id
         """)
 
@@ -1194,8 +1194,8 @@ class DatabaseManager:
                 EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) 
                     as duration_seconds,
                 cs.is_negative
-            FROM cnn_signatures cs
-            JOIN cnn_appliances ca ON cs.appliance_id = ca.id
+            FROM nilm_signatures cs
+            JOIN nilm_appliances ca ON cs.appliance_id = ca.id
             ORDER BY cs.start_time DESC
         """)
 

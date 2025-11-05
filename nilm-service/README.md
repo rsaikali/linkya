@@ -1,10 +1,10 @@
-# NILM-CNN Service
+# NILM Service
 
-Service de détection et classification d'appareils électriques basé sur CNN (Convolutional Neural Networks).
+Service de détection et classification d'appareils électriques basé sur Sequence-to-Point NILM.
 
 ## Description
 
-Ce service utilise un réseau de neurones convolutifs 1D pour identifier automatiquement les appareils électriques à partir de leurs signatures de consommation complexes. Il permet:
+Ce service utilise un modèle de deep learning (GRU/LSTM avec attention) pour identifier automatiquement les appareils électriques à partir de leurs signatures de consommation complexes. Il permet:
 
 - **Apprentissage supervisé** avec signatures manuelles soumises par l'utilisateur
 - **Détection de patterns complexes** (cycles, formes de courbes, variations temporelles)
@@ -14,16 +14,19 @@ Ce service utilise un réseau de neurones convolutifs 1D pour identifier automat
 
 ## Architecture
 
-### Modèle CNN - FiLM (Feature-wise Linear Modulation)
+### Modèle Seq2Point - Multi-Output avec Attention
 
-- **Architecture**: FiLM-based multi-target CNN avec GRU/LSTM
-- **Principe**: Un seul modèle pour tous les appareils avec conditioning
+- **Architecture**: Seq2Point multi-target avec GRU/LSTM et Multi-Head Attention
+- **Principe**: Un seul modèle pour désagrégation simultanée de tous les appareils
 - **Features extraites**:
   - Statistiques (moyenne, écart-type, min, max, médiane, quartiles)
   - Gradients et variations temporelles
   - FFT (analyse fréquentielle)
   - Autocorrélation (détection de cycles)
-- **FiLM layers**: Modulation des features par appareil cible
+- **Conv1D initial**: Extraction de features locales (légère couche convolutionnelle)
+- **GRU/LSTM**: Couches récurrentes principales pour patterns temporels
+- **Multi-Head Attention**: Capture des patterns simultanés d'appareils
+- **Multi-Output**: Une branche de sortie par appareil
 - **Augmentation de données**: bruit, décalage temporel, mise à l'échelle
 - **Normalisation**: StandardScaler sur les séquences
 
@@ -37,7 +40,7 @@ Ce service utilise un réseau de neurones convolutifs 1D pour identifier automat
 
 ## Tables en base de données
 
-### cnn_appliances
+### nilm_appliances
 Appareils électriques identifiés.
 
 | Colonne | Type | Description |
@@ -53,7 +56,7 @@ Appareils électriques identifiés.
 | created_at | DATETIME | Date de création |
 | updated_at | DATETIME | Date de mise à jour |
 
-### cnn_signatures
+### nilm_signatures
 Signatures de courbes soumises manuellement par l'utilisateur.
 
 | Colonne | Type | Description |
@@ -70,7 +73,7 @@ Signatures de courbes soumises manuellement par l'utilisateur.
 
 **Note**: `raw_data` supprimé - les données sont récupérées dynamiquement depuis `linky_realtime` via `start_time`/`end_time`
 
-### cnn_detections
+### nilm_detections
 Détections automatiques d'appareils.
 
 | Colonne | Type | Description |
@@ -83,19 +86,19 @@ Détections automatiques d'appareils.
 | avg_power | FLOAT | Puissance moyenne |
 | energy_consumed | FLOAT | Énergie désagrégée (Wh) |
 | confidence_score | FLOAT | Confiance [0-1] |
-| prediction_class | INTEGER | Classe CNN |
+| prediction_class | INTEGER | Classe prédite |
 | features | JSON | Features |
 | is_validated | BOOLEAN | Validé |
 | created_at | DATETIME | Date détection |
 
-### cnn_models
-Versionnement des modèles CNN.
+### nilm_models
+Versionnement des modèles NILM.
 
 | Colonne | Type | Description |
 |---------|------|-------------|
 | id | INTEGER | Identifiant unique |
 | version | VARCHAR(50) | Version (timestamp) |
-| model_type | VARCHAR(100) | Type (CNN1D) |
+| model_type | VARCHAR(100) | Type (Seq2Point) |
 | architecture | JSON | Architecture détaillée |
 | training_date | DATETIME | Date d'entraînement |
 | num_signatures | INTEGER | Nb signatures train |
@@ -106,11 +109,11 @@ Versionnement des modèles CNN.
 
 ## Tâches Celery
 
-### init_cnn_database
+### init_nilm_database
 Initialise les tables en base de données (automatique au démarrage).
 
-### train_cnn_model
-Entraîne le modèle CNN sur toutes les signatures disponibles.
+### train_nilm_model
+Entraîne le modèle NILM sur toutes les signatures disponibles.
 
 - **Déclenchement**: Automatique toutes les 24h ou manuel
 - **Prérequis**: Minimum 10 signatures
@@ -118,10 +121,10 @@ Entraîne le modèle CNN sur toutes les signatures disponibles.
 
 ```bash
 # Manuel
-docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call train_cnn_model
+docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call train_nilm_model
 ```
 
-### detect_cnn_appliances
+### detect_nilm_appliances
 Détecte les appareils dans la période récente.
 
 - **Déclenchement**: Automatique toutes les 5 minutes
@@ -130,23 +133,23 @@ Détecte les appareils dans la période récente.
 
 ```bash
 # Manuel - dernière heure
-docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call detect_cnn_appliances --kwargs='{"hours": 1}'
+docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call detect_nilm_appliances --kwargs='{"hours": 1}'
 ```
 
-### add_cnn_signature
+### add_nilm_signature
 Ajoute une signature manuelle soumise par l'utilisateur.
 
 ```bash
 # Exemple
-docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call add_cnn_signature \
+docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call add_nilm_signature \
   --kwargs='{"appliance_name": "Lave-linge", "start_time_str": "2025-10-22T10:00:00Z", "end_time_str": "2025-10-22T11:30:00Z", "description": "Cycle éco 40°C"}'
 ```
 
-### get_cnn_stats
+### get_nilm_stats
 Récupère les statistiques du service (automatique toutes les 5 minutes).
 
 ```bash
-docker exec nilmia-cnn-worker celery -A src.tasks.celery_app call get_cnn_stats
+docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call get_nilm_stats
 ```
 
 ## Workflow utilisateur
@@ -189,31 +192,27 @@ Variables dans `.env`:
 
 ```bash
 # Intervalles
-CNN_TRAINING_INTERVAL_HOURS=24
-CNN_DETECTION_INTERVAL_MINUTES=5
-CNN_WINDOW_SIZE_MINUTES=60
+NILM_TRAINING_INTERVAL_HOURS=24
+NILM_DETECTION_INTERVAL_MINUTES=5
+NILM_WINDOW_SIZE_MINUTES=60
 
 # Seuils
-CNN_MIN_POWER_THRESHOLD=30
-CNN_MIN_DURATION_SECONDS=30
+NILM_MIN_POWER_THRESHOLD=30
+NILM_MIN_DURATION_SECONDS=30
 
-# Modèle CNN
-CNN_MODEL_PATH=/app/models/cnn
-CNN_SEQUENCE_LENGTH=600
-CNN_BATCH_SIZE=32
-CNN_EPOCHS=50
-CNN_LEARNING_RATE=0.001
-CNN_VALIDATION_SPLIT=0.2
+# Modèle NILM
+NILM_MODEL_PATH=/app/models
+NILM_SEQUENCE_LENGTH=600
+NILM_BATCH_SIZE=32
+NILM_EPOCHS=50
+NILM_LEARNING_RATE=0.001
+NILM_VALIDATION_SPLIT=0.2
 
-# Augmentation
-CNN_AUGMENTATION_ENABLED=true
-CNN_NOISE_FACTOR=0.02
-CNN_SHIFT_RANGE=30
+# Type de modèle (gru ou lstm)
+NILM_MODEL_TYPE=gru
 
-# Features
-CNN_FFT_ENABLED=true
-CNN_GRADIENT_ENABLED=true
-CNN_STATISTICS_ENABLED=true
+# Détection d'états
+NILM_DETECT_STATES=true
 ```
 
 ## Développement
@@ -223,14 +222,14 @@ CNN_STATISTICS_ENABLED=true
 ```bash
 make build
 # ou
-docker-compose build cnn-worker cnn-beat
+docker-compose build nilm-worker nilm-beat
 ```
 
 ### Logs
 
 ```bash
-docker logs nilmia-cnn-worker -f
-docker logs nilmia-cnn-beat -f
+docker logs nilmia-nilm-worker -f
+docker logs nilmia-nilm-beat -f
 ```
 
 ### Tests

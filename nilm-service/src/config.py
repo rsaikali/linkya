@@ -1,12 +1,12 @@
 """
-Configuration pour nilm-cnn-service
+Configuration pour nilm-service
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
-    """Configuration du service NILM CNN"""
+    """Configuration du service NILM"""
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     
@@ -22,22 +22,25 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://redis:6379/0"
     
     # Configuration NILM
-    cnn_training_interval_hours: int = 24  # Entraînement toutes les 24h
-    cnn_detection_interval_minutes: int = 5  # Détection toutes les 5min
-    cnn_detection_period_hours: Optional[int] = None  # Période analysée (None=tout, ou nombre d'heures)
+    nilm_training_interval_hours: int = 24  # Entraînement toutes les 24h
+    nilm_detection_interval_minutes: int = 5  # Détection toutes les 5min
+    # Période analysée (None=tout, ou nombre d'heures)
+    nilm_detection_period_hours: Optional[int] = None
     # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
-    cnn_window_size_minutes: int = 10  # 10 min = 600 points à 1Hz
-    cnn_min_power_threshold: int = 15  # Seuil minimal de puissance (W) - réduit pour détecter transitions douces
-    cnn_min_duration_seconds: int = 30  # Durée minimale d'un événement (s)
+    nilm_window_size_minutes: int = 10  # 10 min = 600 points à 1Hz
+    # Seuil minimal de puissance (W) - réduit pour transitions douces
+    nilm_min_power_threshold: int = 15
+    nilm_min_duration_seconds: int = 30  # Durée minimale d'un événement (s)
     
     # Configuration du modèle (S2P, LSTM, GRU)
-    cnn_model_path: str = "/app/models"
+    nilm_model_path: str = "/app/models"
     # Override manuel de la longueur de séquence (si None, calculé auto)
-    cnn_sequence_length: Optional[int] = 599  # 10 minutes à 1Hz (impair pour symétrie)
-    cnn_batch_size: int = 32
-    cnn_epochs: int = 50
-    cnn_learning_rate: float = 0.001
-    cnn_validation_split: float = 0.2
+    # 10 minutes à 1Hz (impair pour symétrie)
+    nilm_sequence_length: Optional[int] = 599
+    nilm_batch_size: int = 32
+    nilm_epochs: int = 50
+    nilm_learning_rate: float = 0.001
+    nilm_validation_split: float = 0.2
     
     # Device configuration (CPU/GPU)
     use_gpu: Optional[str] = None  # "true", "false", "auto" (default)
@@ -57,17 +60,17 @@ class Settings(BaseSettings):
         """
         Calcule la longueur de séquence effective.
         
-        Si cnn_sequence_length est défini, l'utilise.
-        Sinon, calcule depuis cnn_window_size_minutes (1Hz = 60 points/min).
+        Si nilm_sequence_length est défini, l'utilise.
+        Sinon, calcule depuis nilm_window_size_minutes (1Hz = 60 points/min).
         
         Returns:
             Longueur de séquence en nombre de points
         """
-        if self.cnn_sequence_length is not None:
-            return self.cnn_sequence_length
+        if self.nilm_sequence_length is not None:
+            return self.nilm_sequence_length
         
         # Conversion: minutes -> secondes (1Hz = 1 point/seconde)
-        return self.cnn_window_size_minutes * 60
+        return self.nilm_window_size_minutes * 60
 
 
 # Instance globale de configuration

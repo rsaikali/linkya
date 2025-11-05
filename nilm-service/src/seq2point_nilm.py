@@ -939,7 +939,7 @@ class Seq2PointMultiOutputModel:
             with db_manager.get_session() as session:
                 query = text("""
                     SELECT id, appliance_id, start_time, end_time
-                    FROM cnn_signatures
+                    FROM nilm_signatures
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
                 """)
@@ -1774,12 +1774,12 @@ class Seq2PointNILMManager:
         self.architecture = os.getenv('NILM_ARCHITECTURE', 'multioutput').lower()
 
         # Créer le répertoire des modèles
-        Path(settings.cnn_model_path).mkdir(parents=True, exist_ok=True)
+        Path(settings.nilm_model_path).mkdir(parents=True, exist_ok=True)
 
         # Détecteur hybride change point + pattern matching
         self.change_point_detector = ChangePointPatternDetector(
-            min_power_change=settings.cnn_min_power_threshold,
-            min_duration=settings.cnn_min_duration_seconds
+            min_power_change=settings.nilm_min_power_threshold,
+            min_duration=settings.nilm_min_duration_seconds
         )
         logger.info("Change Point Pattern Detector initialisé")
 
@@ -1857,8 +1857,8 @@ class Seq2PointNILMManager:
             with db_manager.get_session() as session:
                 query = """
                     SELECT DISTINCT a.id, a.name, COUNT(s.id) as num_signatures
-                    FROM cnn_appliances a
-                    JOIN cnn_signatures s ON s.appliance_id = a.id
+                    FROM nilm_appliances a
+                    JOIN nilm_signatures s ON s.appliance_id = a.id
                     GROUP BY a.id, a.name
                     HAVING COUNT(s.id) >= 2
                     ORDER BY a.name
@@ -1880,7 +1880,7 @@ class Seq2PointNILMManager:
                 for appliance_id in appliance_ids:
                     query = """
                         SELECT id, appliance_id, start_time, end_time
-                        FROM cnn_signatures
+                        FROM nilm_signatures
                         WHERE appliance_id = :appliance_id
                         ORDER BY created_at
                     """
@@ -1966,7 +1966,7 @@ class Seq2PointNILMManager:
                     )
                     return {'error': 'insufficient_training_data'}
                 
-                model_path = Path(settings.cnn_model_path) / (
+                model_path = Path(settings.nilm_model_path) / (
                     f'{model_name}.keras'
                 )
                 self.multioutput_model.save(str(model_path), metadata=metrics)
@@ -2049,7 +2049,7 @@ class Seq2PointNILMManager:
                             WHERE time >= cs.start_time 
                               AND time <= cs.end_time
                         ) as energy_wh
-                    FROM cnn_signatures cs
+                    FROM nilm_signatures cs
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
                 """)
@@ -2185,8 +2185,8 @@ class Seq2PointNILMManager:
             # Récupérer les appareils actifs avec leurs signatures
             appliances_query = """
                 SELECT DISTINCT appliance_id, ca.name
-                FROM cnn_signatures cs
-                JOIN cnn_appliances ca ON cs.appliance_id = ca.id
+                FROM nilm_signatures cs
+                JOIN nilm_appliances ca ON cs.appliance_id = ca.id
             """
             appliances = session.execute(text(appliances_query)).fetchall()
 
@@ -2199,7 +2199,7 @@ class Seq2PointNILMManager:
                         end_time,
                         power_data,
                         morphology_analysis
-                    FROM cnn_signatures
+                    FROM nilm_signatures
                     WHERE appliance_id = :appliance_id
                       AND is_negative = FALSE
                     ORDER BY created_at
@@ -2519,7 +2519,7 @@ class Seq2PointNILMManager:
         # Paramètres de détection de gaps (périodes inactives entre deux cycles)
         # Un gap est détecté si la puissance reste < 20% du threshold pendant min_gap_duration
         # Pour un ballon d'eau chaude (3500W), un gap = puissance < 100W
-        gap_threshold = settings.cnn_min_power_threshold * 0.2  # 20% du seuil (= 100W avec threshold=500W)
+        gap_threshold = settings.nilm_min_power_threshold * 0.2  # 20% du seuil (= 100W avec threshold=500W)
         min_gap_duration = 120  # 2 minutes minimum pour considérer un vrai gap (fin de chauffe)
 
         in_segment = False
