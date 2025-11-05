@@ -440,20 +440,21 @@ class Seq2PointMultiOutputModel:
         shared = layers.Dropout(0.1)(shared)
         
         # Output branches (une par appareil)
+        # Utilise l'ID de l'appareil pour les noms de layers
+        # pour que le modèle reste valide si l'utilisateur renomme
         outputs = []
         output_names = []
         for i, (app_id, app_name) in enumerate(
             zip(self.appliance_ids, self.appliance_names)
         ):
-            # Normaliser le nom pour TensorFlow
-            safe_name = normalize_name_for_tensorflow(app_name)
-            output_name = f'output_{safe_name}'
+            # Utiliser l'ID de l'appareil pour le nom du layer
+            output_name = f'output_appliance_{app_id}'
             output_names.append(output_name)
             
             # Branch spécifique à l'appareil
             branch = layers.Dense(
                 32, activation='relu',
-                name=f'branch_{safe_name}'
+                name=f'branch_appliance_{app_id}'
             )(shared)
             output = layers.Dense(
                 1, activation='linear',
@@ -657,13 +658,29 @@ class Seq2PointMultiOutputModel:
         y_val_dict = {}
         safe_output_names = []
         
-        for idx, app_name in enumerate(self.appliance_names):
-            safe_name = normalize_name_for_tensorflow(app_name)
-            output_name = f'output_{safe_name}'
+        for idx, (app_id, app_name) in enumerate(
+            zip(self.appliance_ids, self.appliance_names)
+        ):
+            # Utiliser l'ID de l'appareil pour le nom du layer
+            output_name = f'output_appliance_{app_id}'
             safe_output_names.append(output_name)
             
             y_train_dict[output_name] = y_scaled_dict[idx][idx_train]
             y_val_dict[output_name] = y_scaled_dict[idx][idx_val]
+        
+        # Debug: vérifier les types et shapes
+        logger.info(f"📊 y_train_dict keys: {list(y_train_dict.keys())}")
+        for key, val in y_train_dict.items():
+            logger.info(
+                f"   {key}: type={type(val)}, "
+                f"shape={val.shape if hasattr(val, 'shape') else 'N/A'}, "
+                f"dtype={val.dtype if hasattr(val, 'dtype') else 'N/A'}"
+            )
+        
+        # Convertir les dictionnaires en listes dans l'ordre des outputs
+        # Keras accepte mieux les listes pour les multi-output models
+        y_train_list = [y_train_dict[name] for name in safe_output_names]
+        y_val_list = [y_val_dict[name] for name in safe_output_names]
         
         # Construire ou ajuster modèle
         if not is_fine_tuning:
@@ -701,8 +718,8 @@ class Seq2PointMultiOutputModel:
         # Entraînement
         self.history = self.model.fit(
             X_train,
-            y_train_dict,
-            validation_data=(X_val, y_val_dict),
+            y_train_list,
+            validation_data=(X_val, y_val_list),
             epochs=epochs,
             batch_size=batch_size,
             callbacks=callbacks_list,
@@ -725,9 +742,11 @@ class Seq2PointMultiOutputModel:
         }
         
         # Métriques par appareil
-        for idx, app_name in enumerate(self.appliance_names):
-            safe_name = normalize_name_for_tensorflow(app_name)
-            output_name = f'output_{safe_name}'
+        for idx, (app_id, app_name) in enumerate(
+            zip(self.appliance_ids, self.appliance_names)
+        ):
+            # Utiliser l'ID de l'appareil pour retrouver les métriques
+            output_name = f'output_appliance_{app_id}'
             mae_key = f'{output_name}_mae'
             if mae_key in self.history.history:
                 metrics[f'{app_name}_train_mae'] = float(
