@@ -56,7 +56,7 @@ export const DataProvider = ({ children }) => {
       setErrors(prev => ({ ...prev, consumption: null }));
 
       setLoadingProgress(30);
-      const result = await apiService.getConsumptionHistory(null, null, '30 seconds');
+      const result = await apiService.getConsumptionHistory('1 minute');
       setLoadingProgress(70);
 
       setRawData(result);
@@ -97,7 +97,7 @@ export const DataProvider = ({ children }) => {
       setLoading(prev => ({ ...prev, detections: true }));
       setErrors(prev => ({ ...prev, detections: null }));
 
-      const result = await apiService.getDetections(null);
+      const result = await apiService.getDetections();
       const detectionsArray = result?.detections || result || [];
       setDetections(detectionsArray);
     } catch (err) {

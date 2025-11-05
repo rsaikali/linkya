@@ -26,20 +26,9 @@ export const apiService = {
   },
 
   // Récupérer l'historique de consommation
-  getConsumptionHistory: async (startTime, endTime, interval = 'auto') => {
+  getConsumptionHistory: async (interval = 'auto') => {
     try {
-      const params = {};
-      
-      // N'ajouter les paramètres que s'ils sont fournis
-      if (startTime !== null && startTime !== undefined) {
-        params.start_time = startTime;
-      }
-      if (endTime !== null && endTime !== undefined) {
-        params.end_time = endTime;
-      }
-      if (interval) {
-        params.interval = interval;
-      }
+      const params = { interval };
       
       const response = await api.get('/api/consumption/history', { params });
       return response.data;
@@ -61,17 +50,10 @@ export const apiService = {
   },
 
   // Récupérer les détections
-  getDetections: async (hours = 24) => {
+  getDetections: async () => {
     try {
-      const params = {};
-      // Si hours est null, on envoie 0 pour signifier "toutes"
-      if (hours !== null) {
-        params.hours = hours;
-      } else {
-        params.hours = 0;
-      }
-      
-      const response = await api.get('/api/detections', { params });
+      // Récupère toutes les détections
+      const response = await api.get('/api/detections');
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des détections:', error);
