@@ -75,6 +75,8 @@ function SignaturesList() {
     progressPercent: 0
   });
   const [trainLoading, setTrainLoading] = useState(false);
+  const [deleteModelsDialogOpen, setDeleteModelsDialogOpen] = useState(false);
+  const [deleteModelsLoading, setDeleteModelsLoading] = useState(false);
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
@@ -89,6 +91,25 @@ function SignaturesList() {
       showSnackbar(`Erreur: ${error.response?.data?.detail || error.message}`, 'error');
     } finally {
       setTrainLoading(false);
+    }
+  };
+
+  const handleDeleteAllModels = async () => {
+    setDeleteModelsLoading(true);
+    try {
+      const response = await apiService.deleteAllModels();
+      showSnackbar(
+        response.message || 'Tous les modèles IA ont été supprimés',
+        'success'
+      );
+      setDeleteModelsDialogOpen(false);
+    } catch (error) {
+      showSnackbar(
+        `Erreur: ${error.response?.data?.detail || error.message}`,
+        'error'
+      );
+    } finally {
+      setDeleteModelsLoading(false);
     }
   };
 
@@ -428,12 +449,27 @@ function SignaturesList() {
             <Button
               variant="contained"
               size="small"
-              startIcon={trainLoading ? <CircularProgress size={16} color="inherit" /> : <ModelTraining />}
+              startIcon={trainLoading ? <CircularProgress size={16} color="inherit" /> : <MaterialIcon sx={{ fontSize: 20 }}>cognition</MaterialIcon>}
               onClick={handleTrain}
               disabled={trainLoading || totalSignatures === 0}
               sx={{ textTransform: 'none' }}
             >
-              Entraîner le modèle IA
+              Entraîner l'IA
+            </Button>
+          </span>
+        </Tooltip>
+        
+        <Tooltip title="Supprimer le modèle d'IA">
+          <span>
+            <Button
+              variant="outlined"
+              size="small"
+              color="error"
+              startIcon={<MaterialIcon sx={{ fontSize: 20 }}>delete</MaterialIcon>}
+              onClick={() => setDeleteModelsDialogOpen(true)}
+              sx={{ textTransform: 'none' }}
+            >
+              Supprimer le modèle
             </Button>
           </span>
         </Tooltip>
@@ -443,27 +479,23 @@ function SignaturesList() {
         <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
         
         <Tooltip title="Exporter les signatures en CSV">
-          <Button
-            variant="outlined"
+          <IconButton
             size="small"
-            startIcon={<FileDownload />}
             onClick={handleExportCSV}
-            sx={{ textTransform: 'none' }}
+            sx={{ border: 1, borderColor: 'divider' }}
           >
-            Exporter
-          </Button>
+            <FileDownload fontSize="small" />
+          </IconButton>
         </Tooltip>
         
         <Tooltip title="Importer des signatures depuis un CSV">
-          <Button
-            variant="outlined"
+          <IconButton
             size="small"
-            startIcon={<FileUpload />}
             onClick={handleImportClick}
-            sx={{ textTransform: 'none' }}
+            sx={{ border: 1, borderColor: 'divider' }}
           >
-            Importer
-          </Button>
+            <FileUpload fontSize="small" />
+          </IconButton>
         </Tooltip>
       </Toolbar>
 
@@ -732,6 +764,57 @@ function SignaturesList() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Dialog de confirmation de suppression de tous les modèles IA */}
+      <Dialog
+        open={deleteModelsDialogOpen}
+        onClose={() => setDeleteModelsDialogOpen(false)}
+        aria-labelledby="delete-models-dialog-title"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="delete-models-dialog-title">
+          Supprimer tous les modèles IA
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Êtes-vous sûr de vouloir supprimer <strong>tous les modèles IA</strong> ?
+            <br />
+            <br />
+            ⚠️ <strong>Attention :</strong> Cette action supprimera :
+            <br />
+            • Tous les enregistrements de modèles de la base de données
+            <br />
+            • Tous les fichiers .keras et .metadata.json du système de fichiers
+            <br />
+            • Les fichiers orphelins dans le dossier /models
+            <br />
+            <br />
+            Les signatures d'entraînement seront conservées. Vous pourrez réentraîner de nouveaux modèles par la suite.
+            <br />
+            <br />
+            <strong>Cette action est irréversible.</strong>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setDeleteModelsDialogOpen(false)} 
+            color="inherit"
+            disabled={deleteModelsLoading}
+          >
+            Annuler
+          </Button>
+          <Button 
+            onClick={handleDeleteAllModels} 
+            color="error" 
+            variant="contained"
+            disabled={deleteModelsLoading}
+            startIcon={deleteModelsLoading ? <CircularProgress size={20} /> : <MaterialIcon>delete_sweep</MaterialIcon>}
+          >
+            {deleteModelsLoading ? 'Suppression...' : 'Tout supprimer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 }
