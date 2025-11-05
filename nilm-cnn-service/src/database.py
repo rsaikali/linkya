@@ -50,7 +50,6 @@ class DatabaseManager:
         )
         
         # Table des signatures de courbes (soumises par utilisateur)
-        # Note: raw_data supprimé - les données sont récupérées depuis linky_realtime via start_time/end_time
         self.cnn_signatures = Table(
             'cnn_signatures',
             self.metadata,
@@ -58,9 +57,22 @@ class DatabaseManager:
             Column('appliance_id', Integer, ForeignKey('cnn_appliances.id', ondelete='CASCADE')),
             Column('start_time', DateTime(timezone=True), nullable=False),
             Column('end_time', DateTime(timezone=True), nullable=False),
+            
+            # Power data points (stored as JSON)
+            Column('power_data', JSON, nullable=True),
+            # Format: {"start": "ISO8601", "rate_hz": 1.0, "values": [float, ...], "num_points": int}
+            
+            # Basic statistics (computed for fast queries)
             Column('avg_power', Float),
             Column('power_std', Float),
-            Column('energy_consumed', Float),  # Énergie totale (Wh)
+            Column('energy_consumed', Float),
+            Column('num_points', Integer),
+            
+            # Morphological analysis (computed once, stored as JSON)
+            Column('morphology_analysis', JSON, nullable=True),
+            # Format: see MorphologyAnalyzer output structure
+            
+            Column('is_negative', Boolean, default=False, nullable=False),
             Column('created_at', DateTime(timezone=True), default=datetime.utcnow),
             Index('idx_cnn_signatures_appliance', 'appliance_id'),
             Index('idx_cnn_signatures_time', 'start_time', 'end_time')
@@ -213,19 +225,20 @@ class DatabaseManager:
         is_negative: bool = False
     ) -> Optional[int]:
         """
-        Ajoute une signature de courbe soumise par l'utilisateur
+        Ajoute une signature de courbe soumise par l'utilisateur.
+        Capture les data points et calcule l'analyse morphologique.
         
         Args:
             appliance_id: ID de l'appareil
             start_time: Début de la signature
             end_time: Fin de la signature
-            is_negative: True si c'est une signature négative (faux positif)
+            is_negative: True si signature négative (faux positif)
             
         Returns:
             ID de la signature créée ou None si erreur
         """
         try:
-            # Vérifier les chevauchements avec d'autres signatures du même appareil
+            # Vérifier les chevauchements
             with self.engine.connect() as conn:
                 overlap_query = text("""
                     SELECT id, start_time, end_time
@@ -252,8 +265,7 @@ class DatabaseManager:
                 overlap = result.first()
                 if overlap:
                     logger.error(
-                        f"Chevauchement détecté avec signature {overlap.id} "
-                        f"({overlap.start_time} - {overlap.end_time})"
+                        f"Chevauchement détecté avec signature {overlap.id}"
                     )
                     raise ValueError(
                         f"Cette période chevauche une signature existante "
@@ -261,22 +273,55 @@ class DatabaseManager:
                         f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})"
                     )
             
-            # Vérifier qu'il y a des données dans cette période
+            # Récupérer les données de consommation
             consumption_data = self.get_consumption_data(start_time, end_time)
             
             if not consumption_data:
-                logger.error("Aucune donnée de consommation trouvée pour cette période")
+                logger.error("Aucune donnée trouvée pour cette période")
                 return None
-
+            
+            # Extract power values and compute stats
+            import numpy as np
+            from .morphology import MorphologyAnalyzer
+            import json
+            
+            power_values = np.array([d['papp'] for d in consumption_data])
+            timestamps = [d['time'] for d in consumption_data]
+            
+            # Build compact power_data JSON
+            power_data = {
+                'start': start_time.isoformat(),
+                'rate_hz': 1.0,
+                'values': power_values.tolist(),
+                'num_points': len(power_values),
+            }
+            
+            # Compute basic statistics
+            avg_power = float(np.mean(power_values))
+            power_std = float(np.std(power_values))
+            energy_consumed = float(np.sum(power_values) / 3600.0)
+            num_points = len(power_values)
+            
+            # Compute morphological analysis (only for positive signatures)
+            morphology_analysis = None
+            if not is_negative and len(power_values) >= 10:
+                analyzer = MorphologyAnalyzer(sampling_rate_hz=1.0)
+                morphology_analysis = analyzer.analyze(
+                    power_values,
+                    start_time
+                )
+            
             with self.get_session() as session:
-                # Note: avg_power, power_std, energy_consumed supprimés
-                # Ces valeurs sont calculées à la volée depuis linky_realtime
                 query = text("""
                     INSERT INTO cnn_signatures
-                    (appliance_id, start_time, end_time, 
-                     is_negative, created_at)
-                    VALUES (:appliance_id, :start_time, :end_time,
-                            :is_negative, NOW())
+                    (appliance_id, start_time, end_time, power_data,
+                     avg_power, power_std, energy_consumed, num_points,
+                     morphology_analysis, is_negative, created_at)
+                    VALUES (
+                        :appliance_id, :start_time, :end_time, :power_data,
+                        :avg_power, :power_std, :energy_consumed, :num_points,
+                        :morphology_analysis, :is_negative, NOW()
+                    )
                     RETURNING id
                 """)
 
@@ -286,13 +331,25 @@ class DatabaseManager:
                         'appliance_id': appliance_id,
                         'start_time': start_time,
                         'end_time': end_time,
+                        'power_data': json.dumps(power_data),
+                        'avg_power': avg_power,
+                        'power_std': power_std,
+                        'energy_consumed': energy_consumed,
+                        'num_points': num_points,
+                        'morphology_analysis': json.dumps(
+                            morphology_analysis
+                        ) if morphology_analysis else None,
                         'is_negative': is_negative,
                     }
                 )
                 
                 signature_id = result.scalar()
                 
-                logger.info(f"Signature {signature_id} ajoutée pour l'appareil {appliance_id}")
+                logger.info(
+                    f"Signature {signature_id} créée: "
+                    f"{num_points} points, {avg_power:.1f}W avg, "
+                    f"morphology={'computed' if morphology_analysis else 'skipped'}"
+                )
                 return signature_id
                 
         except SQLAlchemyError as e:
