@@ -916,6 +916,172 @@ class DatabaseManager:
 
             return detection_info
 
+    def get_or_create_appliance(self, appliance_name: str) -> int:
+        """
+        Gets or creates an appliance by name.
+
+        Args:
+            appliance_name: Name of the appliance
+
+        Returns:
+            Appliance ID
+        """
+        with self.engine.connect() as conn:
+            # Try to find the appliance
+            select_query = text("""
+                SELECT id FROM cnn_appliances
+                WHERE name = :name
+                LIMIT 1
+            """)
+
+            result = conn.execute(
+                select_query,
+                {"name": appliance_name}
+            ).fetchone()
+
+            if result:
+                return result[0]
+
+            # Create a new appliance if it doesn't exist
+            insert_query = text("""
+                INSERT INTO cnn_appliances
+                (name, created_at, updated_at)
+                VALUES (:name, NOW(), NOW())
+                RETURNING id
+            """)
+
+            result = conn.execute(
+                insert_query,
+                {"name": appliance_name}
+            )
+            appliance_id = result.scalar()
+            conn.commit()
+
+            logger.info(
+                f"Appliance created: {appliance_name} (ID: {appliance_id})"
+            )
+
+            return appliance_id
+
+    def reassign_detection(
+        self, detection_id: int, correct_appliance_name: str
+    ) -> dict[str, Any] | None:
+        """
+        Reassigns a detection to the correct appliance.
+        Creates a positive signature for the correct appliance
+        and marks the detection as incorrect to hide it from the list.
+
+        Args:
+            detection_id: ID of the detection to reassign
+            correct_appliance_name: Name of the correct appliance
+
+        Returns:
+            Dictionary with reassignment information
+            or None if the detection doesn't exist
+        """
+        # Check that the detection exists and retrieve its information
+        check_query = text("""
+            SELECT
+                cd.id,
+                cd.appliance_id,
+                ca.name,
+                cd.start_time,
+                cd.end_time
+            FROM cnn_detections cd
+            JOIN cnn_appliances ca ON cd.appliance_id = ca.id
+            WHERE cd.id = :detection_id
+        """)
+
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                check_query,
+                {"detection_id": detection_id}
+            ).fetchone()
+
+            if not result:
+                return None
+
+            incorrect_appliance_name = result[2]
+            start_time = result[3]
+            end_time = result[4]
+
+            # Get or create the correct appliance
+            correct_appliance_id = self.get_or_create_appliance(
+                correct_appliance_name
+            )
+
+            # Create positive signature for the correct appliance
+            check_positive_query = text("""
+                SELECT COUNT(*) FROM cnn_signatures
+                WHERE appliance_id = :appliance_id
+                  AND start_time = :start_time
+                  AND end_time = :end_time
+                  AND is_negative = FALSE
+            """)
+
+            existing_positive = conn.execute(
+                check_positive_query,
+                {
+                    "appliance_id": correct_appliance_id,
+                    "start_time": start_time,
+                    "end_time": end_time
+                }
+            ).scalar()
+
+            if existing_positive == 0:
+                create_positive_query = text("""
+                    INSERT INTO cnn_signatures
+                    (appliance_id, start_time, end_time, is_negative,
+                     created_at)
+                    VALUES
+                    (:appliance_id, :start_time, :end_time, FALSE, NOW())
+                """)
+
+                conn.execute(
+                    create_positive_query,
+                    {
+                        "appliance_id": correct_appliance_id,
+                        "start_time": start_time,
+                        "end_time": end_time
+                    }
+                )
+                logger.info(
+                    f"Positive signature created for "
+                    f"{correct_appliance_name} (detection {detection_id})"
+                )
+
+            # Mark detection as incorrect to hide it from the list
+            update_query = text("""
+                UPDATE cnn_detections
+                SET user_validated = :user_validated,
+                    is_correct = :is_correct,
+                    validated_at = NOW()
+                WHERE id = :detection_id
+            """)
+
+            conn.execute(
+                update_query,
+                {
+                    "detection_id": detection_id,
+                    "user_validated": True,
+                    "is_correct": False,
+                }
+            )
+            logger.info(
+                f"Detection {detection_id} reassigned from "
+                f"{incorrect_appliance_name} to {correct_appliance_name}"
+            )
+
+            conn.commit()
+
+            return {
+                "detection_id": detection_id,
+                "incorrect_appliance": incorrect_appliance_name,
+                "correct_appliance": correct_appliance_name,
+                "start_time": format_datetime(start_time),
+                "end_time": format_datetime(end_time),
+            }
+
     def delete_all_signatures(self) -> dict[str, int]:
         """
         Deletes all signatures from all appliances.

@@ -28,9 +28,11 @@ import {
   ListItemIcon,
   ListItemText,
   Toolbar,
+  Autocomplete,
+  TextField,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Check, Close, Search, MoreVert } from '@mui/icons-material';
+import { Check, Close, Search, MoreVert, SwapHoriz } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { detectionsWS } from '../services/websocket';
@@ -460,6 +462,11 @@ function DetectionsList() {
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
   const [anchorEl, setAnchorEl] = useState(null);
+  const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
+  const [applianceName, setApplianceName] = useState('');
+  const [applianceOptions, setApplianceOptions] = useState([]);
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const open = Boolean(anchorEl);
   
   const startTime = new Date(detection.start_time);
@@ -486,6 +493,59 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
   const handleInvalidateClick = () => {
     handleMenuClose();
     onInvalidate(detection);
+  };
+
+  const handleReassignClick = () => {
+    handleMenuClose();
+    setReassignDialogOpen(true);
+    loadAppliances();
+  };
+
+  const loadAppliances = async () => {
+    try {
+      const data = await apiService.getAllAppliances();
+      const names = (data.appliances || []).map(a => a.name);
+      setApplianceOptions(names);
+    } catch (err) {
+      console.error('Erreur lors du chargement des appareils:', err);
+    }
+  };
+
+  const handleReassignSubmit = async () => {
+    if (!applianceName.trim()) {
+      setSnackbar({
+        open: true,
+        message: 'Veuillez saisir le nom de l\'appareil',
+        severity: 'error',
+      });
+      return;
+    }
+
+    setReassignLoading(true);
+    try {
+      await apiService.reassignDetection(detection.id, applianceName);
+      setSnackbar({
+        open: true,
+        message: `Détection réassignée à ${applianceName}`,
+        severity: 'success',
+      });
+      setReassignDialogOpen(false);
+      setApplianceName('');
+      // Refresh the detection list
+      window.location.reload();
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: 'Erreur lors de la réassignation',
+        severity: 'error',
+      });
+    } finally {
+      setReassignLoading(false);
+    }
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   const formatDateTime = (date) => {
@@ -620,7 +680,92 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
               {isInvalidated ? "Déjà invalidée" : "Cette détection est incorrecte"}
             </ListItemText>
           </MenuItem>
+          <MenuItem onClick={handleReassignClick}>
+            <ListItemIcon>
+              <SwapHoriz fontSize="small" color="primary" />
+            </ListItemIcon>
+            <ListItemText>
+              Ce n'est pas le bon appareil
+            </ListItemText>
+          </MenuItem>
         </Menu>
+
+        {/* Dialog pour réassigner la détection */}
+        <Dialog
+          open={reassignDialogOpen}
+          onClose={() => setReassignDialogOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>
+            Réassigner la détection
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText sx={{ mb: 2 }}>
+              Cette détection était pour <strong>{detection.name}</strong>.
+              <br />
+              Quel est le bon appareil ?
+            </DialogContentText>
+            <Autocomplete
+              freeSolo
+              options={applianceOptions}
+              value={applianceName}
+              onChange={(event, newValue) => {
+                setApplianceName(newValue || '');
+              }}
+              onInputChange={(event, newInputValue) => {
+                setApplianceName(newInputValue);
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Nom de l'appareil"
+                  placeholder="Sélectionner ou créer un appareil"
+                  fullWidth
+                  autoFocus
+                  helperText="Vous pouvez sélectionner un appareil existant ou en créer un nouveau"
+                />
+              )}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button
+              onClick={() => {
+                setReassignDialogOpen(false);
+                setApplianceName('');
+              }}
+              disabled={reassignLoading}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleReassignSubmit}
+              variant="contained"
+              color="primary"
+              disabled={reassignLoading || !applianceName.trim()}
+              startIcon={reassignLoading ? <CircularProgress size={20} /> : null}
+            >
+              {reassignLoading ? 'Réassignation...' : 'Réassigner'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Snackbar pour les notifications */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={4000}
+          onClose={handleSnackbarClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        >
+          <Alert
+            onClose={handleSnackbarClose}
+            severity={snackbar.severity}
+            variant="filled"
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
       </TableCell>
     </TableRow>
   );

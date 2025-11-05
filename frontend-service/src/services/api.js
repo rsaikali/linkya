@@ -123,6 +123,20 @@ export const apiService = {
     }
   },
 
+  // Reassign a detection to the correct appliance
+  reassignDetection: async (detectionId, applianceName) => {
+    try {
+      const response = await api.patch(
+        `/api/detections/${detectionId}/reassign`,
+        { appliance_name: applianceName }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la réassignation de la détection:', error);
+      throw error;
+    }
+  },
+
   // Exporter toutes les signatures en CSV
   exportSignatures: async () => {
     try {
@@ -150,6 +164,17 @@ export const apiService = {
       return response.data;
     } catch (error) {
       console.error('Erreur lors de l\'import des signatures:', error);
+      throw error;
+    }
+  },
+
+  // Delete all AI models (database and files)
+  deleteAllModels: async () => {
+    try {
+      const response = await api.delete('/api/nilm/models');
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la suppression des modèles:', error);
       throw error;
     }
   },
