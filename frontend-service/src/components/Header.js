@@ -19,7 +19,6 @@ import {
 import api, { apiService } from '../services/api';
 import { consumptionWS } from '../services/websocket';
 import websocket from '../services/websocket';
-import SettingsMenu from './SettingsMenu';
 
 // Animation de pulsation douce
 const pulse = keyframes`
@@ -372,9 +371,6 @@ const Header = () => {
                 />
               </Box>
             </Tooltip>
-
-            {/* Menu Settings */}
-            <SettingsMenu />
           </Box>
         )}
       </Toolbar>

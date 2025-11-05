@@ -16,7 +16,7 @@ import {
 import annotationPlugin from 'chartjs-plugin-annotation';
 import zoomPlugin from 'chartjs-plugin-zoom';
 import { Line } from 'react-chartjs-2';
-import { useChart } from '../context/ChartContext';
+import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 ChartJS.register(
@@ -36,7 +36,7 @@ ChartJS.register(
 const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, isModalOpen }) => {
   const theme = useTheme();
   const chartRef = useRef(null);
-  const { zoomState, setZoomState, setVisibleTimeRange } = useChart();
+  const { zoomState, setZoomState, setVisibleTimeRange } = useData();
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState(null);
@@ -837,7 +837,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
       },
     };
-  }, [handleZoomPanComplete, rawData, theme]);
+  }, [handleZoomPanComplete, rawData]);
 
   if (!rawData || !chartData) return null;
 

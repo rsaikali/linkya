@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -29,12 +29,13 @@ import {
   ListItemText,
   Toolbar,
   Divider,
+  Skeleton,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { FileDownload, FileUpload, ModelTraining, MoreVert } from '@mui/icons-material';
+import { FileDownload, FileUpload, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
-import { importProgressWS } from '../services/websocket';
+import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 // Custom Material Symbols Icon component
@@ -55,11 +56,9 @@ const MaterialIcon = ({ children, sx = {} }) => (
  * Composant affichant la liste des signatures
  */
 function SignaturesList() {
-  const { getApplianceColor, getApplianceIcon } = useApplianceColors();
-  const [signatures, setSignatures] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [totalSignatures, setTotalSignatures] = useState(0);
+  const { getApplianceColor, getApplianceIcon, ensureApplianceColors } = useApplianceColors();
+  const { signatures, loading, errors, importProgress, setImportProgress, refreshSignatures } = useData();
+  
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [signatureToDelete, setSignatureToDelete] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -67,16 +66,21 @@ function SignaturesList() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  const [importProgress, setImportProgress] = useState({
-    status: 'idle',
-    totalLines: 0,
-    successCount: 0,
-    errorCount: 0,
-    progressPercent: 0
-  });
   const [trainLoading, setTrainLoading] = useState(false);
   const [deleteModelsDialogOpen, setDeleteModelsDialogOpen] = useState(false);
   const [deleteModelsLoading, setDeleteModelsLoading] = useState(false);
+
+  // Use data from context
+  const totalSignatures = signatures.length;
+  const error = errors.signatures;
+
+  // Initialize colors/icons for all appliances when signatures load
+  useEffect(() => {
+    if (signatures.length > 0) {
+      const applianceIds = [...new Set(signatures.map(s => s.appliance_id))];
+      ensureApplianceColors(applianceIds);
+    }
+  }, [signatures, ensureApplianceColors]);
 
   const showSnackbar = (message, severity = 'success') => {
     setSnackbar({ open: true, message, severity });
@@ -113,120 +117,7 @@ function SignaturesList() {
     }
   };
 
-  const fetchSignatures = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Récupérer toutes les signatures
-      const response = await api.get('/api/signatures');
-      
-      const data = response.data;
-      
-      if (data && data.signatures && Array.isArray(data.signatures)) {
-        setSignatures(data.signatures);
-        setTotalSignatures(data.total || data.signatures.length);
-      } else {
-        setSignatures([]);
-        setTotalSignatures(0);
-      }
-    } catch (err) {
-      console.error('Erreur lors de la récupération des signatures:', err);
-      setError('Impossible de charger les signatures');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSignatures();
-  }, [fetchSignatures]);
-
-  // Setup WebSocket for import progress
-  useEffect(() => {
-    const handleImportStart = (data) => {
-      console.log('✅ Import started:', data);
-      setImportProgress({
-        status: 'started',
-        totalLines: 0,
-        successCount: 0,
-        errorCount: 0,
-        progressPercent: 0
-      });
-    };
-
-    const handleImportProgress = (data) => {
-      console.log('📊 Import progress:', data);
-      setImportProgress({
-        status: 'processing',
-        totalLines: data.total_lines || 0,
-        successCount: data.success_count || 0,
-        errorCount: data.error_count || 0,
-        progressPercent: data.progress_percent || 0
-      });
-    };
-
-    const handleImportComplete = (data) => {
-      console.log('🎉 Import completed:', data);
-      setImportProgress({
-        status: 'completed',
-        totalLines: data.total_lines || 0,
-        successCount: data.success_count || 0,
-        errorCount: data.error_count || 0,
-        progressPercent: 100
-      });
-      
-      // Rafraîchir la liste après 2 secondes
-      setTimeout(() => {
-        console.log('🔄 Rafraîchissement de la liste (1/3)');
-        fetchSignatures();
-        // Rafraîchir encore 2 fois
-        setTimeout(() => {
-          console.log('🔄 Rafraîchissement de la liste (2/3)');
-          fetchSignatures();
-        }, 2000);
-        setTimeout(() => {
-          console.log('🔄 Rafraîchissement de la liste (3/3)');
-          fetchSignatures();
-        }, 4000);
-      }, 2000);
-    };
-
-    const handleImportError = (data) => {
-      console.error('❌ Import error:', data);
-      showSnackbar(data.error || 'Erreur lors de l\'import', 'error');
-    };
-
-    const handleConnected = () => {
-      console.log('🔌 WebSocket Import connecté');
-    };
-
-    const handleDisconnected = () => {
-      console.log('🔌 WebSocket Import déconnecté');
-    };
-
-    // Register WebSocket handlers
-    importProgressWS.on('import_start', handleImportStart);
-    importProgressWS.on('import_progress', handleImportProgress);
-    importProgressWS.on('import_complete', handleImportComplete);
-    importProgressWS.on('import_error', handleImportError);
-    importProgressWS.on('connected', handleConnected);
-    importProgressWS.on('disconnected', handleDisconnected);
-
-    // Connect to WebSocket
-    console.log('🚀 Connexion au WebSocket Import...');
-    importProgressWS.connect();
-
-    // Cleanup on unmount
-    return () => {
-      importProgressWS.off('import_start', handleImportStart);
-      importProgressWS.off('import_progress', handleImportProgress);
-      importProgressWS.off('import_complete', handleImportComplete);
-      importProgressWS.off('import_error', handleImportError);
-      importProgressWS.off('connected', handleConnected);
-      importProgressWS.off('disconnected', handleDisconnected);
-    };
-  }, [fetchSignatures]);
+  // Remove the fetchSignatures function and all WebSocket setup - handled by DataContext
 
   const handleExportCSV = async () => {
     try {
@@ -343,7 +234,7 @@ function SignaturesList() {
       });
       
       // Rafraîchir la liste
-      await fetchSignatures();
+      await refreshSignatures();
     } catch (err) {
       console.error('Erreur lors de la suppression de la signature:', err);
       setSnackbar({
@@ -499,8 +390,10 @@ function SignaturesList() {
         </Tooltip>
       </Toolbar>
 
+      {loading.signatures && <LinearProgress sx={{ height: 2 }} />}
+
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
-        {(error || importProgress.status !== 'idle' || loading) && (
+        {(error || importProgress.status !== 'idle') && (
           <Box sx={{ p: 2 }}>
             {error && (
               <Alert severity="error" sx={{ mb: 2 }}>
@@ -575,12 +468,19 @@ function SignaturesList() {
               </Typography>
             </Alert>
           )}
-
-          {loading && <LinearProgress sx={{ mb: 2 }} />}
           </Box>
         )}
 
-        <TableContainer>
+        {loading.signatures && signatures.length === 0 && (
+          <Box sx={{ p: 2 }}>
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+          </Box>
+        )}
+
+        {!loading.signatures && (
+          <TableContainer>
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
@@ -616,6 +516,7 @@ function SignaturesList() {
             </TableBody>
           </Table>
         </TableContainer>
+        )}
 
       </CardContent>
 
@@ -892,7 +793,7 @@ function SignatureRow({
               )}
             </Box>
           </Tooltip>
-          <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(signature.appliance_id) }}>
+          <Typography variant="body1" sx={{ fontWeight: 500 }}>
             {signature.appliance_name}
           </Typography>
         </Box>

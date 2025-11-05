@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -23,10 +23,12 @@ import {
   ListItemText,
   Divider,
   Grid,
+  Skeleton,
 } from '@mui/material';
 import { Edit, Close } from '@mui/icons-material';
 import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
 import api from '../services/api';
+import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 // Custom Material Symbols Icon component
@@ -73,11 +75,11 @@ function AppliancesList() {
     updateApplianceIcon,
     getApplianceColor,
     getApplianceIcon,
+    ensureApplianceColors,
     availableIcons,
   } = useApplianceColors();
-  const [appliances, setAppliances] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { appliances, loading, errors, refreshAppliances } = useData();
+  
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
   
@@ -86,30 +88,19 @@ function AppliancesList() {
   const [selectedApplianceId, setSelectedApplianceId] = useState(null);
   const [menuView, setMenuView] = useState('main'); // 'main', 'icon', 'color'
 
-  const fetchAppliances = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Use data from context
+  const isLoading = loading.appliances;
+  const error = errors.appliances;
 
-      const response = await api.get('/api/appliances');
-      const data = response.data;
-
-      if (data && data.appliances && Array.isArray(data.appliances)) {
-        setAppliances(data.appliances);
-      } else {
-        setAppliances([]);
-      }
-    } catch (err) {
-      console.error('Error fetching appliances:', err);
-      setError('Unable to load appliances');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Initialize colors/icons for all appliances when they load
   useEffect(() => {
-    fetchAppliances();
-  }, [fetchAppliances]);
+    if (appliances.length > 0) {
+      const applianceIds = appliances.map(a => a.id);
+      ensureApplianceColors(applianceIds);
+    }
+  }, [appliances, ensureApplianceColors]);
+
+  // No need to fetch appliances - DataContext handles it all
 
   const handleEditClick = (appliance) => {
     setEditingId(appliance.id);
@@ -127,18 +118,14 @@ function AppliancesList() {
         name: editingName,
       });
 
-      // Mettre à jour la liste locale
-      setAppliances(
-        appliances.map((a) =>
-          a.id === applianceId ? { ...a, name: editingName } : a
-        )
-      );
+      // Refresh the list from context
+      await refreshAppliances();
 
       setEditingId(null);
       setEditingName('');
     } catch (err) {
       console.error('Error updating appliance:', err);
-      setError('Unable to update appliance name');
+      // Error is already in context, no need to set it locally
     }
   };
 
@@ -168,52 +155,45 @@ function AppliancesList() {
     handleStyleMenuClose();
   };
 
-  if (loading) {
-    return (
-      <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <CardHeader 
-          title="Mes appareils électriques"
-          titleTypographyProps={{ variant: 'h5' }}
-          avatar={<ElectricalServicesIcon />}
-        />
-        <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
-          <LinearProgress />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-        <CardHeader 
-          title="Mes appareils électriques"
-          titleTypographyProps={{ variant: 'h5' }}
-          avatar={<ElectricalServicesIcon />}
-        />
-        <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
-          <Alert severity="error">{error}</Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       <CardHeader
         title="Mes appareils électriques"
         titleTypographyProps={{ variant: 'h5' }}
-        subheader={`${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} disponibles`}
+        subheader={
+          isLoading 
+            ? 'Chargement...' 
+            : `${appliances.length} appareil${appliances.length !== 1 ? 's' : ''} disponibles`
+        }
         avatar={<ElectricalServicesIcon />}
       />
+      
+      {isLoading && <LinearProgress sx={{ height: 2 }} />}
+      
       <CardContent sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
-        {appliances.length === 0 ? (
+        {error && (
+          <Box sx={{ p: 2 }}>
+            <Alert severity="error">{error}</Alert>
+          </Box>
+        )}
+
+        {isLoading && (
+          <Box sx={{ p: 2 }}>
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ mb: 1, borderRadius: 1 }} />
+            <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+          </Box>
+        )}
+
+        {!isLoading && appliances.length === 0 && !error && (
           <Box sx={{ p: 2 }}>
             <Typography variant="body2" color="text.secondary">
               No appliance configured yet
             </Typography>
           </Box>
-        ) : (
+        )}
+
+        {!isLoading && appliances.length > 0 && (
           <TableContainer>
             <Table size="small" stickyHeader>
               <TableHead>
@@ -307,7 +287,7 @@ function AppliancesList() {
                             }}
                             onClick={() => handleEditClick(appliance)}
                           >
-                            <Typography variant="body1" sx={{ fontWeight: 500, color: getApplianceColor(appliance.id) }}>
+                            <Typography variant="body1" sx={{ fontWeight: 500 }}>
                               {appliance.name}
                             </Typography>
                             <Edit

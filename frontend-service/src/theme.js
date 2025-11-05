@@ -122,8 +122,8 @@ const theme = createTheme({
         root: {
           backgroundColor: '#BD2A2E',
           color: '#fff',
-          paddingTop: '10px',
-          paddingBottom: '10px',
+          paddingTop: '8px',
+          paddingBottom: '8px',
           '& .MuiIconButton-root': {
             color: '#fff',
             '&:hover': {
@@ -153,10 +153,12 @@ const theme = createTheme({
         },
         title: {
           color: '#fff',
-          fontWeight: 600,
+          fontWeight: 500,
+          fontSize: '1rem',
         },
         subheader: {
           color: 'rgba(255, 255, 255, 0.8)',
+          fontSize: '0.875rem',
         },
         avatar: {
           '& .MuiSvgIcon-root': {
