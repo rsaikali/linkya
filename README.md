@@ -66,6 +66,7 @@ La table `linky_realtime` contient les données de consommation Linky :
 - 📊 **Visualisation des métriques** d'entraînement (accuracy, loss, qualité)
 - 🔄 Streaming SSE pour mise à jour en temps réel sans polling
 - 🎨 Design responsive avec Material-UI
+- 🔗 **Liens rapides dans le header** vers Swagger UI, ReDoc et pgweb
 
 ## �📋 Prérequis
 
@@ -155,8 +156,17 @@ make nilm-models
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
+| **Application** | http://localhost | Interface React principale |
+| **Swagger UI** | http://localhost/docs | Documentation interactive de l'API |
+| **ReDoc** | http://localhost/redoc | Documentation API alternative |
 | **Flower** | http://localhost:5555 | Monitoring Celery (sync + NILM) |
 | **pgAdmin** | http://localhost:8080 | Administration TimescaleDB |
+
+### Swagger UI
+- Documentation interactive de toutes les routes API
+- Test direct des endpoints depuis l'interface
+- Schémas de données détaillés
+- Organisation par tags (System, Consumption, Appliances, Signatures, Detections, NILM)
 
 ### Flower
 - Tâches en cours et historique
