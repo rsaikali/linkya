@@ -45,6 +45,9 @@ app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
     description=settings.api_description,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
 # CORS configuration to allow requests from the frontend
@@ -58,7 +61,7 @@ app.add_middleware(
 )
 
 
-@app.get("/")
+@app.get("/", tags=["System"])
 async def root():
     """API root entry point."""
     return {
@@ -77,13 +80,13 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 async def health_check():
     """API health check."""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
-@app.get("/api/consumption/latest")
+@app.get("/api/consumption/latest", tags=["Consumption"])
 async def get_latest_consumption():
     """
     Retrieves the latest energy consumption value.
@@ -100,60 +103,46 @@ async def get_latest_consumption():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.get("/api/consumption/history")
+@app.get("/api/consumption/history", tags=["Consumption"])
 async def get_consumption_history(
-    start_time: Optional[str] = Query(default=None, description="Start time (ISO format), omit for all data"),
-    end_time: Optional[str] = Query(default=None, description="End time (ISO format), omit for all data"),
     interval: str = Query(
         default="auto",
         description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)"
     ),
 ):
     """
-    Retrieves consumption history over a given period.
+    Retrieves all consumption history data.
 
     Args:
-        start_time: Absolute start time (ISO format, optional - if omitted, returns all data)
-        end_time: Absolute end time (ISO format, optional - if omitted, returns all data)
         interval: Data aggregation interval (auto adapts to data range)
 
     Returns:
         List of consumption points aggregated by interval
     """
     try:
-        # If no time range specified, get all available data
-        if start_time is None or end_time is None:
-            # Get min/max timestamps from database
-            all_data_range = db_manager.get_consumption_time_range()
-            if not all_data_range:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Aucune donnée disponible"
-                )
-            start_time_dt = all_data_range['min_time']
-            end_time_dt = all_data_range['max_time']
-            
-            # Auto-determine optimal interval based on data range
-            if interval == "auto":
-                duration_hours = (end_time_dt - start_time_dt).total_seconds() / 3600
-                if duration_hours <= 6:
-                    interval = "raw"
-                elif duration_hours <= 24:
-                    interval = "1 minute"
-                elif duration_hours <= 72:
-                    interval = "5 minutes"
-                elif duration_hours <= 168:
-                    interval = "10 minutes"
-                else:
-                    interval = "1 hour"
-        else:
-            # Parse absolute dates
-            start_time_dt = datetime.fromisoformat(
-                start_time.replace('Z', '+00:00')
+        # Get min/max timestamps from database
+        all_data_range = db_manager.get_consumption_time_range()
+        if not all_data_range:
+            raise HTTPException(
+                status_code=404,
+                detail="Aucune donnée disponible"
             )
-            end_time_dt = datetime.fromisoformat(
-                end_time.replace('Z', '+00:00')
-            )
+        start_time_dt = all_data_range['min_time']
+        end_time_dt = all_data_range['max_time']
+        
+        # Auto-determine optimal interval based on data range
+        if interval == "auto":
+            duration_hours = (end_time_dt - start_time_dt).total_seconds() / 3600
+            if duration_hours <= 6:
+                interval = "raw"
+            elif duration_hours <= 24:
+                interval = "1 minute"
+            elif duration_hours <= 72:
+                interval = "5 minutes"
+            elif duration_hours <= 168:
+                interval = "10 minutes"
+            else:
+                interval = "1 hour"
 
         data = db_manager.get_consumption_history(
             start_time_dt, end_time_dt, interval
@@ -175,7 +164,7 @@ async def get_consumption_history(
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.get("/api/appliances")
+@app.get("/api/appliances", tags=["Appliances"])
 async def get_all_appliances():
     """
     Retrieves the list of all known electrical appliances.
@@ -193,7 +182,7 @@ async def get_all_appliances():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.patch("/api/appliances/{appliance_id}")
+@app.patch("/api/appliances/{appliance_id}", tags=["Appliances"])
 async def update_appliance(appliance_id: int, appliance_data: dict):
     """
     Updates an appliance name.
@@ -231,7 +220,7 @@ async def update_appliance(appliance_id: int, appliance_data: dict):
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
-@app.get("/api/signatures")
+@app.get("/api/signatures", tags=["Signatures"])
 async def get_all_signatures():
     """
     Retrieves all signatures.
@@ -253,7 +242,7 @@ async def get_all_signatures():
         )
 
 
-@app.delete("/api/signatures")
+@app.delete("/api/signatures", tags=["Signatures"])
 async def delete_all_signatures():
     """
     Supprime toutes les signatures de la base de données.
@@ -274,7 +263,7 @@ async def delete_all_signatures():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.delete("/api/signatures/{signature_id}")
+@app.delete("/api/signatures/{signature_id}", tags=["Signatures"])
 async def delete_signature(signature_id: int):
     """
     Deletes a specific signature.
@@ -302,7 +291,7 @@ async def delete_signature(signature_id: int):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.delete("/api/detections")
+@app.delete("/api/detections", tags=["Detections"])
 async def delete_all_detections():
     """
     Supprime toutes les détections de la base de données.
@@ -340,7 +329,7 @@ async def delete_all_detections():
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.patch("/api/detections/{detection_id}/validate")
+@app.patch("/api/detections/{detection_id}/validate", tags=["Detections"])
 async def validate_detection(detection_id: int):
     """
     Marque une détection comme correcte pour l'apprentissage par feedback.
@@ -368,7 +357,7 @@ async def validate_detection(detection_id: int):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.patch("/api/detections/{detection_id}/invalidate")
+@app.patch("/api/detections/{detection_id}/invalidate", tags=["Detections"])
 async def invalidate_detection(detection_id: int):
     """
     Marque une détection comme incorrecte pour l'apprentissage par feedback.
@@ -396,7 +385,7 @@ async def invalidate_detection(detection_id: int):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.patch("/api/detections/{detection_id}/reassign")
+@app.patch("/api/detections/{detection_id}/reassign", tags=["Detections"])
 async def reassign_detection(detection_id: int, request: dict):
     """
     Reassigns a detection to the correct appliance.
@@ -440,64 +429,27 @@ async def reassign_detection(detection_id: int, request: dict):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
-@app.get("/api/detections")
-async def get_detected_appliances(
-    hours: int = Query(
-        default=None,
-        description="Nombre d'heures d'historique (pour périodes longues)"
-    ),
-    minutes: int = Query(
-        default=None,
-        description="Nombre de minutes d'historique (pour courtes périodes)"
-    ),
-):
+@app.get("/api/detections", tags=["Detections"])
+async def get_detected_appliances():
     """
-    Récupère les détections d'appareils par le NILM.
-
-    Args:
-        hours: Nombre d'heures d'historique à récupérer
-        minutes: Nombre de minutes d'historique à récupérer
+    Récupère toutes les détections d'appareils par le NILM.
 
     Returns:
-        Liste des détections avec informations sur les appareils
+        Liste de toutes les détections avec informations sur les appareils
     """
     try:
-        # Déterminer la période à récupérer
-        start_time = None
-        end_time = None
-        
-        if minutes is not None and minutes > 0:
-            delta = timedelta(minutes=minutes)
-            end_time = datetime.now()
-            start_time = end_time - delta
-        elif hours is not None and hours > 0:
-            # Valider les heures (max 1 an = 8760h)
-            if hours < 1 or hours > 8760:
-                raise HTTPException(
-                    status_code=422,
-                    detail="hours doit être entre 1 et 8760"
-                )
-            delta = timedelta(hours=hours)
-            end_time = datetime.now()
-            start_time = end_time - delta
-        elif hours == 0 or minutes == 0:
-            # hours=0 ou minutes=0 signifie "toutes les détections"
-            start_time = None
-            end_time = None
-        else:
-            # Valeur par défaut: 24 heures
-            delta = timedelta(hours=24)
-            end_time = datetime.now()
-            start_time = end_time - delta
+        # Récupérer toutes les détections (pas de filtre temporel)
+        detections = db_manager.get_detected_appliances(None, None)
+        logger.info(f"🔍 get_detected_appliances returned {len(detections)} detections")
 
-        detections = db_manager.get_detected_appliances(start_time, end_time)
-
-        return {
-            "start_time": start_time.isoformat() if start_time else None,
-            "end_time": end_time.isoformat() if end_time else None,
+        result = {
+            "start_time": None,
+            "end_time": None,
             "total_detections": len(detections),
             "detections": detections,
         }
+        logger.info(f"🔍 Returning response with {len(result['detections'])} detections")
+        return result
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -505,7 +457,7 @@ async def get_detected_appliances(
         )
 
 
-@app.post("/api/signatures")
+@app.post("/api/signatures", tags=["Signatures"])
 async def create_signature(signature: SignatureCreate):
     """
     Crée une nouvelle signature d'appareil pour l'entraînement NILM.
@@ -517,85 +469,11 @@ async def create_signature(signature: SignatureCreate):
         signature: Données de la signature (appliance_name, start_time, end_time)
     
     Returns:
-        Status de la tâche Celery
+        Confirmation message with signature details
     """
-    try:
-        logger.info(f"Création de signature pour: {signature.appliance_name}")
-
-        # Valider les timestamps et les normaliser
-        try:
-            start_dt = datetime.fromisoformat(signature.start_time)
-            end_dt = datetime.fromisoformat(signature.end_time)
-            # S'assurer que les deux datetimes ont le même tzinfo si possible
-            if start_dt.tzinfo is None and end_dt.tzinfo is not None:
-                start_dt = start_dt.replace(tzinfo=end_dt.tzinfo)
-            elif start_dt.tzinfo is not None and end_dt.tzinfo is None:
-                end_dt = end_dt.replace(tzinfo=start_dt.tzinfo)
-        except ValueError as e:
-            logger.error(f"Format de timestamp invalide: {str(e)}")
-            raise HTTPException(status_code=422, detail=f"Format de timestamp invalide: {str(e)}")
-
-        # Log détaillé avant comparaison
-        logger.info(f"Comparaison: {start_dt} >= {end_dt} = {start_dt >= end_dt}")
-
-        if start_dt >= end_dt:
-            logger.error(f"start_time >= end_time: {start_dt} >= {end_dt}")
-            raise HTTPException(
-                status_code=422,
-                detail=f"start_time doit être antérieur à end_time ({start_dt} >= {end_dt})"
-            )
-        
-        if not signature.appliance_name.strip():
-            logger.error("appliance_name vide")
-            raise HTTPException(
-                status_code=422,
-                detail="appliance_name ne peut pas être vide"
-            )
-        
-        # Utiliser l'instance Celery singleton depuis config
-        from .config import get_celery_app
-        
-        celery_app = get_celery_app()
-        logger.info("Celery app récupérée")
-        
-        # Envoyer la tâche à la queue NILM-CNN
-        task = celery_app.send_task(
-            'add_cnn_signature',
-            args=(
-                signature.appliance_name,
-                signature.start_time,
-                signature.end_time,
-                False
-            ),
-            queue='nilm_cnn',
-            routing_key='nilm_cnn.add_cnn_signature'
-        )
-        
-        logger.info(f"Tâche Celery créée: {task.id}")
-        
-        response = {
-            "status": "pending",
-            "message": f"Signature en cours de traitement pour {signature.appliance_name}",
-            "task_id": str(task.id),
-            "appliance_name": signature.appliance_name,
-            "start_time": signature.start_time,
-            "end_time": signature.end_time,
-        }
-        
-        logger.info(f"Réponse: {response}")
-        return response
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Erreur lors de la création de signature: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur lors de la création de la signature: {str(e)}"
-        )
 
 
-@app.post("/api/nilm/train")
+@app.post("/api/nilm/train", tags=["NILM"])
 async def trigger_nilm_training():
     """
     Lance l'entraînement manuel du modèle NILM-CNN.
@@ -604,7 +482,7 @@ async def trigger_nilm_training():
     avant de lancer le nouveau.
     
     Returns:
-        Status de la tâche Celery
+        Task ID and status
     """
     try:
         from .config import get_celery_app
@@ -655,15 +533,15 @@ async def trigger_nilm_training():
         )
 
 
-@app.post("/api/nilm/detect")
+
+
+@app.post("/api/nilm/detect", tags=["NILM"])
 async def trigger_nilm_detection():
     """
-    Lance la détection manuelle d'appareils avec NILM-CNN.
-    
-    Envoie une tâche Celery pour détecter les appareils dans les données récentes.
+    Lance la détection automatique d'appareils par NILM-CNN.
     
     Returns:
-        Status de la tâche Celery
+        Task ID and status
     """
     try:
         from .config import get_celery_app
@@ -694,7 +572,7 @@ async def trigger_nilm_detection():
         )
 
 
-@app.get("/api/nilm/models")
+@app.get("/api/nilm/models", tags=["NILM"])
 async def get_nilm_models(
     page: int = Query(default=1, ge=1, description="Numéro de page"),
     per_page: int = Query(default=10, ge=1, le=100, description="Nombre d'éléments par page"),
@@ -728,7 +606,7 @@ async def get_nilm_models(
         )
 
 
-@app.delete("/api/nilm/models/{model_id}")
+@app.delete("/api/nilm/models/{model_id}", tags=["NILM"])
 async def delete_nilm_model(model_id: int):
     """
     Supprime un modèle NILM-CNN de la base de données et du filesystem.
@@ -795,7 +673,7 @@ async def delete_nilm_model(model_id: int):
         )
 
 
-@app.delete("/api/nilm/models")
+@app.delete("/api/nilm/models", tags=["NILM"])
 async def delete_all_nilm_models():
     """
     Supprime TOUS les modèles NILM-CNN de la base de données et
@@ -902,7 +780,7 @@ async def delete_all_nilm_models():
 # ============================================================================
 
 
-@app.get("/api/signatures/export")
+@app.get("/api/signatures/export", tags=["Signatures"])
 async def export_signatures():
     """
     Exporte toutes les signatures au format CSV.
