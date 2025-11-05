@@ -7,7 +7,7 @@ import ChartsContainer from './components/ChartsContainer';
 import DetectionsList from './components/DetectionsList';
 import SignaturesList from './components/SignaturesList';
 import AppliancesList from './components/AppliancesList';
-import { ChartProvider } from './context/ChartContext';
+import { DataProvider } from './context/DataContext';
 import { ApplianceColorsProvider } from './context/ApplianceColorsContext';
 import { ThemeContextProvider, useThemeContext } from './context/ThemeContext';
 
@@ -18,7 +18,7 @@ function AppContent() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <ApplianceColorsProvider>
-        <ChartProvider>
+        <DataProvider>
           <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
             <Header />
 
@@ -62,7 +62,7 @@ function AppContent() {
           </Typography>
         </Box>
         </Box>
-        </ChartProvider>
+        </DataProvider>
       </ApplianceColorsProvider>
     </ThemeProvider>
   );

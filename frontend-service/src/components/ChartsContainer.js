@@ -14,120 +14,28 @@ import {
 import { ZoomOutMap } from '@mui/icons-material';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import { apiService } from '../services/api';
-import { detectionsWS } from '../services/websocket';
 import CombinedChart from './CombinedChart';
 import SignatureModal from './SignatureModal';
-import { useChart } from '../context/ChartContext';
+import { useData } from '../context/DataContext';
 
 const ChartsContainer = () => {
-  const { setZoomState, setVisibleTimeRange } = useChart();
-  const [rawData, setRawData] = useState(null);
-  const [detections, setDetections] = useState([]);
-  const [signatures, setSignatures] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [error, setError] = useState(null);
+  const { 
+    rawData, 
+    detections, 
+    signatures,
+    loading,
+    loadingProgress,
+    errors,
+    zoomState,
+    setZoomState,
+    setVisibleTimeRange,
+    refreshSignatures,
+  } = useData();
+  
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
 
-  // Load all data on mount
-  useEffect(() => {
-    const loadAllData = async () => {
-      try {
-        setLoading(true);
-        setLoadingProgress(10);
-        
-        setLoadingProgress(30);
-        const result = await apiService.getConsumptionHistory(null, null, '30 seconds');
-        setLoadingProgress(70);
-        
-        setRawData(result);
-        
-        // Initialize visible period for last 48 hours
-        if (result?.data && result.data.length > 0) {
-          const now = new Date();
-          const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-          const minIndex48h = result.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
-          const visibleMin = minIndex48h !== -1 ? minIndex48h : 0;
-          const visibleMax = result.data.length - 1;
-          
-          setZoomState({
-            min: visibleMin,
-            max: visibleMax,
-            dataLength: result.data.length,
-          });
-          
-          // Set visible time range for DetectionsList filtering
-          if (result.data[visibleMin] && result.data[visibleMax]) {
-            const startTime = new Date(result.data[visibleMin].time);
-            const endTime = new Date(result.data[visibleMax].time);
-            setVisibleTimeRange({ startTime, endTime });
-          }
-        }
-        
-        setLoadingProgress(100);
-        setError(null);
-      } catch (err) {
-        setError('Impossible de recuperer les donnees');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAllData();
-
-    // Load detections
-    const fetchDetections = async () => {
-      try {
-        const result = await apiService.getDetections(0);
-        setDetections(result.detections || []);
-      } catch (err) {
-        console.error('Failed to fetch detections:', err);
-      }
-    };
-    fetchDetections();
-
-    // Load signatures
-    const fetchSignatures = async () => {
-      try {
-        const result = await apiService.getSignatures();
-        setSignatures(result.signatures || []);
-      } catch (err) {
-        console.error('Failed to fetch signatures:', err);
-      }
-    };
-    fetchSignatures();
-
-    // Setup WebSocket for real-time updates
-    const handleNewDetection = (detection) => {
-      setDetections(prev => [...prev, detection]);
-    };
-
-    const handleDetectionComplete = async () => {
-      try {
-        const result = await apiService.getDetections(0);
-        setDetections(result.detections || []);
-      } catch (err) {
-        console.error('Failed to refresh detections:', err);
-      }
-    };
-
-    const handleDetectionsCleared = () => {
-      setDetections([]);
-    };
-
-    detectionsWS.on('new_detection', handleNewDetection);
-    detectionsWS.on('detection_complete', handleDetectionComplete);
-    detectionsWS.on('detections_cleared', handleDetectionsCleared);
-    detectionsWS.connect();
-
-    return () => {
-      detectionsWS.off('new_detection', handleNewDetection);
-      detectionsWS.off('detection_complete', handleDetectionComplete);
-      detectionsWS.off('detections_cleared', handleDetectionsCleared);
-    };
-  }, [setZoomState, setVisibleTimeRange]);
+  // No need to load data - DataContext handles it all
 
   const handleResetZoom = () => {
     if (rawData?.data) {
@@ -154,16 +62,15 @@ const ChartsContainer = () => {
     setShowSignatureModal(false);
     setSelectedRange(null);
     
-    try {
-      const result = await apiService.getSignatures();
-      setSignatures(result.signatures || []);
-      window.dispatchEvent(new CustomEvent('signature-created'));
-    } catch (err) {
-      console.error('Failed to refresh signatures:', err);
-    }
+    // Trigger signature refresh and notify other components
+    await refreshSignatures();
+    window.dispatchEvent(new CustomEvent('signature-created'));
   };
 
-  if (loading) {
+  const isLoading = loading.consumption;
+  const error = errors.consumption;
+
+  if (isLoading) {
     return (
       <Card>
         <CardContent sx={{ textAlign: 'center', py: 4 }}>
@@ -203,7 +110,7 @@ const ChartsContainer = () => {
           title="Historique de consommation"
           titleTypographyProps={{ variant: 'h5' }}
           subheader={
-            loading 
+            isLoading 
               ? `Chargement des donnees (${loadingProgress}%)...`
               : 'Molette: zoom - Glisser: naviguer sur la période - Clic droit + glisser: créer une signature'
           }
@@ -232,7 +139,7 @@ const ChartsContainer = () => {
                 size="small"
                 startIcon={<ZoomOutMap />}
                 onClick={handleResetZoom}
-                disabled={loading}
+                disabled={isLoading}
                 sx={{ textTransform: 'none' }}
               >
                 Réinitialiser la vue
@@ -241,7 +148,7 @@ const ChartsContainer = () => {
           </MuiTooltip>
         </Toolbar>
         
-        {loading && (
+        {isLoading && (
           <LinearProgress 
             variant="determinate" 
             value={loadingProgress} 

@@ -27,6 +27,7 @@ import {
 import { Edit, Close } from '@mui/icons-material';
 import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
 import api from '../services/api';
+import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 // Custom Material Symbols Icon component
@@ -75,9 +76,8 @@ function AppliancesList() {
     getApplianceIcon,
     availableIcons,
   } = useApplianceColors();
-  const [appliances, setAppliances] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { appliances, loading, errors, refreshAppliances } = useData();
+  
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
   
@@ -86,30 +86,11 @@ function AppliancesList() {
   const [selectedApplianceId, setSelectedApplianceId] = useState(null);
   const [menuView, setMenuView] = useState('main'); // 'main', 'icon', 'color'
 
-  const fetchAppliances = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Use data from context
+  const isLoading = loading.appliances;
+  const error = errors.appliances;
 
-      const response = await api.get('/api/appliances');
-      const data = response.data;
-
-      if (data && data.appliances && Array.isArray(data.appliances)) {
-        setAppliances(data.appliances);
-      } else {
-        setAppliances([]);
-      }
-    } catch (err) {
-      console.error('Error fetching appliances:', err);
-      setError('Unable to load appliances');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAppliances();
-  }, [fetchAppliances]);
+  // No need to fetch appliances - DataContext handles it all
 
   const handleEditClick = (appliance) => {
     setEditingId(appliance.id);
@@ -127,12 +108,8 @@ function AppliancesList() {
         name: editingName,
       });
 
-      // Mettre à jour la liste locale
-      setAppliances(
-        appliances.map((a) =>
-          a.id === applianceId ? { ...a, name: editingName } : a
-        )
-      );
+      // Refresh the list from context
+      await refreshAppliances();
 
       setEditingId(null);
       setEditingName('');
@@ -168,7 +145,7 @@ function AppliancesList() {
     handleStyleMenuClose();
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <Card sx={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
         <CardHeader 

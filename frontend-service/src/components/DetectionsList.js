@@ -35,8 +35,7 @@ import { useTheme } from '@mui/material/styles';
 import { Check, Close, Search, MoreVert, SwapHoriz } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
-import { detectionsWS } from '../services/websocket';
-import { useChart } from '../context/ChartContext';
+import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 
 // Custom Material Symbols Icon component
@@ -87,93 +86,15 @@ const QualityIcon = ({ confidence }) => {
  * Composant affichant les détections d'appareils récentes
  */
 function DetectionsList() {
-  const { visibleTimeRange } = useChart();
-  const [detections, setDetections] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [totalDetections, setTotalDetections] = useState(0);
+  const { visibleDetections, loading, errors, refreshDetections } = useData();
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
 
-  const fetchDetections = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Si on a une période visible depuis le graphique, filtrer les détections
-      let allDetections = [];
-      if (visibleTimeRange) {
-        // Récupérer toutes les détections
-        const data = await apiService.getDetections(null);
-        const detectionsArray = data?.detections || data || [];
-        
-        // Filtrer celles qui sont dans la période visible
-        const startTime = visibleTimeRange.startTime.getTime();
-        const endTime = visibleTimeRange.endTime.getTime();
-        
-        allDetections = detectionsArray.filter(d => {
-          const detectionStart = new Date(d.start_time).getTime();
-          const detectionEnd = new Date(d.end_time).getTime();
-          
-          // Une détection est visible si elle chevauche la période
-          return (detectionStart <= endTime && detectionEnd >= startTime);
-        });
-      } else {
-        // Sinon, récupérer toutes les détections (fallback)
-        const data = await apiService.getDetections(null);
-        allDetections = data?.detections || data || [];
-      }
-      
-      setDetections(allDetections);
-      setTotalDetections(allDetections.length);
-    } catch (err) {
-      console.error('Erreur lors de la récupération des détections:', err);
-      setError('Impossible de charger les détections');
-    } finally {
-      setLoading(false);
-    }
-  }, [visibleTimeRange]);
-
-  useEffect(() => {
-    fetchDetections();
-
-    // Setup WebSocket for real-time detection updates
-    const handleNewDetection = (detection) => {
-      // Refresh the list to include the new detection
-      fetchDetections();
-    };
-
-    const handleDetectionStart = (data) => {
-    };
-
-    const handleDetectionComplete = (data) => {
-      // Refresh the entire list when job is complete
-      fetchDetections();
-    };
-
-    const handleError = (errorData) => {
-      console.error('[DetectionsList] Detections WebSocket error:', errorData);
-    };
-
-    // Register event handlers
-    detectionsWS.on('new_detection', handleNewDetection);
-    detectionsWS.on('detection_start', handleDetectionStart);
-    detectionsWS.on('detection_complete', handleDetectionComplete);
-    detectionsWS.on('error', handleError);
-
-    // Connect to WebSocket
-    detectionsWS.connect();
-
-    // Cleanup on unmount
-    return () => {
-      detectionsWS.off('new_detection', handleNewDetection);
-      detectionsWS.off('detection_start', handleDetectionStart);
-      detectionsWS.off('detection_complete', handleDetectionComplete);
-      detectionsWS.off('error', handleError);
-    };
-  }, [fetchDetections]);
+  // No need to fetch detections or setup WebSocket - DataContext handles it all
+  const totalDetections = visibleDetections.length;
+  const error = errors.detections;
 
   const handleSnackbarClose = () => {
     setSnackbar({ ...snackbar, open: false });
@@ -187,7 +108,7 @@ function DetectionsList() {
         message: `Détection validée: ${detection.name}`,
         severity: 'success',
       });
-      fetchDetections();
+      refreshDetections();
     } catch (err) {
       setSnackbar({
         open: true,
@@ -205,7 +126,7 @@ function DetectionsList() {
         message: `Détection invalidée: ${detection.name}`,
         severity: 'info',
       });
-      fetchDetections();
+      refreshDetections();
     } catch (err) {
       setSnackbar({
         open: true,
@@ -234,7 +155,7 @@ function DetectionsList() {
       });
       handleCloseDeleteAllDialog();
       // Rafraîchir la liste
-      fetchDetections();
+      refreshDetections();
     } catch (error) {
       console.error('Erreur lors de la suppression des détections:', error);
       const errorMsg = error.response?.data?.detail || 'Erreur lors de la suppression des détections';
@@ -343,11 +264,11 @@ function DetectionsList() {
         </Toolbar>
 
         <CardContent sx={{ flexGrow: 1, overflow: 'hidden', p: 0, display: 'flex', flexDirection: 'column' }}>
-          {((loading && detections.length === 0) || totalDetections === 0) && (
+          {((loading.detections && visibleDetections.length === 0) || totalDetections === 0) && (
             <Box sx={{ p: 2 }}>
-              {loading && detections.length === 0 && <LinearProgress />}
+              {loading.detections && visibleDetections.length === 0 && <LinearProgress />}
 
-              {totalDetections === 0 && !loading && (
+              {totalDetections === 0 && !loading.detections && (
                 <Typography color="textSecondary" align="center" variant="body2">
                   Aucune détection
                 </Typography>
@@ -368,7 +289,7 @@ function DetectionsList() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {detections.map((detection) => (
+                    {visibleDetections.map((detection) => (
                       <DetectionRow
                         key={detection.id}
                         detection={detection}
@@ -376,7 +297,7 @@ function DetectionsList() {
                         onInvalidate={handleInvalidate}
                       />
                     ))}
-                    {loading && (
+                    {loading.detections && (
                       <TableRow>
                         <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
                           <CircularProgress size={32} />
