@@ -125,7 +125,7 @@ services:
         condition: service_started
     volumes:
       - ./nilm-cnn-service/src:/app/src
-      - ./models:/app/models
+      - ./.data/models:/app/models
       - nilm_uv_cache:/root/.cache/uv
     networks:
       - nilmia-network
@@ -151,7 +151,7 @@ services:
         condition: service_healthy
     volumes:
       - ./nilm-cnn-service/src:/app/src
-      - ./models:/app/models
+      - ./.data/models:/app/models
     networks:
       - nilmia-network
     restart: unless-stopped
@@ -195,7 +195,7 @@ services:
         condition: service_started
     volumes:
       - ./backend-service/src:/app/src
-      - ./models:/app/models
+      - ./.data/models:/app/models
     networks:
       - nilmia-network
     restart: unless-stopped

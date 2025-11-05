@@ -63,5 +63,7 @@ tmp/
 temp/
 *.tmp
 
-# ML Models
-models/
+# Data and models
+.data/
+.docs/
+
