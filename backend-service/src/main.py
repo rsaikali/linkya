@@ -396,6 +396,50 @@ async def invalidate_detection(detection_id: int):
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
+@app.patch("/api/detections/{detection_id}/reassign")
+async def reassign_detection(detection_id: int, request: dict):
+    """
+    Reassigns a detection to the correct appliance.
+    Creates a positive signature for the correct appliance
+    and hides the detection from the list.
+
+    Args:
+        detection_id: ID of the detection to reassign
+        request: JSON with 'appliance_name' field
+
+    Returns:
+        Message de confirmation avec informations de réassignation
+    """
+    try:
+        appliance_name = request.get("appliance_name")
+        if not appliance_name:
+            raise HTTPException(
+                status_code=400,
+                detail="Le nom de l'appareil est requis"
+            )
+
+        result = db_manager.reassign_detection(detection_id, appliance_name)
+        if not result:
+            raise HTTPException(status_code=404, detail="Détection non trouvée")
+
+        return {
+            "status": "success",
+            "message": (
+                f"Détection réassignée de {result['incorrect_appliance']} "
+                f"à {result['correct_appliance']}"
+            ),
+            "reassignment": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Erreur lors de la réassignation de la détection "
+            f"{detection_id}: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
 @app.get("/api/detections")
 async def get_detected_appliances(
     hours: int = Query(
@@ -743,6 +787,107 @@ async def delete_nilm_model(model_id: int):
     except Exception as e:
         logger.error(
             f"Erreur lors de la suppression du modèle {model_id}: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
+
+
+@app.delete("/api/nilm/models")
+async def delete_all_nilm_models():
+    """
+    Supprime TOUS les modèles NILM-CNN de la base de données et
+    du filesystem.
+
+    Returns:
+        Confirmation de suppression avec statistiques
+
+    Raises:
+        HTTPException 500: Erreur serveur
+    """
+    import os
+    import glob
+
+    try:
+        # Récupérer tous les modèles avant de les supprimer
+        models_data = db_manager.get_cnn_models_paginated(
+            page=1, per_page=1000
+        )
+        all_models = models_data.get("models", [])
+        
+        deleted_count = 0
+        deleted_files = []
+        errors = []
+        
+        # Supprimer chaque modèle de la base de données
+        for model in all_models:
+            try:
+                model_id = model.get("id")
+                model_path = model.get("model_path")
+                
+                # Supprimer de la base de données
+                db_manager.delete_cnn_model(model_id)
+                deleted_count += 1
+                
+                # Supprimer les fichiers du filesystem
+                if model_path and os.path.exists(model_path):
+                    try:
+                        # Supprimer le fichier .keras
+                        os.remove(model_path)
+                        deleted_files.append(model_path)
+                        
+                        # Supprimer le fichier metadata JSON
+                        metadata_path = model_path.replace(
+                            ".keras", ".metadata.json"
+                        )
+                        if os.path.exists(metadata_path):
+                            os.remove(metadata_path)
+                            deleted_files.append(metadata_path)
+                    except OSError as e:
+                        errors.append(
+                            f"Fichier {model_path}: {str(e)}"
+                        )
+            except Exception as e:
+                errors.append(f"Modèle {model_id}: {str(e)}")
+        
+        # Nettoyer les fichiers orphelins dans /models
+        try:
+            models_dir = "/models"
+            if os.path.exists(models_dir):
+                orphan_files = glob.glob(
+                    os.path.join(models_dir, "*.keras")
+                )
+                orphan_files += glob.glob(
+                    os.path.join(models_dir, "*.metadata.json")
+                )
+                
+                for file_path in orphan_files:
+                    try:
+                        os.remove(file_path)
+                        deleted_files.append(file_path)
+                        logger.info(f"Fichier orphelin supprimé: {file_path}")
+                    except OSError as e:
+                        errors.append(f"Fichier orphelin {file_path}: {str(e)}")
+        except Exception as e:
+            logger.warning(f"Erreur lors du nettoyage des fichiers orphelins: {e}")
+        
+        logger.info(
+            f"Suppression de tous les modèles terminée: "
+            f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)"
+        )
+        
+        return {
+            "message": f"{deleted_count} modèle(s) supprimé(s) avec succès",
+            "deleted_count": deleted_count,
+            "deleted_files": deleted_files,
+            "errors": errors if errors else None,
+        }
+        
+    except Exception as e:
+        logger.error(
+            f"Erreur lors de la suppression de tous les modèles: {str(e)}",
             exc_info=True
         )
         raise HTTPException(
