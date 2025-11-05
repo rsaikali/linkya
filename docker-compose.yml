@@ -205,22 +205,18 @@ services:
       timeout: 10s
       retries: 3
 
-  # Frontend React (dev server with hot reload)
-  frontend:
+  # React dev server (hot reload)
+  react-dev:
     build:
       context: ./frontend-service
-      dockerfile: Dockerfile
-    container_name: nilmia-frontend
+      dockerfile: Dockerfile.dev
+    container_name: nilmia-react-dev
     command: npm start
     environment:
       TZ: Europe/Paris
       REACT_APP_API_URL: ${REACT_APP_API_URL}
       REACT_APP_WS_URL: ${REACT_APP_WS_URL}
-    ports:
-      - "3000:3000"
-    depends_on:
-      backend:
-        condition: service_healthy
+      WDS_SOCKET_PORT: 0
     volumes:
       - ./frontend-service/src:/app/src
       - ./frontend-service/public:/app/public
@@ -231,6 +227,23 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+
+  # Nginx reverse proxy
+  frontend:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile.nginx
+    container_name: nilmia-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      react-dev:
+        condition: service_started
+    networks:
+      - nilmia-network
+    restart: unless-stopped
 
   # pgweb - Interface web PostgreSQL/TimescaleDB
   pgweb:
