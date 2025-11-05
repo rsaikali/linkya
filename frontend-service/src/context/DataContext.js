@@ -128,7 +128,7 @@ export const DataProvider = ({ children }) => {
       setLoading(prev => ({ ...prev, appliances: true }));
       setErrors(prev => ({ ...prev, appliances: null }));
 
-      const result = await apiService.getAppliances();
+      const result = await apiService.getAllAppliances();
       setAppliances(result.appliances || []);
     } catch (err) {
       console.error('Error loading appliances:', err);
