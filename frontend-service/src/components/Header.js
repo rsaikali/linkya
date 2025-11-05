@@ -7,6 +7,7 @@ import {
   Chip,
   Tooltip,
   LinearProgress,
+  IconButton,
   keyframes,
 } from '@mui/material';
 import {
@@ -15,6 +16,9 @@ import {
   AccessTime,
   FiberManualRecord,
   ModelTraining,
+  Description,
+  MenuBook,
+  Storage,
 } from '@mui/icons-material';
 import api, { apiService } from '../services/api';
 import { consumptionWS } from '../services/websocket';
@@ -347,6 +351,63 @@ const Header = () => {
                 />
               </Tooltip>
             )}
+
+            {/* Liens vers les outils de documentation et monitoring */}
+            <Box sx={{ display: 'flex', gap: 0.5, ml: 1 }}>
+              <Tooltip title="Swagger UI - Documentation API interactive">
+                <IconButton
+                  size="small"
+                  href="/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    color: 'white',
+                    bgcolor: (theme) => theme.palette.overlay.white[10],
+                    '&:hover': {
+                      bgcolor: (theme) => theme.palette.overlay.white[20],
+                    },
+                  }}
+                >
+                  <Description sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="ReDoc - Documentation API alternative">
+                <IconButton
+                  size="small"
+                  href="/redoc"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    color: 'white',
+                    bgcolor: (theme) => theme.palette.overlay.white[10],
+                    '&:hover': {
+                      bgcolor: (theme) => theme.palette.overlay.white[20],
+                    },
+                  }}
+                >
+                  <MenuBook sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="pgweb - Interface TimescaleDB">
+                <IconButton
+                  size="small"
+                  href="http://localhost:8081"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    color: 'white',
+                    bgcolor: (theme) => theme.palette.overlay.white[10],
+                    '&:hover': {
+                      bgcolor: (theme) => theme.palette.overlay.white[20],
+                    },
+                  }}
+                >
+                  <Storage sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Tooltip>
+            </Box>
 
             {/* Indicateur de mise à jour clignotant */}
             <Tooltip title={isUpdating ? 'Mise à jour en cours...' : 'En attente de données'}>
