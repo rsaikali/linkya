@@ -109,7 +109,6 @@ export function ApplianceColorsProvider({ children }) {
   useEffect(() => {
     const savedColors = getApplianceColorsFromCookie();
     const savedIcons = getApplianceIconsFromCookie();
-    console.log('[ApplianceColors] Loaded from cookies - Colors:', savedColors, 'Icons:', savedIcons);
     setApplianceColors(savedColors);
     setApplianceIcons(savedIcons);
   }, []);
@@ -136,20 +135,14 @@ export function ApplianceColorsProvider({ children }) {
 
   // Fonction pour obtenir la couleur d'un appareil (pure - ne modifie pas l'état)
   const getApplianceColor = (applianceId) => {
-    console.log('[ApplianceColors] getApplianceColor called with ID:', applianceId, 'Available colors:', Object.keys(applianceColors));
-    
     if (applianceColors[applianceId]) {
       return applianceColors[applianceId];
     }
     
     // Si l'appareil n'a pas de couleur, en retourner une aléatoire
-    // (elle sera sauvegardée par l'appelant si nécessaire)
+    // (elle sera sauvegardée par ensureApplianceColors si nécessaire)
     const usedColors = Object.values(applianceColors);
-    const newColor = getRandomUnusedColor(usedColors);
-    
-    console.log('[ApplianceColors] Would assign color:', newColor, 'to ID:', applianceId);
-    
-    return newColor;
+    return getRandomUnusedColor(usedColors);
   };
 
   // Fonction pour obtenir l'icône d'un appareil (pure - ne modifie pas l'état)
