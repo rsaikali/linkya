@@ -1090,17 +1090,25 @@ class ChangePointPatternDetector:
         self.min_duration = min_duration
         self.signature_profiles = {}  # {appliance_id: [profils]}
 
-    def add_signature_profile(self, appliance_id: int, appliance_name: str,
-                             power_sequence: np.ndarray, duration: int,
-                             signature_id: Optional[int] = None):
+    def add_signature_profile(
+        self,
+        appliance_id: int,
+        appliance_name: str,
+        power_sequence: np.ndarray,
+        duration: int,
+        signature_id: Optional[int] = None,
+        morphology: Optional[Dict[str, Any]] = None
+    ):
         """
-        Ajoute un profil de signature depuis les données d'entraînement.
+        Ajoute un profil de signature avec analyse morphologique.
 
         Args:
             appliance_id: ID de l'appareil
             appliance_name: Nom de l'appareil
-            power_sequence: Séquence de puissance normalisée (0-1)
+            power_sequence: Séquence de puissance
             duration: Durée en secondes
+            signature_id: ID de la signature (optional)
+            morphology: Analyse morphologique (optional)
         """
         if appliance_id not in self.signature_profiles:
             self.signature_profiles[appliance_id] = {
@@ -1113,13 +1121,22 @@ class ChangePointPatternDetector:
             profile_max = np.max(power_sequence)
             if profile_max > 0:
                 normalized = power_sequence / profile_max
-                self.signature_profiles[appliance_id]['profiles'].append({
+                
+                profile = {
                     'signature_id': signature_id,
                     'pattern': normalized,
                     'duration': duration,
                     'avg_power': float(np.mean(power_sequence)),
                     'max_power': float(profile_max)
-                })
+                }
+                
+                # Ajouter features morphologiques si disponibles
+                if morphology:
+                    profile['morphology'] = morphology
+                
+                self.signature_profiles[appliance_id]['profiles'].append(
+                    profile
+                )
 
     def detect_change_points(self, aggregate_power: np.ndarray) -> List[Dict[str, Any]]:
         """
@@ -1188,10 +1205,13 @@ class ChangePointPatternDetector:
         Returns:
             Liste de patterns avec séquences et métadonnées
         """
+        from src.morphology import MorphologyAnalyzer
+        
         if len(change_points) < 2:
             return []
 
         patterns = []
+        analyzer = MorphologyAnalyzer()
 
         # Regrouper les change points en segments
         i = 0
@@ -1215,11 +1235,26 @@ class ChangePointPatternDetector:
                         # Extraire la séquence
                         pattern = aggregate_power[start:end]
 
-                        # Note: On ne soustrait PAS la baseline car les profils de signature
-                        # sont stockés avec les valeurs originales (incluant la baseline).
-                        # Le change point detection isole déjà les périodes d'activation.
+                        # Note: On ne soustrait PAS la baseline car les
+                        # profils de signature sont stockés avec les
+                        # valeurs originales (incluant la baseline).
+                        # Le change point detection isole déjà les
+                        # périodes d'activation.
 
-                        if len(pattern) > 0 and np.max(pattern) > self.min_power_change:
+                        if (len(pattern) > 0 and
+                                np.max(pattern) > self.min_power_change):
+                            # Calculer morphologie du pattern détecté
+                            try:
+                                morphology = analyzer.analyze(
+                                    pattern.tolist(),
+                                    start_time=None
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"Erreur calcul morphologie pattern: {e}"
+                                )
+                                morphology = None
+                            
                             patterns.append({
                                 'start_idx': start,
                                 'end_idx': end,
@@ -1227,7 +1262,8 @@ class ChangePointPatternDetector:
                                 'pattern': pattern,
                                 'avg_power': float(np.mean(pattern)),
                                 'max_power': float(np.max(pattern)),
-                                'energy_wh': float(np.sum(pattern) / 3600)
+                                'energy_wh': float(np.sum(pattern) / 3600),
+                                'morphology': morphology
                             })
 
                     i = end_idx + 1
@@ -1241,15 +1277,16 @@ class ChangePointPatternDetector:
 
     def match_pattern(
         self,
-        pattern_data: Dict[str, Any]
+        pattern_data: Dict[str, Any],
+        pattern_morphology: Optional[Dict[str, Any]] = None
     ) -> Optional[Tuple[int, str, Optional[int], float]]:
         """
         Compare un pattern avec les profils de signatures connus.
-
-        Utilise DTW (Dynamic Time Warping) simplifié pour comparer les formes.
+        Utilise features morphologiques si disponibles pour meilleur matching.
 
         Args:
             pattern_data: Données du pattern à matcher
+            pattern_morphology: Analyse morphologique du pattern (optional)
 
         Returns:
             (appliance_id, appliance_name, signature_id, confidence) ou None
@@ -1272,31 +1309,31 @@ class ChangePointPatternDetector:
 
         for appliance_id, data in self.signature_profiles.items():
             appliance_name = data['name']
-            logger.info(f"Comparaison pattern ({pattern_duration}s, {pattern_power:.0f}W) avec {len(data['profiles'])} profils de {appliance_name}")
+            logger.info(
+                f"Comparaison pattern ({pattern_duration}s, "
+                f"{pattern_power:.0f}W) avec {len(data['profiles'])} "
+                f"profils de {appliance_name}"
+            )
 
             for i, profile in enumerate(data['profiles']):
-                # Vérifier la cohérence de durée (±50%)
+                # Vérifier cohérence durée (±50%)
                 duration_ratio = pattern_duration / profile['duration']
                 if duration_ratio < 0.5 or duration_ratio > 2.0:
-                    logger.info(f"  Profil#{i}: ✗ durée (pattern={pattern_duration}s, prof={profile['duration']}s, ratio={duration_ratio:.2f})")
                     continue
-                logger.info(f"  Profil#{i}: ✓ durée OK (ratio={duration_ratio:.2f})")
 
-                # Vérifier la cohérence de puissance (±30%)
+                # Vérifier cohérence puissance (±30%)
                 power_ratio = pattern_power / profile['avg_power']
                 if power_ratio < 0.7 or power_ratio > 1.3:
-                    logger.info(f"  Profil#{i}: ✗ puissance (pattern={pattern_power:.0f}W, prof={profile['avg_power']:.0f}W, ratio={power_ratio:.2f})")
                     continue
-                logger.info(f"  Profil#{i}: ✓ puissance OK (ratio={power_ratio:.2f})")
 
-                # Comparer les formes avec corrélation
-                # Redimensionner pour avoir même longueur
-                target_len = min(len(pattern_normalized), len(profile['pattern']))
+                # Comparer formes avec corrélation
+                target_len = min(
+                    len(pattern_normalized),
+                    len(profile['pattern'])
+                )
 
                 if target_len < 10:
-                    logger.info(f"  Profil#{i}: ✗ trop court (pattern_len={len(pattern_normalized)}, profile_len={len(profile['pattern'])}, target_len={target_len})")
                     continue
-                logger.info(f"  Profil#{i}: ✓ longueur OK (target_len={target_len})")
 
                 # Sous-échantillonner
                 pattern_resampled = np.interp(
@@ -1310,18 +1347,56 @@ class ChangePointPatternDetector:
                     profile['pattern']
                 )
 
-                # Calculer la corrélation (absolue pour gérer les inversions de phase)
-                correlation = np.corrcoef(pattern_resampled, profile_resampled)[0, 1]
+                # Corrélation de forme
+                correlation = np.corrcoef(
+                    pattern_resampled,
+                    profile_resampled
+                )[0, 1]
                 abs_correlation = abs(correlation)
 
-                # Score combiné : moins de poids sur corrélation, plus sur durée/puissance
-                # Car durée et puissance sont très fiables pour identifier le ballon d'eau chaude
+                # Scores de base
                 duration_score = 1.0 - abs(1.0 - duration_ratio)
                 power_score = 1.0 - abs(1.0 - power_ratio)
+                
+                # Score morphologique si disponible
+                morphology_score = 0.0
+                has_morphology = (
+                    pattern_morphology and 
+                    'morphology' in profile
+                )
+                
+                if has_morphology:
+                    morphology_score = self._compute_morphology_similarity(
+                        pattern_morphology,
+                        profile['morphology']
+                    )
+                    logger.info(
+                        f"  Profil#{i}: morphology_score={morphology_score:.3f}"
+                    )
 
-                combined_score = (abs_correlation * 0.2 + duration_score * 0.4 + power_score * 0.4)
+                # Score combiné avec pondération adaptative
+                if has_morphology:
+                    # Avec morphologie: plus de poids sur features avancées
+                    combined_score = (
+                        abs_correlation * 0.15 +
+                        duration_score * 0.25 +
+                        power_score * 0.25 +
+                        morphology_score * 0.35
+                    )
+                else:
+                    # Sans morphologie: méthode classique
+                    combined_score = (
+                        abs_correlation * 0.2 +
+                        duration_score * 0.4 +
+                        power_score * 0.4
+                    )
 
-                logger.info(f"  Profil#{i}: corr={correlation:.3f} (abs={abs_correlation:.3f}), dur_score={duration_score:.3f}, pow_score={power_score:.3f}, combined={combined_score:.3f}")
+                logger.info(
+                    f"  Profil#{i}: corr={abs_correlation:.3f}, "
+                    f"dur={duration_score:.3f}, pow={power_score:.3f}, "
+                    f"morpho={morphology_score:.3f}, "
+                    f"combined={combined_score:.3f}"
+                )
 
                 if combined_score > best_score:
                     best_score = combined_score
@@ -1331,19 +1406,137 @@ class ChangePointPatternDetector:
                         profile.get('signature_id'),
                         combined_score,
                     )
-                    logger.info(f"  Profil#{i}: ✓ nouveau meilleur score! ({combined_score:.3f})")
+                    logger.info(
+                        f"  Profil#{i}: ✓ nouveau meilleur score! "
+                        f"({combined_score:.3f})"
+                    )
 
-        # Seuil de confiance minimum (abaissé à 0.35 car durée/puissance sont très fiables)
-        logger.info(f"Fin matching: best_score={best_score:.3f}, seuil=0.35")
-        if best_match and best_match[3] > 0.35:
+        # Seuil adaptatif selon disponibilité morphologie
+        threshold = 0.4 if pattern_morphology else 0.35
+        
+        logger.info(
+            f"Fin matching: best_score={best_score:.3f}, "
+            f"seuil={threshold}"
+        )
+        
+        if best_match and best_match[3] > threshold:
             logger.info(
-                f"✓ Match trouvé: {best_match[1]} (sig_id={best_match[2]}, confiance={best_match[3]:.3f})"
+                f"✓ Match trouvé: {best_match[1]} "
+                f"(sig_id={best_match[2]}, confiance={best_match[3]:.3f})"
             )
             return best_match
         else:
-            logger.info(f"✗ Aucun match suffisant (best={best_score:.3f} < 0.35)")
-            
+            logger.info(
+                f"✗ Aucun match suffisant "
+                f"(best={best_score:.3f} < {threshold})"
+            )
             return None
+    
+    def _compute_morphology_similarity(
+        self,
+        morpho1: Dict[str, Any],
+        morpho2: Dict[str, Any]
+    ) -> float:
+        """
+        Calcule similarité entre deux analyses morphologiques.
+        
+        Args:
+            morpho1: Première analyse morphologique
+            morpho2: Deuxième analyse morphologique
+            
+        Returns:
+            Score de similarité [0-1]
+        """
+        score = 0.0
+        weight_sum = 0.0
+        
+        # 1. Pattern type match (poids: 0.3)
+        if 'shape_features' in morpho1 and 'shape_features' in morpho2:
+            type1 = morpho1['shape_features'].get('pattern_type', '')
+            type2 = morpho2['shape_features'].get('pattern_type', '')
+            if type1 == type2:
+                score += 0.3
+            weight_sum += 0.3
+        
+        # 2. Oscillation features (poids: 0.25)
+        if 'oscillation_features' in morpho1 and 'oscillation_features' in morpho2:
+            osc1 = morpho1['oscillation_features']
+            osc2 = morpho2['oscillation_features']
+            
+            # Les deux oscillent ou les deux n'oscillent pas
+            if osc1.get('is_oscillating') == osc2.get('is_oscillating'):
+                osc_score = 0.25
+                
+                # Si les deux oscillent, comparer fréquence
+                if osc1.get('is_oscillating'):
+                    freq1 = osc1.get('oscillation_frequency_hz', 0)
+                    freq2 = osc2.get('oscillation_frequency_hz', 0)
+                    if freq2 > 0:
+                        freq_ratio = min(freq1, freq2) / max(freq1, freq2)
+                        osc_score *= freq_ratio
+                
+                score += osc_score
+            weight_sum += 0.25
+        
+        # 3. Gradient features (poids: 0.2)
+        if 'gradient' in morpho1 and 'gradient' in morpho2:
+            grad1 = morpho1['gradient']
+            grad2 = morpho2['gradient']
+            
+            # Comparer max rise rate
+            rise1 = grad1.get('max_rise_rate', 0)
+            rise2 = grad2.get('max_rise_rate', 0)
+            if max(rise1, rise2) > 0:
+                rise_sim = min(rise1, rise2) / max(rise1, rise2)
+                score += rise_sim * 0.1
+            
+            # Comparer max fall rate
+            fall1 = abs(grad1.get('max_fall_rate', 0))
+            fall2 = abs(grad2.get('max_fall_rate', 0))
+            if max(fall1, fall2) > 0:
+                fall_sim = min(fall1, fall2) / max(fall1, fall2)
+                score += fall_sim * 0.1
+            
+            weight_sum += 0.2
+        
+        # 4. Plateaus similarity (poids: 0.15)
+        if 'plateaus' in morpho1 and 'plateaus' in morpho2:
+            plat1 = morpho1['plateaus']
+            plat2 = morpho2['plateaus']
+            
+            # Comparer nombre de plateaux
+            num1 = len(plat1) if plat1 else 0
+            num2 = len(plat2) if plat2 else 0
+            
+            if max(num1, num2) > 0:
+                num_sim = min(num1, num2) / max(num1, num2)
+                score += num_sim * 0.15
+            else:
+                # Les deux n'ont pas de plateaux = similarité
+                score += 0.15
+            
+            weight_sum += 0.15
+        
+        # 5. Statistical moments (poids: 0.1)
+        if 'statistical_moments' in morpho1 and 'statistical_moments' in morpho2:
+            stat1 = morpho1['statistical_moments']
+            stat2 = morpho2['statistical_moments']
+            
+            # Comparer skewness (signe de l'asymétrie)
+            skew1 = stat1.get('skewness', 0)
+            skew2 = stat2.get('skewness', 0)
+            
+            # Même signe d'asymétrie = bon
+            if (skew1 * skew2) >= 0:
+                score += 0.1
+            
+            weight_sum += 0.1
+        
+        # Normaliser par le poids total
+        if weight_sum > 0:
+            return score / weight_sum
+        else:
+            return 0.0
 
 
 class ApplianceStateDetector:
@@ -1982,11 +2175,14 @@ class Seq2PointNILMManager:
     def _load_signature_profiles(self):
         """
         Charge les profils de signatures depuis la base de données.
+        Inclut les données morphologiques si disponibles.
         
-        Utilisé pour le pattern matching dans la détection par change points.
+        Utilisé pour le pattern matching dans la détection.
         """
+        import json as json_module
+        
         with db_manager.get_session() as session:
-            # Récupérer les appareils actifs
+            # Récupérer les appareils actifs avec leurs signatures
             appliances_query = """
                 SELECT DISTINCT appliance_id, ca.name
                 FROM cnn_signatures cs
@@ -1995,10 +2191,17 @@ class Seq2PointNILMManager:
             appliances = session.execute(text(appliances_query)).fetchall()
 
             for appliance_id, appliance_name in appliances:
+                # Récupérer signatures avec morphology_analysis
                 sig_query = """
-                    SELECT id, start_time, end_time
+                    SELECT
+                        id,
+                        start_time,
+                        end_time,
+                        power_data,
+                        morphology_analysis
                     FROM cnn_signatures
                     WHERE appliance_id = :appliance_id
+                      AND is_negative = FALSE
                     ORDER BY created_at
                 """
                 signatures = session.execute(
@@ -2006,30 +2209,66 @@ class Seq2PointNILMManager:
                     {'appliance_id': appliance_id}
                 ).fetchall()
 
-                for sig_id, start_time, end_time in signatures:
-                    signature = {
-                        'id': sig_id,
-                        'appliance_id': appliance_id,
-                        'start_time': start_time,
-                        'end_time': end_time
-                    }
+                for row in signatures:
+                    sig_id = row[0]
+                    start_time = row[1]
+                    end_time = row[2]
+                    power_data_json = row[3]
+                    morphology_json = row[4]
                     
-                    # Charger les données de signature
-                    aggregate_power, appliance_power = (
-                        Seq2PointMultiOutputModel._load_signature_data_static(signature)
-                    )
+                    # Charger power_data depuis JSON ou linky_realtime
+                    appliance_power = None
+                    
+                    if power_data_json:
+                        # Utiliser power_data stocké
+                        try:
+                            power_data = json_module.loads(power_data_json)
+                            appliance_power = np.array(
+                                power_data.get('values', [])
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Erreur lecture power_data "
+                                f"sig {sig_id}: {e}"
+                            )
+                    
+                    # Fallback: charger depuis linky_realtime
+                    if appliance_power is None or len(appliance_power) == 0:
+                        signature = {
+                            'id': sig_id,
+                            'appliance_id': appliance_id,
+                            'start_time': start_time,
+                            'end_time': end_time
+                        }
+                        aggregate_power, appliance_power = (
+                            Seq2PointMultiOutputModel
+                            ._load_signature_data_static(signature)
+                        )
                     
                     if appliance_power is None or len(appliance_power) == 0:
                         continue
 
                     duration = int((end_time - start_time).total_seconds())
+                    
+                    # Parser morphology_analysis
+                    morphology = None
+                    if morphology_json:
+                        try:
+                            morphology = json_module.loads(morphology_json)
+                        except Exception as e:
+                            logger.warning(
+                                f"Erreur lecture morphology "
+                                f"sig {sig_id}: {e}"
+                            )
 
+                    # Ajouter le profil avec morphologie
                     self.change_point_detector.add_signature_profile(
                         appliance_id=appliance_id,
                         appliance_name=appliance_name,
                         power_sequence=appliance_power,
                         duration=duration,
-                        signature_id=sig_id
+                        signature_id=sig_id,
+                        morphology=morphology
                     )
 
         total_profiles = sum(
@@ -2038,8 +2277,8 @@ class Seq2PointNILMManager:
         )
         logger.info(
             f"Profils chargés: "
-            f"{len(self.change_point_detector.signature_profiles)} appareils, "
-            f"{total_profiles} profils"
+            f"{len(self.change_point_detector.signature_profiles)} "
+            f"appareils, {total_profiles} profils"
         )
 
     def disaggregate(
@@ -2123,7 +2362,8 @@ class Seq2PointNILMManager:
             detections = []
             for pattern_data in patterns:
                 match_result = self.change_point_detector.match_pattern(
-                    pattern_data
+                    pattern_data,
+                    pattern_morphology=pattern_data.get('morphology')
                 )
 
                 if match_result:
