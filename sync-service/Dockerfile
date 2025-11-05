@@ -19,6 +19,10 @@ RUN uv pip install --system -r pyproject.toml
 # Copie du code source
 COPY src/ ./src/
 
+# Copie du script entrypoint pour beat
+COPY entrypoint-beat.sh /app/
+RUN chmod +x /app/entrypoint-beat.sh
+
 # Variables d'environnement par défaut
 ENV PYTHONUNBUFFERED=1
 ENV CELERY_BROKER_URL=redis://redis:6379/0

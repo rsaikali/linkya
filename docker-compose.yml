@@ -2,7 +2,7 @@ services:
   # Base de données locale TimescaleDB
   timescaledb:
     image: timescale/timescaledb:latest-pg16
-    container_name: nilmia-timescaledb
+    container_name: timescaledb
     environment:
       POSTGRES_DB: linkya_db
       POSTGRES_USER: postgres
@@ -23,7 +23,7 @@ services:
   # Redis pour Celery
   redis:
     image: redis:7-alpine
-    container_name: nilmia-redis
+    container_name: redis
     environment:
       TZ: Europe/Paris
     ports:
@@ -43,7 +43,7 @@ services:
     build:
       context: ./sync-service
       dockerfile: Dockerfile
-    container_name: nilmia-sync-worker
+    container_name: sync-worker
     command: celery -A src.tasks.celery_app worker --loglevel=info
     environment:
       TZ: Europe/Paris
@@ -60,13 +60,13 @@ services:
       - nilmia-network
     restart: unless-stopped
 
-  # Celery Beat - Planificateur de tâches
+  # Celery Beat - Planificateur de tâches (initialise aussi la DB au démarrage)
   sync-beat:
     build:
       context: ./sync-service
       dockerfile: Dockerfile
-    container_name: nilmia-sync-beat
-    command: celery -A src.tasks.celery_app beat --loglevel=info
+    container_name: sync-beat
+    command: /app/entrypoint-beat.sh
     environment:
       TZ: Europe/Paris
     env_file:
@@ -78,34 +78,17 @@ services:
         condition: service_healthy
     volumes:
       - ./sync-service/src:/app/src
+      - ./sync-service/entrypoint-beat.sh:/app/entrypoint-beat.sh
     networks:
       - nilmia-network
     restart: unless-stopped
-
-  # Initialisation de la base au démarrage
-  init-db:
-    build:
-      context: ./sync-service
-      dockerfile: Dockerfile
-    container_name: nilmia-init-db
-    command: python -c "from src.database import db_manager; db_manager.init_local_db(); print('Databases initialized')"
-    environment:
-      TZ: Europe/Paris
-    env_file:
-      - .env
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    networks:
-      - nilmia-network
-    restart: "no"
 
   # Service NILM - Worker Celery
   nilm-worker:
     build:
       context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilmia-nilm-worker
+    container_name: nilm-worker
     command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
     runtime: nvidia
     environment:
@@ -131,13 +114,13 @@ services:
       - nilmia-network
     restart: unless-stopped
 
-  # Celery Beat pour NILM
+  # Celery Beat pour NILM (initialise aussi les tables NILM au démarrage)
   nilm-beat:
     build:
       context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilmia-nilm-beat
-    command: celery -A src.tasks.celery_app beat --loglevel=info
+    container_name: nilm-beat
+    command: /app/entrypoint-beat.sh
     environment:
       TZ: Europe/Paris
       C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
@@ -149,39 +132,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      sync-beat:
+        condition: service_started
     volumes:
       - ./nilm-service/src:/app/src
+      - ./nilm-service/entrypoint-beat.sh:/app/entrypoint-beat.sh
       - ./.data/models:/app/models
     networks:
       - nilmia-network
     restart: unless-stopped
-
-  # Initialisation de la base NILM au démarrage
-  init-nilm-db:
-    build:
-      context: ./nilm-service
-      dockerfile: Dockerfile
-    container_name: nilmia-init-nilm-db
-    command: python -c "from src.database import db_manager; db_manager.init_tables(); print('NILM database initialized')"
-    environment:
-      TZ: Europe/Paris
-    env_file:
-      - .env
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      init-db:
-        condition: service_completed_successfully
-    networks:
-      - nilmia-network
-    restart: "no"
 
   # Backend API FastAPI
   backend:
     build:
       context: ./backend-service
       dockerfile: Dockerfile
-    container_name: nilmia-backend
+    container_name: backend
     environment:
       TZ: Europe/Paris
     env_file:
@@ -210,7 +176,7 @@ services:
     build:
       context: ./frontend-service
       dockerfile: Dockerfile.dev
-    container_name: nilmia-react-dev
+    container_name: react-dev
     command: npm start
     environment:
       TZ: Europe/Paris
@@ -233,7 +199,7 @@ services:
     build:
       context: ./frontend-service
       dockerfile: Dockerfile.nginx
-    container_name: nilmia-frontend
+    container_name: frontend
     ports:
       - "80:80"
     depends_on:
@@ -248,7 +214,7 @@ services:
   # pgweb - Interface web PostgreSQL/TimescaleDB
   pgweb:
     image: sosedoff/pgweb:latest
-    container_name: nilmia-pgweb
+    container_name: pgweb
     environment:
       PGWEB_DATABASE_URL: postgres://${LOCAL_DB_USER}:${LOCAL_DB_PASSWORD}@${LOCAL_DB_HOST}:${LOCAL_DB_PORT}/${LOCAL_DB_NAME}?sslmode=disable
       TZ: Europe/Paris

@@ -49,6 +49,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copie du code source
 COPY src/ ./src/
 
+# Copie du script entrypoint pour beat
+COPY entrypoint-beat.sh /app/
+RUN chmod +x /app/entrypoint-beat.sh
+
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "from src.database import db_manager; db_manager.test_connection()" || exit 1
