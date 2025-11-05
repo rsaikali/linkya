@@ -36,7 +36,7 @@ Les variables d'environnement sont chargées depuis le fichier `.env` à la raci
 ```bash
 LOCAL_DB_HOST=timescaledb
 LOCAL_DB_PORT=5432
-LOCAL_DB_NAME=local_data
+LOCAL_DB_NAME=linkya_db
 LOCAL_DB_USER=postgres
 LOCAL_DB_PASSWORD=postgres
 ```

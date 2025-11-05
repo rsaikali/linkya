@@ -92,7 +92,7 @@ REMOTE_DB_TABLE=linky_realtime
 # Base TimescaleDB locale
 LOCAL_DB_HOST=timescaledb
 LOCAL_DB_PORT=5432
-LOCAL_DB_NAME=local_data
+LOCAL_DB_NAME=linkya_db
 LOCAL_DB_USER=postgres
 LOCAL_DB_PASSWORD=postgres
 
@@ -354,7 +354,7 @@ SELECT add_continuous_aggregate_policy('linky_hourly',
 | `REMOTE_DB_TABLE` | Table source | sensor_data |
 | `LOCAL_DB_HOST` | Hôte TimescaleDB | timescaledb |
 | `LOCAL_DB_PORT` | Port TimescaleDB | 5432 |
-| `LOCAL_DB_NAME` | Nom base locale | local_data |
+| `LOCAL_DB_NAME` | Nom base locale | linkya_db |
 | `LOCAL_DB_USER` | Utilisateur local | postgres |
 | `LOCAL_DB_PASSWORD` | Mot de passe local | postgres |
 | `SYNC_INTERVAL_SECONDS` | Intervalle de sync | 5 |

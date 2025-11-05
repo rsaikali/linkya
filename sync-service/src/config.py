@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Base locale
     local_db_host: str = "timescaledb"
     local_db_port: int = 5432
-    local_db_name: str = "local_data"
+    local_db_name: str = "linkya_db"
     local_db_user: str = "postgres"
     local_db_password: str = "postgres"
     

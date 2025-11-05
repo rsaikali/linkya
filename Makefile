@@ -34,7 +34,7 @@ detect: ## Lance la détection NILM via l'API
 
 feedback-stats: ## Affiche les statistiques des feedbacks utilisateur
 	@echo "📊 Statistiques des feedbacks utilisateur..."
-	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\
+	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		SELECT \
 			ca.name AS appareil, \
 			COUNT(CASE WHEN cd.is_correct = TRUE THEN 1 END) AS validations, \
@@ -47,7 +47,7 @@ feedback-stats: ## Affiche les statistiques des feedbacks utilisateur
 
 signatures-stats: ## Affiche les statistiques des signatures (positives et négatives)
 	@echo "📊 Statistiques des signatures..."
-	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\
+	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		SELECT \
 			ca.name AS appareil, \
 			COUNT(CASE WHEN cs.is_negative = FALSE THEN 1 END) AS positives, \
@@ -59,7 +59,7 @@ signatures-stats: ## Affiche les statistiques des signatures (positives et néga
 
 detections-clean: ## Vide la table des détections (les signatures négatives sont préservées)
 	@echo "⚠️  Nettoyage de la table des détections..."
-	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\
+	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		DELETE FROM cnn_detections; \
 		SELECT 'Toutes les détections ont été supprimées. Les signatures négatives sont préservées.' AS status;"
 	@echo "✅ Nettoyage terminé. Vous pouvez relancer make detect pour générer de nouvelles détections."
@@ -69,7 +69,7 @@ init-sync: ## Initialise la synchronisation des données
 
 model-compare: ## Compare les métriques du modèle current vs backup
 	@echo "📊 Comparaison Current vs Backup..."
-	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\
+	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		SELECT \
 			model_status, \
 			version, \
@@ -84,7 +84,7 @@ model-compare: ## Compare les métriques du modèle current vs backup
 
 model-rollback: ## Revient au modèle backup (annule le dernier entraînement)
 	@echo "⚠️  Rollback vers le modèle backup..."
-	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\
+	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		BEGIN; \
 		UPDATE cnn_models SET model_status = 'archived' WHERE model_status = 'current'; \
 		UPDATE cnn_models SET model_status = 'current' WHERE model_status = 'backup'; \
@@ -94,7 +94,7 @@ model-rollback: ## Revient au modèle backup (annule le dernier entraînement)
 
 model-status: ## Affiche le statut actuel des modèles (current/backup/archived)
 	@echo "📋 Statut des modèles..."
-	@docker-compose exec timescaledb psql -U postgres -d local_data -c "\
+	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
 		SELECT \
 			model_status, \
 			version, \
