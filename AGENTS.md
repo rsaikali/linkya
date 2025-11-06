@@ -9,7 +9,7 @@ After implementation, always test your changes thoroughly before submitting.
 
 ## Coding Standards
 The environment to use is defined in the root .env file.
-Everything in the codebase must be in English language.
+Everything in the codebase must be in English language, except the frontend that should be in French.
 For Python, follow PEP 8 guidelines.
 For JavaScript/TypeScript, follow Airbnb style guide.
 No emojis nor emoticons in the codebase, neither in logs.

@@ -18,6 +18,7 @@ import zoomPlugin from 'chartjs-plugin-zoom';
 import { Line } from 'react-chartjs-2';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
+import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly, formatDayName, formatDateFull } from '../utils/dateUtils';
 
 ChartJS.register(
   CategoryScale,
@@ -79,56 +80,6 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       }
     },
   }), [theme]);
-
-  // Helper functions for formatting (copied from DetectionsList and SignaturesList)
-  const formatTimeOnly = (date) => {
-    return date.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatDateTime = (date) => {
-    return date.toLocaleString('fr-FR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatDurationMinutes = (seconds) => {
-    if (!seconds) return '0';
-    return Math.round(seconds / 60);
-  };
-
-  const formatHumanizedDate = (date) => {
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSeconds = Math.floor(diffMs / 1000);
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffSeconds < 60) {
-      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
-    } else if (diffMinutes < 60) {
-      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
-    } else if (diffHours < 24) {
-      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
-    } else if (diffDays < 7) {
-      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
-    } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7);
-      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
-    } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30);
-      return `il y a ${months} mois`;
-    } else {
-      const years = Math.floor(diffDays / 365);
-      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
-    }
-  };
 
   // Custom tooltip handler for annotations
   useEffect(() => {
@@ -257,12 +208,8 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           `;
           tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}`;
         } else if (foundTooltipData.type === 'consumption') {
-          const dayName = foundTooltipData.time.toLocaleDateString('fr-FR', { weekday: 'long' });
-          const formattedDate = foundTooltipData.time.toLocaleDateString('fr-FR', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric' 
-          });
+          const dayName = formatDayName(foundTooltipData.time);
+          const formattedDate = formatDateFull(foundTooltipData.time);
           const formattedTime = formatTimeOnly(foundTooltipData.time);
           const powerW = Math.round(foundTooltipData.power);
           
@@ -824,7 +771,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
             callback: (value) => {
               if (rawData?.data && rawData.data[value]) {
                 const date = new Date(rawData.data[value].time);
-                const dayName = date.toLocaleDateString('fr-FR', { weekday: 'long' });
+                const dayName = formatDayName(date);
                 const day = String(date.getDate()).padStart(2, '0');
                 const month = String(date.getMonth() + 1).padStart(2, '0');
                 const hours = String(date.getHours()).padStart(2, '0');

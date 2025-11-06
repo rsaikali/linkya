@@ -38,26 +38,14 @@ import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
-
-// Custom Material Symbols Icon component
-const MaterialIcon = ({ children, sx = {} }) => (
-  <span 
-    className="material-symbols-outlined" 
-    style={{
-      fontSize: sx.fontSize || 'inherit',
-      color: sx.color || 'inherit',
-      ...sx,
-    }}
-  >
-    {children}
-  </span>
-);
+import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly } from '../utils/dateUtils';
+import MaterialIcon from './common/MaterialIcon';
 
 // Icône Google Material Symbols pour Delete
 const DeleteIcon = () => (
-  <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+  <MaterialIcon sx={{ fontSize: 20 }}>
     delete
-  </span>
+  </MaterialIcon>
 );
 
 // Icône Google Material Symbols pour qualité de détection
@@ -71,15 +59,9 @@ const QualityIcon = ({ confidence }) => {
   };
 
   return (
-    <span 
-      className="material-symbols-outlined" 
-      style={{ 
-        fontSize: '20px',
-        color: getColor()
-      }}
-    >
+    <MaterialIcon sx={{ fontSize: 20, color: getColor() }}>
       psychology_alt
-    </span>
+    </MaterialIcon>
   );
 };
 
@@ -491,54 +473,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  const formatDateTime = (date) => {
-    return date.toLocaleString('fr-FR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
 
-  const formatTimeOnly = (date) => {
-    return date.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatHumanizedDate = (date) => {
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSeconds = Math.floor(diffMs / 1000);
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffSeconds < 60) {
-      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
-    } else if (diffMinutes < 60) {
-      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
-    } else if (diffHours < 24) {
-      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
-    } else if (diffDays < 7) {
-      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
-    } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7);
-      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
-    } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30);
-      return `il y a ${months} mois`;
-    } else {
-      const years = Math.floor(diffDays / 365);
-      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
-    }
-  };
-
-  const formatDurationMinutes = (seconds) => {
-    if (!seconds) return '0';
-    return Math.round(seconds / 60);
-  };
 
   const confidenceScore = detection.confidence_score || 0;
 

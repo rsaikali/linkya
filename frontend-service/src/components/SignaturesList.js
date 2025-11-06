@@ -37,20 +37,9 @@ import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
-
-// Custom Material Symbols Icon component
-const MaterialIcon = ({ children, sx = {} }) => (
-  <span 
-    className="material-symbols-outlined" 
-    style={{
-      fontSize: sx.fontSize || 'inherit',
-      color: sx.color || 'inherit',
-      ...sx,
-    }}
-  >
-    {children}
-  </span>
-);
+import ModelInfoSection from './ModelInfoSection';
+import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly } from '../utils/dateUtils';
+import MaterialIcon from './common/MaterialIcon';
 
 /**
  * Composant affichant la liste des signatures
@@ -248,66 +237,13 @@ function SignaturesList() {
     }
   };
 
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleString('fr-FR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatTimeOnly = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatDurationMinutes = (seconds) => {
-    if (!seconds) return '0';
-    return Math.round(seconds / 60);
-  };
-
   const formatConsumption = (watts, durationSeconds) => {
     if (watts === null || watts === undefined || !durationSeconds) return 'N/A';
     const kWh = (watts * durationSeconds) / (1000 * 3600);
     return `${kWh.toFixed(1)} kWh`;
   };
 
-  const formatHumanizedDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSeconds = Math.floor(diffMs / 1000);
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
 
-    if (diffSeconds < 60) {
-      return `il y a ${diffSeconds} seconde${diffSeconds !== 1 ? 's' : ''}`;
-    } else if (diffMinutes < 60) {
-      return `il y a ${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''}`;
-    } else if (diffHours < 24) {
-      return `il y a ${diffHours} heure${diffHours !== 1 ? 's' : ''}`;
-    } else if (diffDays < 7) {
-      return `il y a ${diffDays} jour${diffDays !== 1 ? 's' : ''}`;
-    } else if (diffDays < 30) {
-      const weeks = Math.floor(diffDays / 7);
-      return `il y a ${weeks} semaine${weeks !== 1 ? 's' : ''}`;
-    } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30);
-      return `il y a ${months} mois`;
-    } else {
-      const years = Math.floor(diffDays / 365);
-      return `il y a ${years} an${years !== 1 ? 's' : ''}`;
-    }
-  };
 
 
 
@@ -319,6 +255,9 @@ function SignaturesList() {
         subheader={`${totalSignatures} signature${totalSignatures > 1 ? 's' : ''} utilisées pour l'apprentissage de l'IA`}
         avatar={<TrackChangesIcon />}
       />
+      
+      {/* Model Information Section */}
+      <ModelInfoSection />
       
       {/* Toolbar avec actions */}
       <Toolbar 
@@ -831,9 +770,9 @@ function SignatureRow({
         >
           <MenuItem onClick={handleDeleteClick}>
             <ListItemIcon>
-              <span className="material-symbols-outlined" style={{ fontSize: '20px', color: theme.palette.error.dark }}>
+              <MaterialIcon style={{ fontSize: '20px', color: theme.palette.error.dark }}>
                 delete
-              </span>
+              </MaterialIcon>
             </ListItemIcon>
             <ListItemText>
               Supprimer cette signature

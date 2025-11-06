@@ -30,20 +30,7 @@ import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
 import api from '../services/api';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
-
-// Custom Material Symbols Icon component
-const MaterialIcon = ({ children, sx = {} }) => (
-  <span 
-    className="material-symbols-outlined" 
-    style={{
-      fontSize: sx.fontSize || 'inherit',
-      color: sx.color || 'inherit',
-      ...sx,
-    }}
-  >
-    {children}
-  </span>
-);
+import MaterialIcon from './common/MaterialIcon';
 
 // French Palette from flatuicolors.com
 const COLOR_PALETTE = [

@@ -471,6 +471,48 @@ async def create_signature(signature: SignatureCreate):
     Returns:
         Confirmation message with signature details
     """
+    try:
+        from .config import get_celery_app
+        
+        celery_app = get_celery_app()
+        logger.info(
+            f"Création de signature pour {signature.appliance_name} "
+            f"de {signature.start_time} à {signature.end_time}"
+        )
+        
+        # Envoyer la tâche au service NILM
+        task = celery_app.send_task(
+            'add_nilm_signature',
+            args=[
+                signature.appliance_name,
+                signature.start_time,
+                signature.end_time,
+                False  # is_negative=False (signature positive)
+            ],
+            queue='nilm',
+            routing_key='nilm.add_nilm_signature'
+        )
+        
+        logger.info(f"Tâche de création de signature créée: {task.id}")
+        
+        return {
+            "status": "success",
+            "message": f"Signature créée pour {signature.appliance_name}",
+            "task_id": str(task.id),
+            "appliance_name": signature.appliance_name,
+            "start_time": signature.start_time,
+            "end_time": signature.end_time
+        }
+        
+    except Exception as e:
+        logger.error(
+            f"Erreur lors de la création de la signature: {str(e)}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur serveur: {str(e)}"
+        )
 
 
 @app.post("/api/nilm/train", tags=["NILM"])
