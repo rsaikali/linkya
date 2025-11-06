@@ -225,16 +225,16 @@ function SignaturesList() {
       setImportResult(result);
 
       if (result.error_count === 0) {
-        showSnackbar(`${result.success_count} signature(s) importée(s) avec succès`, 'success');
+        showNotification(`${result.success_count} signature(s) importée(s) avec succès`, 'success');
         setImportDialogOpen(false);
       } else {
-        showSnackbar(
+        showNotification(
           `Import terminé: ${result.success_count} succès, ${result.error_count} erreur(s)`,
           'warning'
         );
       }
     } catch (error) {
-      showSnackbar('Erreur lors de l\'import des signatures', 'error');
+      showNotification('Erreur lors de l\'import des signatures', 'error');
       setImportResult({
         status: 'error',
         total_lines: 0,

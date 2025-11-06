@@ -436,11 +436,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
 
   const handleReassignSubmit = async () => {
     if (!applianceName.trim()) {
-      setSnackbar({
-        open: true,
-        message: 'Veuillez saisir le nom de l\'appareil',
-        severity: 'error',
-      });
+      showNotification('Veuillez saisir le nom de l\'appareil', 'error');
       return;
     }
 
