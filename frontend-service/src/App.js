@@ -9,14 +9,16 @@ import SignaturesList from './components/SignaturesList';
 import AppliancesList from './components/AppliancesList';
 import { DataProvider } from './context/DataContext';
 import { ApplianceColorsProvider } from './context/ApplianceColorsContext';
+import { NotificationProvider } from './context/NotificationContext';
 import theme from './themes';
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <ApplianceColorsProvider>
-        <DataProvider>
+      <NotificationProvider>
+        <ApplianceColorsProvider>
+          <DataProvider>
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
             <Box sx={{ flexShrink: 0 }}>
               <Header />
@@ -65,6 +67,7 @@ function App() {
           </Box>
         </DataProvider>
       </ApplianceColorsProvider>
+      </NotificationProvider>
     </ThemeProvider>
   );
 }

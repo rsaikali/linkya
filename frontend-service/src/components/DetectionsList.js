@@ -22,7 +22,6 @@ import {
   DialogContentText,
   DialogActions,
   Button,
-  Snackbar,
   Menu,
   MenuItem,
   ListItemIcon,
@@ -39,6 +38,7 @@ import api, { apiService } from '../services/api';
 import websocket from '../services/websocket';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
+import { useNotification } from '../context/NotificationContext';
 import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly } from '../utils/dateUtils';
 import MaterialIcon from './common/MaterialIcon';
 
@@ -72,7 +72,7 @@ const QualityIcon = ({ confidence }) => {
 function DetectionsList() {
   const { visibleDetections, loading, errors, refreshDetections } = useData();
   const { ensureApplianceColors } = useApplianceColors();
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const showNotification = useNotification();
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
@@ -138,43 +138,23 @@ function DetectionsList() {
   const totalDetections = visibleDetections.length;
   const error = errors.detections;
 
-  const handleSnackbarClose = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
-
   const handleValidate = async (detection) => {
     try {
       await apiService.validateDetection(detection.id);
-      setSnackbar({
-        open: true,
-        message: `Détection validée: ${detection.name}`,
-        severity: 'success',
-      });
+      showNotification(`Détection validée: ${detection.name}`, 'success');
       refreshDetections();
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: 'Erreur lors de la validation',
-        severity: 'error',
-      });
+      showNotification('Erreur lors de la validation', 'error');
     }
   };
 
   const handleInvalidate = async (detection) => {
     try {
       await apiService.invalidateDetection(detection.id);
-      setSnackbar({
-        open: true,
-        message: `Détection invalidée: ${detection.name}`,
-        severity: 'info',
-      });
+      showNotification(`Détection invalidée: ${detection.name}`, 'info');
       refreshDetections();
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: 'Erreur lors de l\'invalidation',
-        severity: 'error',
-      });
+      showNotification('Erreur lors de l\'invalidation', 'error');
     }
   };
 
@@ -190,22 +170,14 @@ function DetectionsList() {
     setDeleteAllLoading(true);
     try {
       const response = await api.delete('/api/detections');
-      setSnackbar({
-        open: true,
-        message: response.data.message || 'Toutes les détections ont été supprimées',
-        severity: 'success',
-      });
+      showNotification(response.data.message || 'Toutes les détections ont été supprimées', 'success');
       handleCloseDeleteAllDialog();
       // Rafraîchir la liste
       refreshDetections();
     } catch (error) {
       console.error('Erreur lors de la suppression des détections:', error);
       const errorMsg = error.response?.data?.detail || 'Erreur lors de la suppression des détections';
-      setSnackbar({
-        open: true,
-        message: errorMsg,
-        severity: 'error',
-      });
+      showNotification(errorMsg, 'error');
     } finally {
       setDeleteAllLoading(false);
     }
@@ -215,17 +187,9 @@ function DetectionsList() {
     setDetectLoading(true);
     try {
       const response = await api.post('/api/nilm/detect');
-      setSnackbar({
-        open: true,
-        message: `Détection lancée (Task ID: ${response.data.task_id})`,
-        severity: 'success',
-      });
+      showNotification(`Détection lancée (Task ID: ${response.data.task_id})`, 'success');
     } catch (error) {
-      setSnackbar({
-        open: true,
-        message: `Erreur: ${error.response?.data?.detail || error.message}`,
-        severity: 'error',
-      });
+      showNotification(`Erreur: ${error.response?.data?.detail || error.message}`, 'error');
     } finally {
       setDetectLoading(false);
     }
@@ -411,22 +375,6 @@ function DetectionsList() {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar pour les notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={handleSnackbarClose}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={handleSnackbarClose}
-          severity={snackbar.severity}
-          variant="filled"
-          sx={{ width: '100%' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </>
   );
 }
@@ -436,12 +384,12 @@ function DetectionsList() {
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
+  const showNotification = useNotification();
   const [anchorEl, setAnchorEl] = useState(null);
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [applianceName, setApplianceName] = useState('');
   const [applianceOptions, setApplianceOptions] = useState([]);
   const [reassignLoading, setReassignLoading] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const open = Boolean(anchorEl);
   
   const startTime = new Date(detection.start_time);
@@ -499,28 +447,16 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
     setReassignLoading(true);
     try {
       await apiService.reassignDetection(detection.id, applianceName);
-      setSnackbar({
-        open: true,
-        message: `Détection réassignée à ${applianceName}`,
-        severity: 'success',
-      });
+      showNotification(`Détection réassignée à ${applianceName}`, 'success');
       setReassignDialogOpen(false);
       setApplianceName('');
       // Refresh the detection list
       window.location.reload();
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: 'Erreur lors de la réassignation',
-        severity: 'error',
-      });
+      showNotification('Erreur lors de la réassignation', 'error');
     } finally {
       setReassignLoading(false);
     }
-  };
-
-  const handleSnackbarClose = () => {
-    setSnackbar({ ...snackbar, open: false });
   };
 
 
@@ -678,22 +614,6 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           </DialogActions>
         </Dialog>
 
-        {/* Snackbar pour les notifications */}
-        <Snackbar
-          open={snackbar.open}
-          autoHideDuration={4000}
-          onClose={handleSnackbarClose}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        >
-          <Alert
-            onClose={handleSnackbarClose}
-            severity={snackbar.severity}
-            variant="filled"
-            sx={{ width: '100%' }}
-          >
-            {snackbar.message}
-          </Alert>
-        </Snackbar>
       </TableCell>
     </TableRow>
   );

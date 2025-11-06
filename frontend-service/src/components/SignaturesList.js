@@ -20,7 +20,6 @@ import {
   DialogContentText,
   DialogActions,
   Button,
-  Snackbar,
   Box,
   CircularProgress,
   Menu,
@@ -38,6 +37,7 @@ import api, { apiService } from '../services/api';
 import websocket from '../services/websocket';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
+import { useNotification } from '../context/NotificationContext';
 import ModelInfoSection from './ModelInfoSection';
 import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly } from '../utils/dateUtils';
 import MaterialIcon from './common/MaterialIcon';
@@ -48,10 +48,10 @@ import MaterialIcon from './common/MaterialIcon';
 function SignaturesList() {
   const { getApplianceColor, getApplianceIcon, ensureApplianceColors } = useApplianceColors();
   const { signatures, loading, errors, importProgress, setImportProgress, refreshSignatures } = useData();
+  const { showNotification } = useNotification();
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [signatureToDelete, setSignatureToDelete] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -121,17 +121,13 @@ function SignaturesList() {
     }
   }, [signatures, ensureApplianceColors]);
 
-  const showSnackbar = (message, severity = 'success') => {
-    setSnackbar({ open: true, message, severity });
-  };
-
   const handleTrain = async () => {
     setTrainLoading(true);
     try {
       await api.post('/api/nilm/train');
-      showSnackbar('Entraînement lancé avec succès', 'success');
+      showNotification('Entraînement lancé avec succès', 'success');
     } catch (error) {
-      showSnackbar(`Erreur: ${error.response?.data?.detail || error.message}`, 'error');
+      showNotification(`Erreur: ${error.response?.data?.detail || error.message}`, 'error');
     } finally {
       setTrainLoading(false);
     }
@@ -141,7 +137,7 @@ function SignaturesList() {
     setDeleteModelsLoading(true);
     try {
       const response = await apiService.deleteAllModels();
-      showSnackbar(
+      showNotification(
         response.message || 'Tous les modèles IA ont été supprimés',
         'success'
       );
@@ -150,7 +146,7 @@ function SignaturesList() {
       // Notifier les autres composants de la suppression
       window.dispatchEvent(new Event('models-deleted'));
     } catch (error) {
-      showSnackbar(
+      showNotification(
         `Erreur: ${error.response?.data?.detail || error.message}`,
         'error'
       );
@@ -179,9 +175,9 @@ function SignaturesList() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
-      showSnackbar('Signatures exportées avec succès', 'success');
+      showNotification('Signatures exportées avec succès', 'success');
     } catch (error) {
-      showSnackbar('Erreur lors de l\'export des signatures', 'error');
+      showNotification('Erreur lors de l\'export des signatures', 'error');
     }
   };
 
@@ -202,7 +198,7 @@ function SignaturesList() {
     const file = event.target.files[0];
     if (file) {
       if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-        showSnackbar('Veuillez sélectionner un fichier CSV', 'error');
+        showNotification('Veuillez sélectionner un fichier CSV', 'error');
         return;
       }
       setSelectedFile(file);
@@ -211,7 +207,7 @@ function SignaturesList() {
 
   const handleImportConfirm = async () => {
     if (!selectedFile) {
-      showSnackbar('Veuillez sélectionner un fichier', 'error');
+      showNotification('Veuillez sélectionner un fichier', 'error');
       return;
     }
 
@@ -269,21 +265,13 @@ function SignaturesList() {
     try {
       await api.delete(`/api/signatures/${signatureToDelete.id}`);
       
-      setSnackbar({
-        open: true,
-        message: `Signature supprimée: ${signatureToDelete.appliance_name}`,
-        severity: 'success'
-      });
+      showNotification(`Signature supprimée: ${signatureToDelete.appliance_name}`, 'success');
       
       // Rafraîchir la liste
       await refreshSignatures();
     } catch (err) {
       console.error('Erreur lors de la suppression de la signature:', err);
-      setSnackbar({
-        open: true,
-        message: 'Erreur lors de la suppression',
-        severity: 'error'
-      });
+      showNotification('Erreur lors de la suppression', 'error');
     } finally {
       setDeleteDialogOpen(false);
       setSignatureToDelete(null);
@@ -643,22 +631,6 @@ function SignaturesList() {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar pour les notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-
       {/* Dialog de confirmation de suppression de tous les modèles IA */}
       <Dialog
         open={deleteModelsDialogOpen}
@@ -709,6 +681,7 @@ function SignaturesList() {
           </Button>
         </DialogActions>
       </Dialog>
+
     </Card>
   );
 }
