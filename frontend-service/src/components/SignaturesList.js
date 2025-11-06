@@ -35,6 +35,7 @@ import { useTheme } from '@mui/material/styles';
 import { FileDownload, FileUpload, MoreVert } from '@mui/icons-material';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import api, { apiService } from '../services/api';
+import websocket from '../services/websocket';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 import ModelInfoSection from './ModelInfoSection';
@@ -58,10 +59,59 @@ function SignaturesList() {
   const [trainLoading, setTrainLoading] = useState(false);
   const [deleteModelsDialogOpen, setDeleteModelsDialogOpen] = useState(false);
   const [deleteModelsLoading, setDeleteModelsLoading] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
+  const [hasModel, setHasModel] = useState(false);
 
   // Use data from context
   const totalSignatures = signatures.length;
   const error = errors.signatures;
+
+  // Vérifier si un modèle existe
+  useEffect(() => {
+    const checkModel = async () => {
+      try {
+        const response = await api.get('/api/nilm/models?page=1&per_page=1');
+        setHasModel(response.data.models.length > 0);
+      } catch (error) {
+        console.error('Erreur lors de la vérification du modèle:', error);
+      }
+    };
+    checkModel();
+  }, []);
+
+  // Écouter les événements WebSocket d'entraînement
+  useEffect(() => {
+    const handleTrainingStart = () => {
+      setIsTraining(true);
+    };
+
+    const handleTrainingComplete = () => {
+      setIsTraining(false);
+      // Recharger le statut du modèle
+      setTimeout(async () => {
+        try {
+          const response = await api.get('/api/nilm/models?page=1&per_page=1');
+          setHasModel(response.data.models.length > 0);
+        } catch (error) {
+          console.error('Erreur lors de la vérification du modèle:', error);
+        }
+      }, 1000);
+    };
+
+    const handleModelsDeleted = () => {
+      setHasModel(false);
+    };
+
+    websocket.on('training_start', handleTrainingStart);
+    websocket.on('training_complete', handleTrainingComplete);
+    window.addEventListener('models-deleted', handleModelsDeleted);
+
+    return () => {
+      websocket.off('training_start', handleTrainingStart);
+      websocket.off('training_complete', handleTrainingComplete);
+      window.removeEventListener('models-deleted', handleModelsDeleted);
+    };
+  }, []);
 
   // Initialize colors/icons for all appliances when signatures load
   useEffect(() => {
@@ -96,6 +146,9 @@ function SignaturesList() {
         'success'
       );
       setDeleteModelsDialogOpen(false);
+      
+      // Notifier les autres composants de la suppression
+      window.dispatchEvent(new Event('models-deleted'));
     } catch (error) {
       showSnackbar(
         `Erreur: ${error.response?.data?.detail || error.message}`,
@@ -281,7 +334,7 @@ function SignaturesList() {
               size="small"
               startIcon={trainLoading ? <CircularProgress size={16} color="inherit" /> : <MaterialIcon sx={{ fontSize: 20 }}>cognition</MaterialIcon>}
               onClick={handleTrain}
-              disabled={trainLoading || totalSignatures === 0}
+              disabled={trainLoading || totalSignatures === 0 || isTraining}
               sx={{ textTransform: 'none' }}
             >
               Entraîner l'IA
@@ -297,6 +350,7 @@ function SignaturesList() {
               color="error"
               startIcon={<MaterialIcon sx={{ fontSize: 20 }}>delete</MaterialIcon>}
               onClick={() => setDeleteModelsDialogOpen(true)}
+              disabled={!hasModel || isTraining}
               sx={{ textTransform: 'none' }}
             >
               Supprimer le modèle

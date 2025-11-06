@@ -8,6 +8,7 @@ import {
   Chip,
   Grid,
   Paper,
+  Tooltip,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -21,7 +22,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import api from '../services/api';
 import websocket from '../services/websocket';
-import { formatDuration, formatFullDateTime } from '../utils/dateUtils';
+import { formatDuration, formatFullDateTime, formatHumanizedDate } from '../utils/dateUtils';
 import MaterialIcon from './common/MaterialIcon';
 
 /**
@@ -35,6 +36,7 @@ function ModelInfoSection() {
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [currentEpoch, setCurrentEpoch] = useState(0);
   const [totalEpochs, setTotalEpochs] = useState(0);
+  const [trainingLogs, setTrainingLogs] = useState([]);
 
   // Charger le modèle actuel
   const loadModel = useCallback(async () => {
@@ -53,6 +55,17 @@ function ModelInfoSection() {
 
   useEffect(() => {
     loadModel();
+
+    // Écouter l'événement personnalisé de suppression de modèle
+    const handleModelDeleted = () => {
+      loadModel();
+    };
+
+    window.addEventListener('models-deleted', handleModelDeleted);
+
+    return () => {
+      window.removeEventListener('models-deleted', handleModelDeleted);
+    };
   }, [loadModel]);
 
   // Gérer les événements WebSocket d'entraînement
@@ -64,6 +77,7 @@ function ModelInfoSection() {
       setTrainingProgress(0);
       setCurrentEpoch(0);
       setTotalEpochs(data.total_epochs || 0);
+      setTrainingLogs([{ type: 'info', message: `Démarrage de l'entraînement - ${data.total_epochs} époques`, timestamp: new Date() }]);
       setExpanded(true); // Auto-expansion au démarrage de l'entraînement
     };
 
@@ -72,11 +86,24 @@ function ModelInfoSection() {
       setTrainingProgress(progress);
       setCurrentEpoch(data.epoch + 1);
       setTotalEpochs(data.total_epochs);
+      
+      // Ajouter un log pour l'époque
+      const logMessage = `Époque ${data.epoch + 1}/${data.total_epochs} terminée`;
+      const details = [];
+      if (data.loss !== undefined) details.push(`loss: ${data.loss.toFixed(4)}`);
+      if (data.val_loss !== undefined) details.push(`val_loss: ${data.val_loss.toFixed(4)}`);
+      if (data.mae !== undefined) details.push(`mae: ${data.mae.toFixed(4)}`);
+      if (data.val_mae !== undefined) details.push(`val_mae: ${data.val_mae.toFixed(4)}`);
+      
+      const fullMessage = details.length > 0 ? `${logMessage} - ${details.join(', ')}` : logMessage;
+      
+      setTrainingLogs(prev => [...prev, { type: 'success', message: fullMessage, timestamp: new Date() }]);
     };
 
     const handleTrainingComplete = (data) => {
       setIsTraining(false);
       setTrainingProgress(100);
+      setTrainingLogs(prev => [...prev, { type: 'success', message: 'Entraînement terminé avec succès!', timestamp: new Date() }]);
       
       // Recharger le modèle après 2 secondes
       setTimeout(() => {
@@ -103,33 +130,72 @@ function ModelInfoSection() {
   const getStatusBadge = () => {
     if (isTraining) {
       return (
-        <Chip
-          icon={<ModelTraining sx={{ fontSize: 16 }} />}
-          label="Entraînement en cours"
-          size="small"
-          color="primary"
-          sx={{ fontWeight: 'bold' }}
-        />
+        <Tooltip title="Entraînement en cours">
+          <Chip
+            icon={<ModelTraining sx={{ fontSize: 16 }} />}
+            size="small"
+            color="primary"
+            sx={{ 
+              height: 24,
+              width: 24,
+              borderRadius: '50%',
+              '& .MuiChip-icon': {
+                margin: 0,
+                marginLeft: 0,
+                marginRight: 0,
+              },
+              '& .MuiChip-label': {
+                display: 'none',
+              },
+            }}
+          />
+        </Tooltip>
       );
     } else if (model) {
       return (
-        <Chip
-          icon={<CheckCircle sx={{ fontSize: 16 }} />}
-          label="Modèle prêt"
-          size="small"
-          color="success"
-          sx={{ fontWeight: 'bold' }}
-        />
+        <Tooltip title="Modèle prêt">
+          <Chip
+            icon={<CheckCircle sx={{ fontSize: 16 }} />}
+            size="small"
+            color="success"
+            sx={{ 
+              height: 24,
+              width: 24,
+              borderRadius: '50%',
+              '& .MuiChip-icon': {
+                margin: 0,
+                marginLeft: 0,
+                marginRight: 0,
+              },
+              '& .MuiChip-label': {
+                display: 'none',
+              },
+            }}
+          />
+        </Tooltip>
       );
     } else {
       return (
-        <Chip
-          icon={<MaterialIcon sx={{ fontSize: 16 }}>error</MaterialIcon>}
-          label="Aucun modèle"
-          size="small"
-          color="warning"
-          sx={{ fontWeight: 'bold' }}
-        />
+        <Tooltip title="Aucun modèle">
+          <Chip
+            icon={<MaterialIcon sx={{ fontSize: 16 }}>error</MaterialIcon>}
+            size="small"
+            color="warning"
+            sx={{ 
+              height: 24,
+              width: 24,
+              borderRadius: '50%',
+              '& .MuiChip-icon': {
+                margin: 0,
+                marginLeft: 0,
+                marginRight: 0,
+              },
+              '& .MuiChip-label': {
+                display: 'none',
+              },
+            }}
+          />
+        </Tooltip>
       );
     }
   };
@@ -205,7 +271,7 @@ function ModelInfoSection() {
             <IconButton
               size="small"
               sx={{
-                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transform: expanded ? 'rotate(180deg)' : 'rotate(270deg)',
                 transition: 'transform 0.3s',
               }}
             >
@@ -220,24 +286,23 @@ function ModelInfoSection() {
           </Grid>
 
           <Grid item>
-            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-              Modèle IA
-            </Typography>
-          </Grid>
-
-          <Grid item>
-            {getStatusBadge()}
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                Modèle IA Linkya
+              </Typography>
+              {model && !isTraining && (
+                <Typography variant="caption" color="text.secondary">
+                  entraîné {formatHumanizedDate(model.training_date)}
+                </Typography>
+              )}
+            </Box>
           </Grid>
 
           <Grid item xs />
 
-          {model && !isTraining && (
-            <Grid item>
-              <Typography variant="caption" color="text.secondary">
-                Dernier entraînement : {formatFullDateTime(model.training_date)}
-              </Typography>
-            </Grid>
-          )}
+          <Grid item>
+            {getStatusBadge()}
+          </Grid>
         </Grid>
       </Box>
 
@@ -271,7 +336,92 @@ function ModelInfoSection() {
       {/* Contenu collapsible */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ p: 2 }}>
-          {model ? (
+          {isTraining ? (
+            // Affichage des logs d'entraînement en temps réel
+            <Paper
+              variant="outlined"
+              sx={{
+                bgcolor: theme.palette.mode === 'dark' ? 'grey.900' : '#1e1e1e',
+                color: theme.palette.mode === 'dark' ? 'grey.100' : '#d4d4d4',
+                p: 2,
+                fontFamily: 'monospace',
+                fontSize: '0.875rem',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, pb: 1, borderBottom: 1, borderColor: 'divider' }}>
+                <MaterialIcon sx={{ fontSize: 18, color: 'primary.main' }}>terminal</MaterialIcon>
+                <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 600, fontFamily: 'monospace' }}>
+                  Logs d'entraînement
+                </Typography>
+              </Box>
+              {/* Afficher les 5 dernières lignes */}
+              {Array.from({ length: 5 }).map((_, index) => {
+                const logIndex = trainingLogs.length - 5 + index;
+                const log = logIndex >= 0 ? trainingLogs[logIndex] : null;
+                
+                return (
+                  <Box
+                    key={index}
+                    sx={{
+                      mb: 1,
+                      display: 'flex',
+                      gap: 1,
+                      alignItems: 'flex-start',
+                      minHeight: '24px',
+                    }}
+                  >
+                    {log ? (
+                      <>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: theme.palette.mode === 'dark' ? 'grey.500' : '#858585',
+                            fontFamily: 'monospace',
+                            minWidth: '60px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {log.timestamp.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </Typography>
+                        <Box
+                          sx={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            bgcolor: log.type === 'success' ? 'success.main' : log.type === 'error' ? 'error.main' : 'info.main',
+                            mt: 0.5,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontFamily: 'monospace',
+                            fontSize: '0.875rem',
+                            color: log.type === 'success' ? '#4caf50' : log.type === 'error' ? '#f44336' : '#90caf9',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {log.message}
+                        </Typography>
+                      </>
+                    ) : (
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: theme.palette.mode === 'dark' ? 'grey.700' : '#404040',
+                          fontFamily: 'monospace',
+                          fontSize: '0.875rem',
+                        }}
+                      >
+                        &nbsp;
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Paper>
+          ) : model ? (
             <Grid container spacing={2}>
               {/* Date d'entraînement */}
               <Grid item xs={12} md={6}>
@@ -396,53 +546,6 @@ function ModelInfoSection() {
                 </Grid>
               )}
 
-              {/* Métriques par appareil */}
-              {metrics && metrics.appliances && metrics.appliances.length > 0 && (
-                <Grid item xs={12}>
-                  <Paper variant="outlined" sx={{ p: 1.5, mt: 1 }}>
-                    <Typography variant="caption" color="text.secondary" fontWeight="600" sx={{ mb: 1.5, display: 'block' }}>
-                      Métriques détaillées par appareil
-                    </Typography>
-                    <Grid container spacing={1.5}>
-                      {metrics.appliances.map((appliance, index) => (
-                        <Grid item xs={12} md={6} key={index}>
-                          <Box sx={{ 
-                            p: 1.5, 
-                            bgcolor: theme.palette.mode === 'dark' ? 'grey.800' : 'grey.50',
-                            borderRadius: 1,
-                          }}>
-                            <Typography variant="body2" fontWeight="600" sx={{ mb: 1 }}>
-                              {appliance.name}
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                              {appliance.metrics?.val_loss !== undefined && appliance.metrics?.val_loss !== null && (
-                                <Typography variant="caption" color="text.secondary">
-                                  Loss validation : <strong>{appliance.metrics.val_loss.toFixed(4)}</strong>
-                                </Typography>
-                              )}
-                              {appliance.metrics?.val_mae !== undefined && appliance.metrics?.val_mae !== null && (
-                                <Typography variant="caption" color="text.secondary">
-                                  MAE validation : <strong>{appliance.metrics.val_mae.toFixed(4)}</strong>
-                                </Typography>
-                              )}
-                              {appliance.metrics?.epochs_trained && (
-                                <Typography variant="caption" color="text.secondary">
-                                  Époques : <strong>{appliance.metrics.epochs_trained}</strong>
-                                </Typography>
-                              )}
-                              {appliance.num_signatures && (
-                                <Typography variant="caption" color="text.secondary">
-                                  Signatures : <strong>{appliance.num_signatures}</strong>
-                                </Typography>
-                              )}
-                            </Box>
-                          </Box>
-                        </Grid>
-                      ))}
-                    </Grid>
-                  </Paper>
-                </Grid>
-              )}
             </Grid>
           ) : (
             <Box sx={{ textAlign: 'center', py: 3 }}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -14,15 +14,14 @@ import {
   Thermostat,
   AccessTime,
   FiberManualRecord,
-  ModelTraining,
   Description,
   MenuBook,
   Storage,
 } from '@mui/icons-material';
-import api, { apiService } from '../services/api';
+import { apiService } from '../services/api';
 import { consumptionWS } from '../services/websocket';
 import websocket from '../services/websocket';
-import { formatHumanizedDate, formatTimeOnly, formatFullDateTime } from '../utils/dateUtils';
+import { formatTimeOnly, formatFullDateTime } from '../utils/dateUtils';
 
 // Animation de pulsation douce
 const pulse = keyframes`
@@ -40,27 +39,6 @@ const Header = () => {
   const [data, setData] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const updateTimeoutRef = useRef(null);
-  
-  // États pour le modèle NILM
-  const [model, setModel] = useState(null);
-
-  // Charger le modèle actuel
-  const loadModel = useCallback(async () => {
-    try {
-      const response = await api.get('/api/nilm/models?page=1&per_page=1');
-      if (response.data.models.length > 0) {
-        const modelData = response.data.models[0];
-        console.log('Model loaded:', modelData);
-        setModel(modelData);
-      } else {
-        setModel(null);
-      }
-    } catch (error) {
-      console.error('Erreur lors du chargement du modèle:', error);
-    }
-  }, []);
-
-
 
   useEffect(() => {
     // Fetch initial data
@@ -74,7 +52,6 @@ const Header = () => {
     };
 
     fetchLatestConsumption();
-    loadModel();
 
     // Setup WebSocket for real-time consumption updates
     const handleNewConsumption = (consumptionData) => {
@@ -125,25 +102,7 @@ const Header = () => {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [loadModel]);
-
-  // Gérer les événements WebSocket pour recharger le modèle après training
-  useEffect(() => {
-    websocket.connect();
-
-    const handleTrainingComplete = (data) => {
-      // Recharger le modèle après 2 secondes
-      setTimeout(() => {
-        loadModel();
-      }, 2000);
-    };
-
-    websocket.on('training_complete', handleTrainingComplete);
-
-    return () => {
-      websocket.off('training_complete', handleTrainingComplete);
-    };
-  }, [loadModel]);
+  }, []);
 
   return (
     <AppBar position="static" elevation={2}>
@@ -157,39 +116,6 @@ const Header = () => {
         {/* Informations en temps réel */}
         {data && (
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            {/* Informations NILM Model */}
-            {model ? (
-              <Tooltip title={`Modèle: ${model.model_name || 'N/A'}`}>
-                <Chip
-                  icon={<ModelTraining sx={{ fontSize: 18 }} />}
-                  label={`Dernier modèle entraîné ${formatHumanizedDate(model.training_date)}`}
-                  variant="filled"
-                  sx={{
-                    bgcolor: (theme) => theme.palette.overlay.white[15],
-                    color: 'white',
-                    fontWeight: 'bold',
-                    fontSize: '1rem',
-                    fontFamily: '"Space Mono", monospace',
-                    '& .MuiChip-icon': { color: 'white' },
-                  }}
-                />
-              </Tooltip>
-            ) : (
-              <Chip
-                icon={<ModelTraining sx={{ fontSize: 19 }} />}
-                label="Aucun modèle entraîné"
-                variant="filled"
-                sx={{
-                  bgcolor: (theme) => theme.palette.overlay.white[15],
-                  color: 'white',
-                  fontWeight: 'bold',
-                  fontSize: '1rem',
-                  fontFamily: '"Space Mono", monospace',
-                  '& .MuiChip-icon': { color: 'white' },
-                }}
-              />
-            )}
-
             {/* Date et heure */}
             <Tooltip title={`Dernière mise à jour: ${formatFullDateTime(data.time)}`}>
               <Chip

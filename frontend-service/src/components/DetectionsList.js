@@ -36,6 +36,7 @@ import { useTheme } from '@mui/material/styles';
 import { Check, Close, Search, MoreVert, SwapHoriz } from '@mui/icons-material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import api, { apiService } from '../services/api';
+import websocket from '../services/websocket';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly } from '../utils/dateUtils';
@@ -75,6 +76,55 @@ function DetectionsList() {
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
+  const [hasModel, setHasModel] = useState(false);
+
+  // Vérifier si un modèle existe
+  useEffect(() => {
+    const checkModel = async () => {
+      try {
+        const response = await api.get('/api/nilm/models?page=1&per_page=1');
+        setHasModel(response.data.models.length > 0);
+      } catch (error) {
+        console.error('Erreur lors de la vérification du modèle:', error);
+      }
+    };
+    checkModel();
+  }, []);
+
+  // Écouter les événements WebSocket d'entraînement
+  useEffect(() => {
+    const handleTrainingStart = () => {
+      setIsTraining(true);
+    };
+
+    const handleTrainingComplete = () => {
+      setIsTraining(false);
+      // Recharger le statut du modèle
+      setTimeout(async () => {
+        try {
+          const response = await api.get('/api/nilm/models?page=1&per_page=1');
+          setHasModel(response.data.models.length > 0);
+        } catch (error) {
+          console.error('Erreur lors de la vérification du modèle:', error);
+        }
+      }, 1000);
+    };
+
+    const handleModelsDeleted = () => {
+      setHasModel(false);
+    };
+
+    websocket.on('training_start', handleTrainingStart);
+    websocket.on('training_complete', handleTrainingComplete);
+    window.addEventListener('models-deleted', handleModelsDeleted);
+
+    return () => {
+      websocket.off('training_start', handleTrainingStart);
+      websocket.off('training_complete', handleTrainingComplete);
+      window.removeEventListener('models-deleted', handleModelsDeleted);
+    };
+  }, []);
 
   // Initialize colors/icons for all appliances when detections load
   useEffect(() => {
@@ -228,7 +278,7 @@ function DetectionsList() {
                 color="success"
                 startIcon={detectLoading ? <CircularProgress size={16} color="inherit" /> : <Search />}
                 onClick={handleDetect}
-                disabled={detectLoading}
+                disabled={detectLoading || !hasModel || isTraining}
                 sx={{ textTransform: 'none' }}
               >
                 Détecter les appareils par l'IA
