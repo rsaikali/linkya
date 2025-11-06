@@ -78,7 +78,6 @@ services:
         condition: service_healthy
     volumes:
       - ./sync-service/src:/app/src
-      - ./sync-service/scripts/entrypoint-beat.sh:/app/scripts/entrypoint-beat.sh
     networks:
       - nilmia-network
     restart: unless-stopped
@@ -136,7 +135,6 @@ services:
         condition: service_started
     volumes:
       - ./nilm-service/src:/app/src
-      - ./nilm-service/scripts/entrypoint-beat.sh:/app/scripts/entrypoint-beat.sh
       - ./.data/models:/app/models
     networks:
       - nilmia-network
