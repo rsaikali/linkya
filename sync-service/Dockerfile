@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.12-slim
 
 # Environment variables
 ENV TZ=Europe/Paris \
@@ -25,8 +25,8 @@ COPY pyproject.toml ./
 
 # Install dependencies and clean up
 RUN uv pip install --system -r pyproject.toml \
-    && find /usr/local/lib/python3.13 -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
-    && find /usr/local/lib/python3.13 -type f -name '*.pyc' -delete 2>/dev/null || true
+    && find /usr/local/lib/python3.12 -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.12 -type f -name '*.pyc' -delete 2>/dev/null || true
 
 # Copy source code
 COPY src/ ./src/
