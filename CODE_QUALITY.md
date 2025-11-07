@@ -27,14 +27,50 @@ Corrige automatiquement les problèmes de qualité de code dans tous les service
 **Outils utilisés :**
 - **isort** : Trie et organise automatiquement les imports
 - **Black** : Formate le code selon le style Black (88 caractères/ligne)
+- **sed** : Supprime les espaces en fin de ligne (trailing whitespace)
 
 **Exemple d'utilisation :**
 ```bash
 make code-quality-fix
 ```
 
+**Ce qui est corrigé automatiquement :**
+- ✅ Ordre des imports (isort)
+- ✅ Formatage du code (Black)
+- ✅ Espaces en fin de ligne (sed)
+- ✅ Indentation
+- ✅ Espacement autour des opérateurs (la plupart)
+
 **Avertissement :**
 ⚠️ Cette commande **modifie les fichiers** ! Assurez-vous d'avoir committé vos changements avant de l'exécuter.
+
+### `make code-quality-manual` ⭐ NOUVEAU
+
+Affiche uniquement les problèmes qui nécessitent une correction manuelle, classés par catégorie.
+
+**Catégories d'erreurs :**
+- **F401** : Imports inutilisés (à supprimer)
+- **F841** : Variables assignées mais jamais utilisées (à supprimer ou utiliser)
+- **F541** : f-strings sans placeholders (à convertir en strings normaux)
+
+**Exemple d'utilisation :**
+```bash
+make code-quality-manual
+```
+
+**Sortie :**
+```
+⚠️  Issues requiring manual fixes:
+
+🔍 Unused imports (F401):
+backend-service/src/config.py:3:1: F401 'os' imported but unused
+
+🔍 Unused variables (F841):
+nilm-service/src/database.py:331:13: F841 local variable 'timestamps' is assigned to but never used
+
+🔍 f-strings without placeholders (F541):
+sync-service/src/database.py:202:34: F541 f-string is missing placeholders
+```
 
 ## Configuration
 
@@ -72,8 +108,14 @@ Configuration par défaut :
 # Vérifier la qualité du code
 make code-quality-check
 
-# Si des problèmes sont détectés, les corriger automatiquement
+# Si des problèmes sont détectés, corriger automatiquement ce qui peut l'être
 make code-quality-fix
+
+# Voir les problèmes restants qui nécessitent une intervention manuelle
+make code-quality-manual
+
+# Corriger manuellement les imports inutilisés, variables non utilisées, etc.
+# (éditer les fichiers listés)
 
 # Vérifier à nouveau
 make code-quality-check
@@ -81,6 +123,43 @@ make code-quality-check
 # Committer les changements
 git add .
 git commit -m "style: Apply code quality fixes"
+```
+
+### 2. Workflow rapide (auto-fix uniquement)
+
+```bash
+# Corriger automatiquement
+make code-quality-fix
+
+# Vérifier le résultat
+make code-quality-check
+
+# Committer (même s'il reste des warnings manuels)
+git add .
+git commit -m "style: Auto-format code with Black and isort"
+```
+
+### 3. Workflow complet (zéro erreur)
+
+```bash
+# 1. Auto-fix
+make code-quality-fix
+
+# 2. Identifier les problèmes manuels
+make code-quality-manual
+
+# 3. Corriger manuellement
+# - Supprimer les imports inutilisés
+# - Supprimer ou utiliser les variables non utilisées
+# - Convertir f"text" en "text" si pas de placeholders
+
+# 4. Vérifier qu'il n'y a plus d'erreurs
+make code-quality-check
+# Doit afficher "✓ Code quality check completed!" sans erreurs
+
+# 5. Committer
+git add .
+git commit -m "style: Fix all code quality issues"
 ```
 
 ### 2. Dans votre éditeur (VS Code)
