@@ -1,5 +1,5 @@
 [project]
-name = "nilmia-sync-service"
+name = "linkya-sync-service"
 version = "0.1.0"
 description = "Service de synchronisation de données timestampées"
 requires-python = ">=3.13"

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Initialisation de Celery
 celery_app = Celery(
-    'nilmia-sync',
+    'linkya-sync',
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend
 )
