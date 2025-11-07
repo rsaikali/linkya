@@ -10,7 +10,7 @@ const getWsBaseUrl = () => {
     return process.env.REACT_APP_WS_URL;
   }
   // Use current host with appropriate protocol
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}`;
 };
 
@@ -44,23 +44,27 @@ class TrainingLogsWebSocket {
    */
   connect() {
     // If already connected or connecting, don't create a new connection
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
-    
+
     // Close existing connection if any (only if CLOSING or CLOSED)
     if (this.ws && this.ws.readyState > WebSocket.OPEN) {
       this.ws.close();
     }
-    
+
     try {
       this.ws = new WebSocket(this.url);
 
       this.ws.onopen = () => {
-        console.log('✅ WebSocket connected to training logs');
+        console.log(`✅ WebSocket connected to ${this.url}`);
         this.isConnected = true;
         this.shouldReconnect = true;
-        
+
         // Clear reconnect timer
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
@@ -68,7 +72,7 @@ class TrainingLogsWebSocket {
         }
 
         // Trigger connected handlers
-        this.triggerEvent('connected', { timestamp: new Date() });
+        this.triggerEvent("connected", { timestamp: new Date() });
       };
 
       this.ws.onmessage = (event) => {
@@ -81,20 +85,22 @@ class TrainingLogsWebSocket {
             this.triggerEvent(eventType, data);
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-          this.triggerEvent('error', { error: error.message });
+          console.error("Error parsing WebSocket message:", error);
+          this.triggerEvent("error", { error: error.message });
         }
       };
 
       this.ws.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
-        this.triggerEvent('error', { error: error.message || 'WebSocket error' });
+        console.error("❌ WebSocket error:", error);
+        this.triggerEvent("error", {
+          error: error.message || "WebSocket error",
+        });
       };
 
       this.ws.onclose = () => {
-        console.log('🔌 WebSocket disconnected');
+        console.log("🔌 WebSocket disconnected");
         this.isConnected = false;
-        this.triggerEvent('disconnected', { timestamp: new Date() });
+        this.triggerEvent("disconnected", { timestamp: new Date() });
 
         // Attempt reconnection if desired
         if (this.shouldReconnect) {
@@ -102,8 +108,8 @@ class TrainingLogsWebSocket {
         }
       };
     } catch (error) {
-      console.error('Failed to create WebSocket:', error);
-      this.triggerEvent('error', { error: error.message });
+      console.error("Failed to create WebSocket:", error);
+      this.triggerEvent("error", { error: error.message });
       this.scheduleReconnect();
     }
   }
@@ -152,7 +158,7 @@ class TrainingLogsWebSocket {
     if (this.isConnected && this.ws) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn('Cannot send message: WebSocket not connected');
+      console.warn("Cannot send message: WebSocket not connected");
     }
   }
 
@@ -225,27 +231,31 @@ class GenericWebSocket {
       disconnected: [],
       error: [],
     };
-    
+
     // Add custom event types
-    eventTypes.forEach(type => {
+    eventTypes.forEach((type) => {
       this.eventHandlers[type] = [];
     });
-    
+
     this.isConnected = false;
     this.shouldReconnect = true;
   }
 
   connect() {
     // If already connected or connecting, don't create a new connection
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
-    
+
     // Close existing connection if any (only if CLOSING or CLOSED)
     if (this.ws && this.ws.readyState > WebSocket.OPEN) {
       this.ws.close();
     }
-    
+
     try {
       this.ws = new WebSocket(this.url);
 
@@ -253,13 +263,13 @@ class GenericWebSocket {
         console.log(`✅ WebSocket connected to ${this.url}`);
         this.isConnected = true;
         this.shouldReconnect = true;
-        
+
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
         }
 
-        this.triggerEvent('connected', { timestamp: new Date() });
+        this.triggerEvent("connected", { timestamp: new Date() });
       };
 
       this.ws.onmessage = (event) => {
@@ -271,28 +281,30 @@ class GenericWebSocket {
             this.triggerEvent(eventType, data);
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-          this.triggerEvent('error', { error: error.message });
+          console.error("Error parsing WebSocket message:", error);
+          this.triggerEvent("error", { error: error.message });
         }
       };
 
       this.ws.onerror = (error) => {
         console.error(`❌ WebSocket error [${this.url}]:`, error);
-        this.triggerEvent('error', { error: error.message || 'WebSocket error' });
+        this.triggerEvent("error", {
+          error: error.message || "WebSocket error",
+        });
       };
 
       this.ws.onclose = () => {
         console.log(`🔌 WebSocket disconnected from ${this.url}`);
         this.isConnected = false;
-        this.triggerEvent('disconnected', { timestamp: new Date() });
+        this.triggerEvent("disconnected", { timestamp: new Date() });
 
         if (this.shouldReconnect) {
           this.scheduleReconnect();
         }
       };
     } catch (error) {
-      console.error('Failed to create WebSocket:', error);
-      this.triggerEvent('error', { error: error.message });
+      console.error("Failed to create WebSocket:", error);
+      this.triggerEvent("error", { error: error.message });
       this.scheduleReconnect();
     }
   }
@@ -330,7 +342,7 @@ class GenericWebSocket {
     if (this.isConnected && this.ws) {
       this.ws.send(JSON.stringify(message));
     } else {
-      console.warn('Cannot send message: WebSocket not connected');
+      console.warn("Cannot send message: WebSocket not connected");
     }
   }
 
@@ -373,20 +385,21 @@ class GenericWebSocket {
 
 // Singleton instances
 const trainingLogsWS = new TrainingLogsWebSocket();
-const consumptionWS = new GenericWebSocket('/ws/consumption', ['new_consumption']);
-const detectionsWS = new GenericWebSocket('/ws/detections', [
-  'new_detection',
-  'detection_start',
-  'detection_complete',
-  'detections_cleared'
+const consumptionWS = new GenericWebSocket("/ws/consumption", [
+  "new_consumption",
 ]);
-const importProgressWS = new GenericWebSocket('/ws/import', [
-  'import_start',
-  'import_progress',
-  'import_complete',
-  'import_error'
+const detectionsWS = new GenericWebSocket("/ws/detections", [
+  "new_detection",
+  "detection_start",
+  "detection_complete",
+  "detections_cleared",
+]);
+const importProgressWS = new GenericWebSocket("/ws/import", [
+  "import_start",
+  "import_progress",
+  "import_complete",
+  "import_error",
 ]);
 
 export default trainingLogsWS;
 export { consumptionWS, detectionsWS, importProgressWS };
-
