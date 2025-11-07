@@ -21,7 +21,7 @@ import {
 import { apiService } from '../services/api';
 import { consumptionWS } from '../services/websocket';
 import websocket from '../services/websocket';
-import { formatTimeOnly, formatFullDateTime } from '../utils/dateUtils';
+import { formatTimeWithSeconds, formatFullDateTime } from '../utils/dateUtils';
 
 // Animation de pulsation douce
 const pulse = keyframes`
@@ -120,7 +120,7 @@ const Header = () => {
             <Tooltip title={`Dernière mise à jour: ${formatFullDateTime(data.time)}`}>
               <Chip
                 icon={<AccessTime sx={{ fontSize: 19 }} />}
-                label={formatTimeOnly(data.time)}
+                label={formatTimeWithSeconds(data.time)}
                 variant="filled"
                 sx={{
                   bgcolor: (theme) => theme.palette.overlay.white[15],

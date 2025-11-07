@@ -74,6 +74,28 @@ export const formatTimeOnly = (dateString) => {
 };
 
 /**
+ * Format a date to show time with seconds (e.g., "14:30:45")
+ * @param {string|Date} dateString - ISO date string or Date object
+ * @returns {string} Formatted time string with seconds
+ */
+export const formatTimeWithSeconds = (dateString) => {
+  if (!dateString) return 'N/A';
+  
+  try {
+    const date = new Date(dateString);
+    
+    if (isNaN(date.getTime())) {
+      return 'N/A';
+    }
+    
+    return format(date, 'HH:mm:ss', { locale: fr });
+  } catch (error) {
+    console.error('Error formatting time with seconds:', error);
+    return 'N/A';
+  }
+};
+
+/**
  * Format a date to show full date (e.g., "15/01/2024")
  * @param {string|Date} dateString - ISO date string or Date object
  * @returns {string} Formatted date string

@@ -16,3 +16,10 @@ No emojis nor emoticons in the codebase, neither in logs.
 Do not create unnecessary documentation or markdown files to report your implementations.
 Do not create unnecessary scripts, or delete them once they are no longer needed.
 When modifying a service, ensure that all related services are also updated accordingly.
+
+## Context
+Save a short document about the context of the project, its architecture, and any other relevant information that can help you understand the codebase better.
+This will help you make informed decisions when implementing changes.
+If you don't have enough context, ask the user for more information.
+The short document should be located in a file named .docs/context/CONTEXT.md
+Keep it short (maximum 250 lines) and to the point.
