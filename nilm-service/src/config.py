@@ -2,55 +2,68 @@
 Configuration pour nilm-service
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
 
-class Settings(BaseSettings):
+class Settings:
     """Configuration du service NILM"""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    def __init__(self):
+        # Base de données locale (TimescaleDB)
+        self.local_db_host = os.getenv("LOCAL_DB_HOST", "timescaledb")
+        self.local_db_port = int(os.getenv("LOCAL_DB_PORT", "5432"))
+        self.local_db_name = os.getenv("LOCAL_DB_NAME", "linkya_db")
+        self.local_db_user = os.getenv("LOCAL_DB_USER", "postgres")
+        self.local_db_password = os.getenv("LOCAL_DB_PASSWORD", "postgres")
 
-    # Base de données locale (TimescaleDB)
-    local_db_host = "timescaledb"
-    local_db_port = 5432
-    local_db_name = "linkya_db"
-    local_db_user = "postgres"
-    local_db_password = "postgres"
+        # Redis/Celery
+        self.celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+        self.celery_result_backend = os.getenv(
+            "CELERY_RESULT_BACKEND", "redis://redis:6379/0"
+        )
 
-    # Redis/Celery
-    celery_broker_url = "redis://redis:6379/0"
-    celery_result_backend = "redis://redis:6379/0"
+        # Configuration NILM
+        self.nilm_training_interval_hours = int(
+            os.getenv("NILM_TRAINING_INTERVAL_HOURS", "24")
+        )
+        self.nilm_detection_interval_minutes = int(
+            os.getenv("NILM_DETECTION_INTERVAL_MINUTES", "5")
+        )
+        # Période analysée (None=tout, ou nombre d'heures)
+        period_hours = os.getenv("NILM_DETECTION_PERIOD_HOURS")
+        self.nilm_detection_period_hours = int(period_hours) if period_hours else None
+        # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
+        self.nilm_window_size_minutes = int(os.getenv("NILM_WINDOW_SIZE_MINUTES", "10"))
+        # Seuil minimal de puissance (W) - réduit pour transitions douces
+        self.nilm_min_power_threshold = int(os.getenv("NILM_MIN_POWER_THRESHOLD", "15"))
+        self.nilm_min_duration_seconds = int(
+            os.getenv("NILM_MIN_DURATION_SECONDS", "30")
+        )
 
-    # Configuration NILM
-    nilm_training_interval_hours = 24  # Entraînement toutes les 24h
-    nilm_detection_interval_minutes = 5  # Détection toutes les 5min
-    # Période analysée (None=tout, ou nombre d'heures)
-    nilm_detection_period_hours = None
-    # Fenêtre d'analyse en minutes (auto-converti en sequence_length)
-    nilm_window_size_minutes = 10  # 10 min = 600 points à 1Hz
-    # Seuil minimal de puissance (W) - réduit pour transitions douces
-    nilm_min_power_threshold = 15
-    nilm_min_duration_seconds = 30  # Durée minimale d'un événement (s)
+        # Configuration du modèle (S2P, LSTM, GRU)
+        self.nilm_model_path = os.getenv("NILM_MODEL_PATH", "/app/models")
+        # Override manuel de la longueur de séquence (si None, calculé auto)
+        seq_length = os.getenv("NILM_SEQUENCE_LENGTH", "599")
+        self.nilm_sequence_length = int(seq_length) if seq_length else 599
+        self.nilm_batch_size = int(os.getenv("NILM_BATCH_SIZE", "32"))
+        self.nilm_epochs = int(os.getenv("NILM_EPOCHS", "50"))
+        self.nilm_learning_rate = float(os.getenv("NILM_LEARNING_RATE", "0.001"))
+        self.nilm_validation_split = float(os.getenv("NILM_VALIDATION_SPLIT", "0.2"))
 
-    # Configuration du modèle (S2P, LSTM, GRU)
-    nilm_model_path = "/app/models"
-    # Override manuel de la longueur de séquence (si None, calculé auto)
-    # 10 minutes à 1Hz (impair pour symétrie)
-    nilm_sequence_length = 599
-    nilm_batch_size = 32
-    nilm_epochs = 50
-    nilm_learning_rate = 0.001
-    nilm_validation_split = 0.2
-
-    # Device configuration (CPU/GPU)
-    use_gpu = None  # "true", "false", "auto" (default)
-    nilm_model_type = "gru"  # Type de modèle: "gru" (défaut) ou "lstm"
-    nilm_detect_states = True  # Activer détection d'états/cycles
+        # Device configuration (CPU/GPU)
+        self.use_gpu = os.getenv("USE_GPU")  # "true", "false", "auto" (default)
+        self.nilm_model_type = os.getenv("NILM_MODEL_TYPE", "gru")
+        # Activer détection d'états/cycles
+        detect_states = os.getenv("NILM_DETECT_STATES", "true")
+        self.nilm_detect_states = detect_states.lower() in ("true", "1", "yes")
 
     @property
     def database_url(self):
         """URL de connexion à la base de données locale"""
-        return f"postgresql://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
+        return (
+            f"postgresql://{self.local_db_user}:{self.local_db_password}"
+            f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
+        )
 
     @property
     def effective_sequence_length(self):

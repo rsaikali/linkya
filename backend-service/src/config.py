@@ -3,35 +3,37 @@
 import os
 
 from celery import Celery
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    """Backend configuration with Pydantic validation."""
+class Settings:
+    """Backend configuration."""
 
-    # Local database configuration (TimescaleDB)
-    local_db_host = "timescaledb"
-    local_db_port = 5432
-    local_db_name = "linkya_db"
-    local_db_user = "postgres"
-    local_db_password = "postgres"
+    def __init__(self):
+        # Local database configuration (TimescaleDB)
+        self.local_db_host = os.getenv("LOCAL_DB_HOST", "timescaledb")
+        self.local_db_port = int(os.getenv("LOCAL_DB_PORT", "5432"))
+        self.local_db_name = os.getenv("LOCAL_DB_NAME", "linkya_db")
+        self.local_db_user = os.getenv("LOCAL_DB_USER", "postgres")
+        self.local_db_password = os.getenv("LOCAL_DB_PASSWORD", "postgres")
 
-    # API Configuration
-    api_title = "Linkya API"
-    api_version = "0.1.0"
-    api_description = "API REST pour accéder aux données Linky et NILM"
-    cors_origins = [
-        "http://localhost:3000",
-        "http://frontend:3000",
-        "ws://localhost:3000",
-        "ws://frontend:3000",
-    ]
+        # API Configuration
+        self.api_title = os.getenv("API_TITLE", "Linkya API")
+        self.api_version = os.getenv("API_VERSION", "0.1.0")
+        self.api_description = os.getenv(
+            "API_DESCRIPTION", "API REST pour accéder aux données Linky et NILM"
+        )
+        self.cors_origins = [
+            "http://localhost:3000",
+            "http://frontend:3000",
+            "ws://localhost:3000",
+            "ws://frontend:3000",
+        ]
 
-    # Celery Configuration
-    celery_broker_url = "redis://redis:6379/0"
-    celery_result_backend = "redis://redis:6379/0"
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+        # Celery Configuration
+        self.celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+        self.celery_result_backend = os.getenv(
+            "CELERY_RESULT_BACKEND", "redis://redis:6379/0"
+        )
 
     @property
     def local_db_url(self):

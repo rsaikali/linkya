@@ -1,35 +1,34 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
 
-class Settings(BaseSettings):
+class Settings:
     """Configuration de l'application"""
 
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False
-    )
+    def __init__(self):
+        # Base distante
+        self.remote_db_host = os.getenv("REMOTE_DB_HOST")
+        self.remote_db_port = int(os.getenv("REMOTE_DB_PORT", "3306"))
+        self.remote_db_name = os.getenv("REMOTE_DB_NAME")
+        self.remote_db_user = os.getenv("REMOTE_DB_USER")
+        self.remote_db_password = os.getenv("REMOTE_DB_PASSWORD")
+        self.remote_db_table = os.getenv("REMOTE_DB_TABLE", "linky_realtime")
 
-    # Base distante
-    pass  # remote_db_host: str
-    remote_db_port = 3306
-    pass  # remote_db_name: str
-    pass  # remote_db_user: str
-    pass  # remote_db_password: str
-    remote_db_table = "linky_realtime"
+        # Base locale
+        self.local_db_host = os.getenv("LOCAL_DB_HOST", "timescaledb")
+        self.local_db_port = int(os.getenv("LOCAL_DB_PORT", "5432"))
+        self.local_db_name = os.getenv("LOCAL_DB_NAME", "linkya_db")
+        self.local_db_user = os.getenv("LOCAL_DB_USER", "postgres")
+        self.local_db_password = os.getenv("LOCAL_DB_PASSWORD", "postgres")
 
-    # Base locale
-    local_db_host = "timescaledb"
-    local_db_port = 5432
-    local_db_name = "linkya_db"
-    local_db_user = "postgres"
-    local_db_password = "postgres"
+        # Celery
+        self.celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+        self.celery_result_backend = os.getenv(
+            "CELERY_RESULT_BACKEND", "redis://redis:6379/0"
+        )
 
-    # Celery
-    celery_broker_url = "redis://redis:6379/0"
-    celery_result_backend = "redis://redis:6379/0"
-
-    # Synchronisation
-    sync_interval_seconds = 5
-    sync_retention_hours = 48
+        # Synchronisation
+        self.sync_interval_seconds = int(os.getenv("SYNC_INTERVAL_SECONDS", "5"))
+        self.sync_retention_hours = int(os.getenv("SYNC_RETENTION_HOURS", "48"))
 
     @property
     def remote_db_url(self):
