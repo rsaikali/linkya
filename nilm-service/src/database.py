@@ -5,7 +5,6 @@ Gestion de la base de données TimescaleDB pour nilm-service
 import logging
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
     JSON,
@@ -255,13 +254,7 @@ class DatabaseManager:
             logger.error(f"Erreur lors de la récupération des données: {e}")
             return []
 
-    def add_signature(
-        self,
-        appliance_id,
-        start_time,
-        end_time,
-        is_negative=False,
-    ):
+    def add_signature(self, appliance_id, start_time, end_time, is_negative=False):
         """
         Ajoute une signature de courbe soumise par l'utilisateur.
         Capture les data points et calcule l'analyse morphologique.
@@ -326,7 +319,6 @@ class DatabaseManager:
             from .morphology import MorphologyAnalyzer
 
             power_values = np.array([d["papp"] for d in consumption_data])
-            timestamps = [d["time"] for d in consumption_data]
 
             # Build compact power_data JSON
             power_data = {

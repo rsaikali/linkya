@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timedelta
 
 from celery import Celery
-from celery.schedules import crontab
 
 from .config import settings
 from .database import db_manager
@@ -119,5 +118,5 @@ celery_app.conf.beat_schedule = {
     "incremental-sync": {
         "task": "incremental_sync",
         "schedule": float(settings.sync_interval_seconds),
-    },
+    }
 }

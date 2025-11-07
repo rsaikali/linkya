@@ -13,7 +13,6 @@ going beyond simple duration and average power to capture:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 import numpy as np
 from scipy import signal, stats
@@ -222,10 +221,7 @@ class MorphologyAnalyzer:
         is_oscillating = len(peaks) > 2
 
         if not is_oscillating:
-            return {
-                "is_oscillating": False,
-                "num_peaks": 0,
-            }
+            return {"is_oscillating": False, "num_peaks": 0}
 
         # Calculate peak regularity (inverse of std of intervals)
         if len(peaks) > 1:

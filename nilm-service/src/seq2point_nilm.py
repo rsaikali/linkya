@@ -195,7 +195,7 @@ class RedisTrainingCallback(callbacks.Callback):
             )
             # Test connection
             self.redis_client.ping()
-            print(f"[RedisCallback] ✅ Connected to Redis")
+            print("[RedisCallback] ✅ Connected to Redis")
             logger.info(
                 f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}"
             )
@@ -632,9 +632,9 @@ class Seq2PointMultiOutputModel:
         idx_val = sorted_indices[val_idx]
 
         logger.info(
-            f"📅 Dernier fold utilisé: {len(idx_train)} train / "
+            f"Dernier fold utilisé: {len(idx_train)} train / "
             f"{len(idx_val)} val "
-            f"({100*len(idx_val)/len(sorted_indices):.1f}% récent)"
+            f"({100 * len(idx_val) / len(sorted_indices):.1f}% récent)"
         )
 
         X_train = X_scaled[idx_train]
@@ -2038,10 +2038,10 @@ class Seq2PointNILMManager:
                 )
 
                 if not (0.50 <= duration_ratio <= 1.50):
-                    logger.debug(f"    ✗ Durée hors limite")
+                    logger.debug("    ✗ Durée hors limite")
                     continue
 
-                logger.debug(f"    ✓ Durée OK")
+                logger.debug("    ✓ Durée OK")
 
                 # Critère 2: Puissance moyenne similaire (±15% assoupli)
                 if neg["avg_power"] > 0:
@@ -2051,9 +2051,9 @@ class Seq2PointNILMManager:
                         f"seuils=[0.85, 1.15]"
                     )
                     if not (0.85 <= power_ratio <= 1.15):
-                        logger.debug(f"    ✗ Puissance hors limite")
+                        logger.debug("    ✗ Puissance hors limite")
                         continue
-                    logger.debug(f"    ✓ Puissance OK")
+                    logger.debug("    ✓ Puissance OK")
 
                 # Critère 3: Énergie similaire (±20% assoupli)
                 det_energy = det.get("energy_wh", 0)
@@ -2064,9 +2064,9 @@ class Seq2PointNILMManager:
                         f"seuils=[0.80, 1.20]"
                     )
                     if not (0.80 <= energy_ratio <= 1.20):
-                        logger.debug(f"    ✗ Énergie hors limite")
+                        logger.debug("    ✗ Énergie hors limite")
                         continue
-                    logger.debug(f"    ✓ Énergie OK")
+                    logger.debug("    ✓ Énergie OK")
 
                 # Tous les critères correspondent → faux positif
                 is_false_positive = True

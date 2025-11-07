@@ -2,12 +2,10 @@
 Tâches Celery pour nilm-service
 """
 
-import json
 import logging
 import os
 import warnings
 from datetime import datetime, timedelta
-from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
 import redis
@@ -16,8 +14,8 @@ import redis
 os.environ["C_FORCE_ROOT"] = "true"
 warnings.filterwarnings("ignore", message=".*superuser privileges.*")
 
-from celery import Celery
-from celery.schedules import crontab
+from celery import Celery  # noqa: E402
+from celery.schedules import crontab  # noqa: E402
 
 # Configuration du logger (doit être avant les imports locaux)
 logging.basicConfig(
@@ -27,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 LOCAL_TIMEZONE = ZoneInfo(os.environ.get("TZ", "Europe/Paris"))
 
-from .config import settings
-from .database import db_manager
-from .seq2point_nilm import Seq2PointNILMManager
+from .config import settings  # noqa: E402
+from .database import db_manager  # noqa: E402
+from .seq2point_nilm import Seq2PointNILMManager  # noqa: E402
 
 logger.info("🚀 Mode Sequence-to-Point (S2P) activé")
 nilm_manager = Seq2PointNILMManager()
@@ -216,7 +214,7 @@ def train_nilm_model(self, min_signatures=2, generation=0):
             """
             )
 
-            result = session.execute(
+            session.execute(
                 query,
                 {
                     "model_name": model_name,
@@ -233,7 +231,6 @@ def train_nilm_model(self, min_signatures=2, generation=0):
                 },
             )
 
-            model_id = result.scalar()
             session.commit()
 
         logger.info(
@@ -290,13 +287,12 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                 return {"status": "skipped", "message": message}
 
             active_model = row.model_name
-            model_type = row.model_type
 
         # Charger le modèle Multi-Output si pas déjà chargé
         model_path = os.path.join(settings.nilm_model_path, f"{active_model}.keras")
         if nilm_manager.multioutput_model is None:
             if os.path.exists(model_path):
-                logger.info(f"📂 Chargement du modèle: {active_model}")
+                logger.info(f"Chargement du modèle: {active_model}")
                 nilm_manager.load_model(model_path)
             else:
                 message = f"Fichier modèle introuvable: {model_path}"
@@ -598,12 +594,7 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
 
 
 @celery_app.task(name="add_nilm_signature")
-def add_nilm_signature(
-    appliance_name,
-    start_time_str,
-    end_time_str,
-    is_negative=False,
-):
+def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative=False):
     """
     Ajoute une signature manuelle soumise par l'utilisateur
 

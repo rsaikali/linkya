@@ -1,8 +1,5 @@
 """Consumption data repository."""
 
-from datetime import datetime
-from typing import Any
-
 from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
@@ -52,10 +49,7 @@ class ConsumptionRepository(DatabaseBase):
         with self.engine.connect() as conn:
             result = conn.execute(query).fetchone()
             if result and result[0] and result[1]:
-                return {
-                    "min_time": result[0],
-                    "max_time": result[1],
-                }
+                return {"min_time": result[0], "max_time": result[1]}
             return None
 
     def get_consumption_history(self, start_time, end_time, interval="5 minutes"):
@@ -104,11 +98,7 @@ class ConsumptionRepository(DatabaseBase):
         with self.engine.connect() as conn:
             if interval in ("raw", "none"):
                 result = conn.execute(
-                    query,
-                    {
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
+                    query, {"start_time": start_time, "end_time": end_time}
                 )
             else:
                 result = conn.execute(

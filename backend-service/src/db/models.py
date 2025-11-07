@@ -1,7 +1,6 @@
 """NILM models repository."""
 
 import logging
-from typing import Any
 
 from sqlalchemy import text
 

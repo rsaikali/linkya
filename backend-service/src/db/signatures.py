@@ -1,7 +1,5 @@
 """Signatures repository."""
 
-from typing import Any
-
 from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime

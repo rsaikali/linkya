@@ -1,7 +1,6 @@
 """Base database utilities and connection management."""
 
 import logging
-from datetime import datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -32,10 +31,7 @@ class DatabaseBase:
     def __init__(self):
         """Initializes the database connection."""
         self.engine = create_engine(
-            settings.local_db_url,
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
+            settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20
         )
         self.SessionLocal = sessionmaker(
             autocommit=False, autoflush=False, bind=self.engine

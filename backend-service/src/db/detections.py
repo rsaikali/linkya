@@ -2,8 +2,6 @@
 
 import json
 import logging
-from datetime import datetime
-from typing import Any
 
 from sqlalchemy import text
 
@@ -193,10 +191,7 @@ class DetectionRepository(DatabaseBase):
 
             logger.info(f"Deleted {count} detection(s)")
 
-            return {
-                "deleted_count": count,
-                "status": "success",
-            }
+            return {"deleted_count": count, "status": "success"}
 
     def validate_detection(self, detection_id, is_correct):
         """
