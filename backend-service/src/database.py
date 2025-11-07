@@ -519,20 +519,6 @@ class DatabaseManager:
                 "detections_deleted": detections_count or 0,
             }
 
-    def _get_average_consumption(self) -> float | None:
-        """Récupère la puissance moyenne des dernières 48h."""
-        query = text("""
-            SELECT AVG(papp)
-            FROM linky_realtime
-            WHERE time >= NOW() - INTERVAL '48 hours'
-        """)
-
-        with self.engine.connect() as conn:
-            result = conn.execute(query).fetchone()
-            if result and result[0] is not None:
-                return float(result[0])
-            return None
-
     def get_nilm_models_paginated(
         self, page: int = 1, per_page: int = 10
     ) -> dict[str, Any]:
@@ -606,52 +592,6 @@ class DatabaseManager:
                 "total": total,
                 "total_pages": total_pages,
                 "models": models,
-            }
-
-    def delete_nilm_model(self, model_id: int) -> dict[str, Any]:
-        """
-        Deletes a NILM model from the database.
-
-        Args:
-            model_id: ID of the model to delete
-
-        Returns:
-            Dictionary with deletion status
-
-        Raises:
-            ValueError: If the model doesn't exist
-        """
-        # Check that the model exists
-        check_query = text("""
-            SELECT id, model_name, model_path
-            FROM nilm_models
-            WHERE id = :model_id
-        """)
-
-        with self.engine.connect() as conn:
-            result = conn.execute(
-                check_query, {"model_id": model_id}
-            ).fetchone()
-
-            if not result:
-                raise ValueError(f"Modèle {model_id} non trouvé")
-
-            model_id_db, model_name, model_path = result
-
-            # Supprimer le modèle de la base de données
-            delete_query = text("""
-                DELETE FROM nilm_models
-                WHERE id = :model_id
-            """)
-
-            conn.execute(delete_query, {"model_id": model_id})
-            conn.commit()
-
-            return {
-                "id": model_id_db,
-                "model_name": model_name,
-                "model_path": model_path,
-                "deleted": True,
             }
 
     def delete_detection(self, detection_id: int) -> dict[str, Any] | None:
