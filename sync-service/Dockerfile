@@ -1,31 +1,38 @@
 FROM python:3.13-slim
 
-# Configuration de la timezone
-ENV TZ=Europe/Paris
-RUN apt-get update && apt-get install -y tzdata && rm -rf /var/lib/apt/lists/* \
-    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+# Environment variables
+ENV TZ=Europe/Paris \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CELERY_BROKER_URL=redis://redis:6379/0 \
+    CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+# Install tzdata and clean up in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 WORKDIR /app
 
-# Installation de uv
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copie des fichiers de dépendances
+# Copy dependency files
 COPY pyproject.toml ./
 
-# Installation des dépendances
-RUN uv pip install --system -r pyproject.toml
+# Install dependencies and clean up
+RUN uv pip install --system -r pyproject.toml \
+    && find /usr/local/lib/python3.13 -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.13 -type f -name '*.pyc' -delete 2>/dev/null || true
 
-# Copie du code source
+# Copy source code
 COPY src/ ./src/
 
-# Copie du script entrypoint pour beat
+# Copy entrypoint script for beat
 COPY scripts/entrypoint-beat.sh /app/scripts/
 RUN chmod +x /app/scripts/entrypoint-beat.sh
-
-# Variables d'environnement par défaut
-ENV PYTHONUNBUFFERED=1
-ENV CELERY_BROKER_URL=redis://redis:6379/0
-ENV CELERY_RESULT_BACKEND=redis://redis:6379/0
 
 CMD ["celery", "-A", "src.tasks.celery_app", "worker", "--loglevel=info"]
