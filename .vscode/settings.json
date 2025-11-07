@@ -18,6 +18,10 @@
   "python.linting.lintOnSave": true,
   "python.formatting.provider": "black",
   "python.analysis.typeCheckingMode": "basic",
+  "isort.args": [
+    "--settings-path=${workspaceFolder}/.isort.cfg"
+  ],
+  "isort.check": true,
   "editor.formatOnSave": true,
   "editor.codeActionsOnSave": {
     "source.organizeImports": "explicit"
