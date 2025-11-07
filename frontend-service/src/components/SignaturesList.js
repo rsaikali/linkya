@@ -168,7 +168,7 @@ function SignaturesList() {
 
       // Générer le nom du fichier avec timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      link.download = `nilmia_signatures_${timestamp}.csv`;
+      link.download = `linkya_signatures_${timestamp}.csv`;
 
       document.body.appendChild(link);
       link.click();
