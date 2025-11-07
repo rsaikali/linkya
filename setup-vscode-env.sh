@@ -35,10 +35,15 @@ create_venv() {
     curl -sS https://bootstrap.pypa.io/get-pip.py | python
     
     if [ "$use_uv" = true ]; then
-        echo "  ✓ Installation de uv"
-        pip install --quiet uv
-        echo "  ✓ Installation des dépendances via uv"
-        uv pip install --system -r pyproject.toml
+        echo "  ✓ Installation des dépendances via pip (pyproject.toml)"
+        # Use pip-compile or manual extraction since pip install -e . fails
+        # For sync-service
+        if [ -f "pyproject.toml" ] && grep -q "linkya-sync-service" pyproject.toml 2>/dev/null; then
+            pip install --quiet 'celery[redis]>=5.4.0' flower 'psycopg[binary]>=3.2.1' pymysql cryptography sqlalchemy python-dotenv pydantic pydantic-settings
+        # For nilm-service
+        elif [ -f "pyproject.toml" ] && grep -q "nilm-service" pyproject.toml 2>/dev/null; then
+            pip install --quiet 'celery[redis]>=5.4.0' 'psycopg[binary]>=3.2.1' psycopg2-binary sqlalchemy pydantic pydantic-settings numpy pandas scikit-learn scipy hmmlearn
+        fi
     else
         echo "  ✓ Installation des dépendances via pip"
         pip install --quiet -r requirements.txt
