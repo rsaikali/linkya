@@ -3,7 +3,7 @@ mode: 'agent'
 description: 'Help the user by suggesting future improvements of this repository.'
 ---
 
-Find interesting future improvements from this @codebase. 
+Find interesting future improvements from this codebase. 
 Here are the main points: 
 - Technical improvements
 - Process improvements

@@ -1,8 +1,8 @@
-# Copilot Instructions - Nilmia
+# Copilot Instructions - Linkya
 
 ## Project Overview
 
-**Nilmia** is a NILM (Non-Intrusive Load Monitoring) platform for analyzing electrical consumption data from Linky smart meters. It uses machine learning (Seq2Point deep learning with TensorFlow/Keras) to automatically detect and disaggregate individual appliances from aggregate power consumption data.
+**Linkya** is a NILM (Non-Intrusive Load Monitoring) platform for analyzing electrical consumption data from Linky smart meters. It uses machine learning (Seq2Point deep learning with TensorFlow/Keras) to automatically detect and disaggregate individual appliances from aggregate power consumption data.
 
 **Repository Stats:**
 - Size: ~710MB (including dependencies and data)
@@ -292,7 +292,7 @@ npm run build
 **To modify schema:**
 1. Edit `src/database.py` in the relevant service
 2. Stop services: `make down`
-3. **DESTRUCTIVE:** Delete volume: `docker volume rm nilmia_timescaledb_data`
+3. **DESTRUCTIVE:** Delete volume: `docker volume rm linkya_timescaledb_data`
 4. Restart: `make up` (will reinitialize with new schema)
 
 **Non-destructive schema updates:**
