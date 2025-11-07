@@ -1,0 +1,46 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend-service/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/backend-service/src",
+    "${workspaceFolder}/sync-service/src",
+    "${workspaceFolder}/nilm-service/src"
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "warning",
+    "reportMissingModuleSource": "none"
+  },
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.flake8Enabled": true,
+  "python.formatting.provider": "black",
+  "python.analysis.typeCheckingMode": "basic",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true
+  },
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/node_modules/**": true
+  },
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "eslint.workingDirectories": [
+    "./frontend-service"
+  ]
+}

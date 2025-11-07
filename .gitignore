@@ -34,7 +34,12 @@ env/
 .venv
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/README.md
 .idea/
 *.swp
 *.swo
