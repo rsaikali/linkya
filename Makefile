@@ -113,5 +113,5 @@ frontend-restart: ## Redémarre le frontend
 
 frontend-reload: ## Force le rechargement du frontend (utile sur WSL2)
 	@echo "🔄 Rechargement du frontend..."
-	@docker exec nilmia-frontend touch /app/src/index.js
+	@docker exec linkya-frontend touch /app/src/index.js
 	@echo "✅ Rechargement déclenché. Vérifiez votre navigateur."

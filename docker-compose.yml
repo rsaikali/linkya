@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - nilmia-network
+      - linkya-network
 
   # Redis pour Celery
   redis:
@@ -36,7 +36,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - nilmia-network
+      - linkya-network
 
   # Service de synchronisation - Worker Celery
   sync-worker:
@@ -57,7 +57,7 @@ services:
     volumes:
       - ./sync-service/src:/app/src
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
 
   # Celery Beat - Planificateur de tâches (initialise aussi la DB au démarrage)
@@ -79,7 +79,7 @@ services:
     volumes:
       - ./sync-service/src:/app/src
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
 
   # Service NILM - Worker Celery
@@ -110,7 +110,7 @@ services:
       - ./.data/models:/app/models
       - nilm_uv_cache:/root/.cache/uv
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
 
   # Celery Beat pour NILM (initialise aussi les tables NILM au démarrage)
@@ -137,7 +137,7 @@ services:
       - ./nilm-service/src:/app/src
       - ./.data/models:/app/models
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
 
   # Backend API FastAPI
@@ -161,7 +161,7 @@ services:
       - ./backend-service/src:/app/src
       - ./.data/models:/app/models
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -187,7 +187,7 @@ services:
       - ./frontend-service/package.json:/app/package.json
       - /app/node_modules
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -206,7 +206,7 @@ services:
       react-dev:
         condition: service_started
     networks:
-      - nilmia-network
+      - linkya-network
     restart: unless-stopped
 
   # pgweb - Interface web PostgreSQL/TimescaleDB
@@ -219,7 +219,7 @@ services:
     ports:
       - "8081:8081"
     networks:
-      - nilmia-network
+      - linkya-network
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -231,7 +231,7 @@ volumes:
   nilm_uv_cache:
 
 networks:
-  nilmia-network:
+  linkya-network:
     driver: bridge
     enable_ipv6: false
     driver_opts:
