@@ -31,9 +31,9 @@ except Exception as e:
 class SignatureCreate(BaseModel):
     """Model for creating a new appliance signature."""
 
-    appliance_name = None
-    start_time = None  # ISO format
-    end_time = None  # ISO format
+    appliance_name: str | None = None
+    start_time: str | None = None  # ISO format
+    end_time: str | None = None  # ISO format
 
 
 # FastAPI application creation
