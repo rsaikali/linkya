@@ -27,10 +27,12 @@ create_venv() {
     
     # Create virtual environment
     echo "  ✓ Création de l'environnement virtuel avec Python ${python_version}"
-    ${python_version} -m venv .venv
+    ${python_version} -m venv --without-pip .venv
     
-    # Activate and install dependencies
+    # Activate and install pip manually
     source .venv/bin/activate
+    echo "  ✓ Installation de pip"
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python
     
     if [ "$use_uv" = true ]; then
         echo "  ✓ Installation de uv"
@@ -52,25 +54,28 @@ create_venv() {
     echo ""
 }
 
-# Check Python versions
-if ! command -v python3.12 &> /dev/null; then
-    echo "❌ Python 3.12 n'est pas installé"
+# Check Python versions - use system Python to avoid uv/pyenv issues
+if [ -x "/usr/bin/python3.12" ]; then
+    BACKEND_PYTHON="/usr/bin/python3.12"
+    NILM_PYTHON="/usr/bin/python3.12"
+else
+    echo "❌ Python 3.12 n'est pas installé dans /usr/bin/"
     echo "   Installation requise pour backend-service et nilm-service"
     exit 1
 fi
 
-if ! command -v python3.13 &> /dev/null; then
+if [ -x "/usr/bin/python3.13" ]; then
+    SYNC_PYTHON="/usr/bin/python3.13"
+else
     echo "⚠️  Python 3.13 n'est pas installé"
     echo "   Utilisation de python3.12 pour sync-service"
-    SYNC_PYTHON="python3.12"
-else
-    SYNC_PYTHON="python3.13"
+    SYNC_PYTHON="/usr/bin/python3.12"
 fi
 
 # Create venvs for each service
-create_venv "backend-service" "python3.12" false
+create_venv "backend-service" "$BACKEND_PYTHON" false
 create_venv "sync-service" "$SYNC_PYTHON" true
-create_venv "nilm-service" "python3.12" true
+create_venv "nilm-service" "$NILM_PYTHON" true
 
 echo -e "${GREEN}✅ Configuration terminée !${NC}"
 echo ""
