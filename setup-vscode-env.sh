@@ -51,7 +51,7 @@ create_venv() {
     
     # Install dev tools
     echo "  ✓ Installation des outils de développement"
-    pip install --quiet black flake8 isort pytest
+    pip install --quiet black flake8 pytest
     
     deactivate
     cd ..

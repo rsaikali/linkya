@@ -140,10 +140,28 @@ Ou relancez simplement `./setup-vscode-env.sh`
 - Format au save activé
 - Configuration dans `frontend-service/.prettierrc` (si existe)
 
-### Organiser les imports
+### Linting
 
 - `Shift+Alt+O` : Organise les imports Python
 - Automatique au save si configuré
+
+#### Flake8
+
+Flake8 est configuré pour utiliser le fichier `.flake8` à la racine du projet :
+- Lint automatique à chaque sauvegarde (`lintOnSave: true`)
+- Configuration centralisée dans `.flake8`
+- Compatible avec Black (88 caractères, ignore E203, W503, E501)
+- Les erreurs s'affichent en temps réel dans VS Code
+
+Pour désactiver temporairement une règle dans un fichier :
+```python
+# flake8: noqa
+```
+
+Pour désactiver une règle sur une ligne :
+```python
+import os  # noqa: F401
+```
 
 ## 🐛 Debugging
 
