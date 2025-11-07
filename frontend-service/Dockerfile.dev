@@ -1,5 +1,5 @@
 # Stage 1: React dev server with optimizations
-FROM node:20-alpine as react-dev
+FROM node:20-alpine AS react-dev
 
 # Set working directory
 WORKDIR /app

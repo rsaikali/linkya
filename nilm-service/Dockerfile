@@ -40,8 +40,8 @@ COPY pyproject.toml ./
 # Install dependencies with uv and clean up Python cache
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r pyproject.toml \
-    && find /usr/local/lib/python3.11 -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
-    && find /usr/local/lib/python3.11 -type f -name '*.pyc' -delete 2>/dev/null || true
+    && find /usr/local/lib/python3.12 -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.12 -type f -name '*.pyc' -delete 2>/dev/null || true
 
 # Copy source code
 COPY src/ ./src/
