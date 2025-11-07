@@ -2,8 +2,6 @@
 Configuration pour nilm-service
 """
 
-from typing import Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,10 +50,7 @@ class Settings(BaseSettings):
     @property
     def database_url(self):
         """URL de connexion à la base de données locale"""
-        return (
-            f"postgresql://{self.local_db_user}:{self.local_db_password}"
-            f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
-        )
+        return f"postgresql://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
 
     @property
     def effective_sequence_length(self):

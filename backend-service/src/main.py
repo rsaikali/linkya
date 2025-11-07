@@ -4,18 +4,10 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Set
 
 import redis
 import redis.asyncio as aioredis
-from fastapi import (
-    FastAPI,
-    HTTPException,
-    Query,
-    UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import FastAPI, HTTPException, Query, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -23,9 +15,7 @@ from .config import settings
 from .db import db_manager
 
 # Logging configuration
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Redis client for publishing real-time events
@@ -47,14 +37,7 @@ class SignatureCreate(BaseModel):
 
 
 # FastAPI application creation
-app = FastAPI(
-    title=settings.api_title,
-    version=settings.api_version,
-    description=settings.api_description,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
-)
+app = FastAPI(title=settings.api_title, version=settings.api_version, description=settings.api_description, docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json")
 
 # CORS configuration to allow requests from the frontend
 # Note: WebSocket connections bypass CORS middleware
@@ -110,12 +93,7 @@ async def get_latest_consumption():
 
 
 @app.get("/api/consumption/history", tags=["Consumption"])
-async def get_consumption_history(
-    interval=Query(
-        default="auto",
-        description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)",
-    )
-):
+async def get_consumption_history(interval=Query(default="auto", description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)")):
     """
     Retrieves all consumption history data.
 
@@ -149,17 +127,9 @@ async def get_consumption_history(
 
         data = db_manager.get_consumption_history(start_time_dt, end_time_dt, interval)
         if not data:
-            raise HTTPException(
-                status_code=404, detail="Aucune donnée disponible pour cette période"
-            )
+            raise HTTPException(status_code=404, detail="Aucune donnée disponible pour cette période")
 
-        return {
-            "start_time": start_time_dt.isoformat(),
-            "end_time": end_time_dt.isoformat(),
-            "interval": interval,
-            "data_points": len(data),
-            "data": data,
-        }
+        return {"start_time": start_time_dt.isoformat(), "end_time": end_time_dt.isoformat(), "interval": interval, "data_points": len(data), "data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
@@ -197,14 +167,10 @@ async def update_appliance(appliance_id, appliance_data):
         if not name:
             raise HTTPException(status_code=400, detail="Name is required")
 
-        updated_appliance = db_manager.update_appliance(
-            appliance_id=appliance_id, name=name
-        )
+        updated_appliance = db_manager.update_appliance(appliance_id=appliance_id, name=name)
 
         if not updated_appliance:
-            raise HTTPException(
-                status_code=404, detail=f"Appliance {appliance_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Appliance {appliance_id} not found")
 
         return updated_appliance
     except HTTPException:
@@ -242,11 +208,7 @@ async def delete_all_signatures():
     try:
         result = db_manager.delete_all_signatures()
 
-        return {
-            "status": "success",
-            "message": f"{result['signatures_deleted']} signature(s) supprimée(s)",
-            "signatures_deleted": result["signatures_deleted"],
-        }
+        return {"status": "success", "message": f"{result['signatures_deleted']} signature(s) supprimée(s)", "signatures_deleted": result["signatures_deleted"]}
     except Exception as e:
         logger.error(f"Erreur lors de la suppression des signatures: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
@@ -268,17 +230,11 @@ async def delete_signature(signature_id):
         if not result:
             raise HTTPException(status_code=404, detail="Signature non trouvée")
 
-        return {
-            "status": "success",
-            "message": f"Signature supprimée: {result['appliance_name']}",
-            "signature": result,
-        }
+        return {"status": "success", "message": f"Signature supprimée: {result['appliance_name']}", "signature": result}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -299,25 +255,13 @@ async def delete_all_detections():
                 import json
                 from datetime import datetime
 
-                message = json.dumps(
-                    {
-                        "event": "detections_cleared",
-                        "data": {"deleted_count": result["deleted_count"]},
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                )
+                message = json.dumps({"event": "detections_cleared", "data": {"deleted_count": result["deleted_count"]}, "timestamp": datetime.utcnow().isoformat()})
                 redis_client.publish("detections:updates", message)
-                logger.info(
-                    f"📢 Published detections_cleared to Redis ({result['deleted_count']} deleted)"
-                )
+                logger.info(f"📢 Published detections_cleared to Redis ({result['deleted_count']} deleted)")
             except Exception as e:
                 logger.error(f"Failed to publish detections_cleared to Redis: {e}")
 
-        return {
-            "status": "success",
-            "message": f"{result['deleted_count']} détection(s) supprimée(s)",
-            "deleted_count": result["deleted_count"],
-        }
+        return {"status": "success", "message": f"{result['deleted_count']} détection(s) supprimée(s)", "deleted_count": result["deleted_count"]}
     except Exception as e:
         logger.error(f"Erreur lors de la suppression des détections: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
@@ -339,17 +283,11 @@ async def validate_detection(detection_id):
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
 
-        return {
-            "status": "success",
-            "message": f"Détection validée comme correcte: {result['appliance_name']}",
-            "detection": result,
-        }
+        return {"status": "success", "message": f"Détection validée comme correcte: {result['appliance_name']}", "detection": result}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la validation de la détection {detection_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de la validation de la détection {detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -369,17 +307,11 @@ async def invalidate_detection(detection_id):
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
 
-        return {
-            "status": "success",
-            "message": f"Détection marquée comme incorrecte: {result['appliance_name']}",
-            "detection": result,
-        }
+        return {"status": "success", "message": f"Détection marquée comme incorrecte: {result['appliance_name']}", "detection": result}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -400,29 +332,17 @@ async def reassign_detection(detection_id, request):
     try:
         appliance_name = request.get("appliance_name")
         if not appliance_name:
-            raise HTTPException(
-                status_code=400, detail="Le nom de l'appareil est requis"
-            )
+            raise HTTPException(status_code=400, detail="Le nom de l'appareil est requis")
 
         result = db_manager.reassign_detection(detection_id, appliance_name)
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
 
-        return {
-            "status": "success",
-            "message": (
-                f"Détection réassignée de {result['incorrect_appliance']} "
-                f"à {result['correct_appliance']}"
-            ),
-            "reassignment": result,
-        }
+        return {"status": "success", "message": (f"Détection réassignée de {result['incorrect_appliance']} " f"à {result['correct_appliance']}"), "reassignment": result}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la réassignation de la détection "
-            f"{detection_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de la réassignation de la détection " f"{detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -439,15 +359,8 @@ async def get_detected_appliances():
         detections = db_manager.get_detected_appliances(None, None)
         logger.info(f"🔍 get_detected_appliances returned {len(detections)} detections")
 
-        result = {
-            "start_time": None,
-            "end_time": None,
-            "total_detections": len(detections),
-            "detections": detections,
-        }
-        logger.info(
-            f"🔍 Returning response with {len(result['detections'])} detections"
-        )
+        result = {"start_time": None, "end_time": None, "total_detections": len(detections), "detections": detections}
+        logger.info(f"🔍 Returning response with {len(result['detections'])} detections")
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
@@ -471,20 +384,12 @@ async def create_signature(signature):
         from .config import get_celery_app
 
         celery_app = get_celery_app()
-        logger.info(
-            f"Création de signature pour {signature.appliance_name} "
-            f"de {signature.start_time} à {signature.end_time}"
-        )
+        logger.info(f"Création de signature pour {signature.appliance_name} " f"de {signature.start_time} à {signature.end_time}")
 
         # Envoyer la tâche au service NILM
         task = celery_app.send_task(
             "add_nilm_signature",
-            args=[
-                signature.appliance_name,
-                signature.start_time,
-                signature.end_time,
-                False,
-            ],  # is_negative=False (signature positive)
+            args=[signature.appliance_name, signature.start_time, signature.end_time, False],  # is_negative=False (signature positive)
             queue="nilm",
             routing_key="nilm.add_nilm_signature",
         )
@@ -501,9 +406,7 @@ async def create_signature(signature):
         }
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la création de la signature: {str(e)}", exc_info=True
-        )
+        logger.error(f"Erreur lors de la création de la signature: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -535,25 +438,14 @@ async def trigger_nilm_training():
                 logger.warning(f"Impossible d'incrémenter génération: {e}")
 
         # 4. Envoyer la nouvelle tâche avec la génération en argument
-        task = celery_app.send_task(
-            "train_nilm_model",
-            args=[2, training_generation],
-            queue="nilm",
-            routing_key="nilm.train_nilm_model",
-        )  # min_signatures, generation
+        task = celery_app.send_task("train_nilm_model", args=[2, training_generation], queue="nilm", routing_key="nilm.train_nilm_model")  # min_signatures, generation
 
         logger.info(f"Tâche d'entraînement créée: {task.id}")
 
-        return {
-            "status": "pending",
-            "message": "Entraînement du modèle NILM lancé",
-            "task_id": str(task.id),
-        }
+        return {"status": "pending", "message": "Entraînement du modèle NILM lancé", "task_id": str(task.id)}
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True
-        )
+        logger.error(f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -572,24 +464,14 @@ async def trigger_nilm_detection():
         logger.info("Lancement de la détection NILM")
 
         # Envoyer la tâche à la queue NILM
-        task = celery_app.send_task(
-            "detect_nilm_appliances",
-            queue="nilm",
-            routing_key="nilm.detect_nilm_appliances",
-        )
+        task = celery_app.send_task("detect_nilm_appliances", queue="nilm", routing_key="nilm.detect_nilm_appliances")
 
         logger.info(f"Tâche de détection créée: {task.id}")
 
-        return {
-            "status": "pending",
-            "message": "Détection NILM lancée",
-            "task_id": str(task.id),
-        }
+        return {"status": "pending", "message": "Détection NILM lancée", "task_id": str(task.id)}
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True
-        )
+        logger.error(f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -610,9 +492,7 @@ async def get_nilm_models():
             return {"models": [], "total": 0}
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True
-        )
+        logger.error(f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -651,23 +531,12 @@ async def delete_all_nilm_models():
                 except OSError as e:
                     errors.append(f"Fichier {file_path}: {str(e)}")
 
-        logger.info(
-            f"Suppression terminée: "
-            f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)"
-        )
+        logger.info(f"Suppression terminée: " f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)")
 
-        return {
-            "message": f"{deleted_count} modèle(s) supprimé(s) avec succès",
-            "deleted_count": deleted_count,
-            "deleted_files": deleted_files,
-            "errors": errors if errors else None,
-        }
+        return {"message": f"{deleted_count} modèle(s) supprimé(s) avec succès", "deleted_count": deleted_count, "deleted_files": deleted_files, "errors": errors if errors else None}
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la suppression de tous les modèles: {str(e)}",
-            exc_info=True,
-        )
+        logger.error(f"Erreur lors de la suppression de tous les modèles: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -702,14 +571,7 @@ async def export_signatures():
 
         # Données
         for sig in signatures:
-            writer.writerow(
-                [
-                    sig["appliance_name"],
-                    sig["start_time"],
-                    sig["end_time"],
-                    sig.get("is_negative", False),
-                ]
-            )
+            writer.writerow([sig["appliance_name"], sig["start_time"], sig["end_time"], sig.get("is_negative", False)])
 
         csv_content = output.getvalue()
 
@@ -717,16 +579,10 @@ async def export_signatures():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"linkya_signatures_{timestamp}.csv"
 
-        return Response(
-            content=csv_content,
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     except Exception as e:
         logger.error(f"Erreur lors de l'export CSV: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}")
 
 
 @app.post("/api/signatures/import")
@@ -751,13 +607,7 @@ async def import_signatures(file):
         """Publish import progress to Redis for WebSocket streaming"""
         try:
             if redis_client:
-                message = json.dumps(
-                    {
-                        "event": event,
-                        "data": data,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                )
+                message = json.dumps({"event": event, "data": data, "timestamp": datetime.utcnow().isoformat()})
                 redis_client.publish("import:progress", message)
                 logger.info(f"📢 Published {event} to Redis")
         except Exception as e:
@@ -765,9 +615,7 @@ async def import_signatures(file):
 
     try:
         # Publish import_start event
-        publish_progress_sync(
-            "import_start", {"status": "started", "filename": file.filename}
-        )
+        publish_progress_sync("import_start", {"status": "started", "filename": file.filename})
 
         # Lire le contenu du CSV
         content = await file.read()
@@ -782,28 +630,15 @@ async def import_signatures(file):
         # Valider les colonnes requises
         required_columns = {"appliance_name", "start_time", "end_time"}
         if not required_columns.issubset(csv_reader.fieldnames or []):
-            publish_progress_sync(
-                "import_error",
-                {"error": f"Colonnes requises: {', '.join(required_columns)}"},
-            )
-            raise HTTPException(
-                status_code=422,
-                detail=f"Colonnes requises: {', '.join(required_columns)}",
-            )
+            publish_progress_sync("import_error", {"error": f"Colonnes requises: {', '.join(required_columns)}"})
+            raise HTTPException(status_code=422, detail=f"Colonnes requises: {', '.join(required_columns)}")
 
         # Supprimer toutes les signatures existantes avant l'import
         logger.info("Suppression de toutes les signatures existantes...")
         delete_result = db_manager.delete_all_signatures()
         logger.info(f"{delete_result['signatures_deleted']} signature(s) supprimée(s)")
 
-        publish_progress_sync(
-            "import_progress",
-            {
-                "status": "deleted_old_signatures",
-                "count": delete_result["signatures_deleted"],
-                "total_expected": total_lines_expected,
-            },
-        )
+        publish_progress_sync("import_progress", {"status": "deleted_old_signatures", "count": delete_result["signatures_deleted"], "total_expected": total_lines_expected})
 
         # Importer ligne par ligne
         from .config import get_celery_app
@@ -839,52 +674,24 @@ async def import_signatures(file):
                     raise ValueError("start_time doit être antérieur à end_time")
 
                 # Créer la signature via Celery
-                celery_app.send_task(
-                    "add_nilm_signature",
-                    args=(appliance_name, start_time, end_time),
-                    kwargs={"is_negative": is_negative},
-                    queue="nilm_cnn",
-                    routing_key="nilm.add_nilm_signature",
-                )
+                celery_app.send_task("add_nilm_signature", args=(appliance_name, start_time, end_time), kwargs={"is_negative": is_negative}, queue="nilm_cnn", routing_key="nilm.add_nilm_signature")
 
                 success_count += 1
 
                 # Publish progress every 5 lines
                 if processed_lines % 5 == 0:
-                    progress_percent = (
-                        int((processed_lines / total_lines_expected) * 100)
-                        if total_lines_expected > 0
-                        else 0
-                    )
-                    publish_progress_sync(
-                        "import_progress",
-                        {
-                            "total_lines": processed_lines,
-                            "success_count": success_count,
-                            "error_count": error_count,
-                            "progress_percent": progress_percent,
-                        },
-                    )
+                    progress_percent = int((processed_lines / total_lines_expected) * 100) if total_lines_expected > 0 else 0
+                    publish_progress_sync("import_progress", {"total_lines": processed_lines, "success_count": success_count, "error_count": error_count, "progress_percent": progress_percent})
 
             except ValueError as e:
                 error_count += 1
                 errors.append({"line": line_num, "error": str(e)})
             except Exception as e:
                 error_count += 1
-                errors.append(
-                    {"line": line_num, "error": f"Erreur inattendue: {str(e)}"}
-                )
+                errors.append({"line": line_num, "error": f"Erreur inattendue: {str(e)}"})
 
         # Publish import_complete event
-        publish_progress_sync(
-            "import_complete",
-            {
-                "status": "completed",
-                "total_lines": processed_lines,
-                "success_count": success_count,
-                "error_count": error_count,
-            },
-        )
+        publish_progress_sync("import_complete", {"status": "completed", "total_lines": processed_lines, "success_count": success_count, "error_count": error_count})
 
         return {
             "status": "completed",
@@ -899,9 +706,7 @@ async def import_signatures(file):
         raise
     except Exception as e:
         logger.error(f"Erreur lors de l'import CSV: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}")
 
 
 # --- WebSocket Manager for Training Logs ---
@@ -937,9 +742,7 @@ class TrainingLogsManager:
             redis_url = settings.celery_broker_url.replace("redis://", "")
             host_port = redis_url.split("/")[0]
 
-            self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}", decode_responses=True
-            )
+            self.redis_client = await aioredis.from_url(f"redis://{host_port}", decode_responses=True)
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("training:logs")
 
@@ -959,9 +762,7 @@ class TrainingLogsManager:
                 logger.debug(f"📨 Redis message received: {message}")
                 if message["type"] == "message":
                     data = message["data"]
-                    logger.info(
-                        f"📢 Broadcasting to {len(self.active_connections)} clients"
-                    )
+                    logger.info(f"📢 Broadcasting to {len(self.active_connections)} clients")
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in Redis listener: {e}", exc_info=True)
@@ -1013,9 +814,7 @@ class ConsumptionUpdatesManager:
     def disconnect(self, websocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
-        logger.info(
-            f"Consumption WS disconnected. Total: {len(self.active_connections)}"
-        )
+        logger.info(f"Consumption WS disconnected. Total: {len(self.active_connections)}")
 
     async def start_redis_listener(self):
         """Start listening to Redis Pub/Sub channel."""
@@ -1023,9 +822,7 @@ class ConsumptionUpdatesManager:
             redis_url = settings.celery_broker_url.replace("redis://", "")
             host_port = redis_url.split("/")[0]
 
-            self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}", decode_responses=True
-            )
+            self.redis_client = await aioredis.from_url(f"redis://{host_port}", decode_responses=True)
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("consumption:updates")
 
@@ -1042,9 +839,7 @@ class ConsumptionUpdatesManager:
             async for message in self.pubsub.listen():
                 if message["type"] == "message":
                     data = message["data"]
-                    logger.debug(
-                        f"📢 Broadcasting consumption to {len(self.active_connections)} clients"
-                    )
+                    logger.debug(f"📢 Broadcasting consumption to {len(self.active_connections)} clients")
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in consumption Redis listener: {e}", exc_info=True)
@@ -1103,9 +898,7 @@ class DetectionUpdatesManager:
             redis_url = settings.celery_broker_url.replace("redis://", "")
             host_port = redis_url.split("/")[0]
 
-            self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}", decode_responses=True
-            )
+            self.redis_client = await aioredis.from_url(f"redis://{host_port}", decode_responses=True)
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("detections:updates")
 
@@ -1122,9 +915,7 @@ class DetectionUpdatesManager:
             async for message in self.pubsub.listen():
                 if message["type"] == "message":
                     data = message["data"]
-                    logger.debug(
-                        f"📢 Broadcasting detection to {len(self.active_connections)} clients"
-                    )
+                    logger.debug(f"📢 Broadcasting detection to {len(self.active_connections)} clients")
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in detection Redis listener: {e}", exc_info=True)
@@ -1183,9 +974,7 @@ class ImportProgressManager:
             redis_url = settings.celery_broker_url.replace("redis://", "")
             host_port = redis_url.split("/")[0]
 
-            self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}", decode_responses=True
-            )
+            self.redis_client = await aioredis.from_url(f"redis://{host_port}", decode_responses=True)
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("import:progress")
 
@@ -1202,9 +991,7 @@ class ImportProgressManager:
             async for message in self.pubsub.listen():
                 if message["type"] == "message":
                     data = message["data"]
-                    logger.debug(
-                        f"📢 Broadcasting import progress to {len(self.active_connections)} clients"
-                    )
+                    logger.debug(f"📢 Broadcasting import progress to {len(self.active_connections)} clients")
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in import Redis listener: {e}", exc_info=True)
