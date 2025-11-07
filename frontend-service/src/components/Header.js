@@ -68,19 +68,18 @@ const Header = () => {
       }, 800);
     };
 
-    const handleConnected = () => {
-      console.log("✅ Consumption WebSocket connected");
-    };
+    const handleConnected = () => {};
 
-    const handleDisconnected = () => {
-      console.log("🔌 Consumption WebSocket disconnected");
-    };
+    const handleDisconnected = () => {};
 
     const handleError = (errorData) => {
       console.error("WebSocket error:", errorData);
     };
 
     // Register event handlers
+    consumptionWS.onopen = () => {
+      console.log(`✅ WebSocket connected to ${this.url}`);
+    };
     consumptionWS.on("new_consumption", handleNewConsumption);
     consumptionWS.on("connected", handleConnected);
     consumptionWS.on("disconnected", handleDisconnected);
