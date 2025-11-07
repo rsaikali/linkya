@@ -26,7 +26,12 @@ async def get_detected_appliances():
         detections = db_manager.get_detected_appliances(None, None)
         logger.info(f"get_detected_appliances returned {len(detections)} detections")
 
-        result = {"start_time": None, "end_time": None, "total_detections": len(detections), "detections": detections}
+        result = {
+            "start_time": None,
+            "end_time": None,
+            "total_detections": len(detections),
+            "detections": detections,
+        }
         logger.info(f"Returning response with {len(result['detections'])} detections")
         return result
     except Exception as e:
@@ -48,13 +53,25 @@ async def delete_all_detections():
         redis_client = get_redis_client()
         if redis_client:
             try:
-                message = json.dumps({"event": "detections_cleared", "data": {"deleted_count": result["deleted_count"]}, "timestamp": datetime.utcnow().isoformat()})
+                message = json.dumps(
+                    {
+                        "event": "detections_cleared",
+                        "data": {"deleted_count": result["deleted_count"]},
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("detections:updates", message)
-                logger.info(f"Published detections_cleared to Redis ({result['deleted_count']} deleted)")
+                logger.info(
+                    f"Published detections_cleared to Redis ({result['deleted_count']} deleted)"
+                )
             except Exception as e:
                 logger.error(f"Failed to publish detections_cleared to Redis: {e}")
 
-        return {"status": "success", "message": f"{result['deleted_count']} détection(s) supprimée(s)", "deleted_count": result["deleted_count"]}
+        return {
+            "status": "success",
+            "message": f"{result['deleted_count']} détection(s) supprimée(s)",
+            "deleted_count": result["deleted_count"],
+        }
     except Exception as e:
         logger.error(f"Erreur lors de la suppression des détections: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
@@ -76,11 +93,17 @@ async def validate_detection(detection_id):
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
 
-        return {"status": "success", "message": f"Détection validée comme correcte: {result['appliance_name']}", "detection": result}
+        return {
+            "status": "success",
+            "message": f"Détection validée comme correcte: {result['appliance_name']}",
+            "detection": result,
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de la validation de la détection {detection_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de la validation de la détection {detection_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -100,11 +123,17 @@ async def invalidate_detection(detection_id):
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
 
-        return {"status": "success", "message": f"Détection marquée comme incorrecte: {result['appliance_name']}", "detection": result}
+        return {
+            "status": "success",
+            "message": f"Détection marquée comme incorrecte: {result['appliance_name']}",
+            "detection": result,
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -125,15 +154,27 @@ async def reassign_detection(detection_id, request):
     try:
         appliance_name = request.get("appliance_name")
         if not appliance_name:
-            raise HTTPException(status_code=400, detail="Le nom de l'appareil est requis")
+            raise HTTPException(
+                status_code=400, detail="Le nom de l'appareil est requis"
+            )
 
         result = db_manager.reassign_detection(detection_id, appliance_name)
         if not result:
             raise HTTPException(status_code=404, detail="Détection non trouvée")
 
-        return {"status": "success", "message": (f"Détection réassignée de {result['incorrect_appliance']} " f"à {result['correct_appliance']}"), "reassignment": result}
+        return {
+            "status": "success",
+            "message": (
+                f"Détection réassignée de {result['incorrect_appliance']} "
+                f"à {result['correct_appliance']}"
+            ),
+            "reassignment": result,
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de la réassignation de la détection " f"{detection_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de la réassignation de la détection "
+            f"{detection_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")

@@ -51,12 +51,20 @@ async def create_signature(signature: SignatureCreate):
     """
     try:
         celery_app = get_celery_app()
-        logger.info(f"Création de signature pour {signature.appliance_name} " f"de {signature.start_time} à {signature.end_time}")
+        logger.info(
+            f"Création de signature pour {signature.appliance_name} "
+            f"de {signature.start_time} à {signature.end_time}"
+        )
 
         # Envoyer la tâche au service NILM
         task = celery_app.send_task(
             "add_nilm_signature",
-            args=[signature.appliance_name, signature.start_time, signature.end_time, False],  # is_negative=False (signature positive)
+            args=[
+                signature.appliance_name,
+                signature.start_time,
+                signature.end_time,
+                False,
+            ],  # is_negative=False (signature positive)
             queue="nilm",
             routing_key="nilm.add_nilm_signature",
         )
@@ -73,7 +81,9 @@ async def create_signature(signature: SignatureCreate):
         }
 
     except Exception as e:
-        logger.error(f"Erreur lors de la création de la signature: {str(e)}", exc_info=True)
+        logger.error(
+            f"Erreur lors de la création de la signature: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -88,7 +98,11 @@ async def delete_all_signatures():
     try:
         result = db_manager.delete_all_signatures()
 
-        return {"status": "success", "message": f"{result['signatures_deleted']} signature(s) supprimée(s)", "signatures_deleted": result["signatures_deleted"]}
+        return {
+            "status": "success",
+            "message": f"{result['signatures_deleted']} signature(s) supprimée(s)",
+            "signatures_deleted": result["signatures_deleted"],
+        }
     except Exception as e:
         logger.error(f"Erreur lors de la suppression des signatures: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
@@ -110,11 +124,17 @@ async def delete_signature(signature_id):
         if not result:
             raise HTTPException(status_code=404, detail="Signature non trouvée")
 
-        return {"status": "success", "message": f"Signature supprimée: {result['appliance_name']}", "signature": result}
+        return {
+            "status": "success",
+            "message": f"Signature supprimée: {result['appliance_name']}",
+            "signature": result,
+        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -138,7 +158,14 @@ async def export_signatures():
 
         # Données
         for sig in signatures:
-            writer.writerow([sig["appliance_name"], sig["start_time"], sig["end_time"], sig.get("is_negative", False)])
+            writer.writerow(
+                [
+                    sig["appliance_name"],
+                    sig["start_time"],
+                    sig["end_time"],
+                    sig.get("is_negative", False),
+                ]
+            )
 
         csv_content = output.getvalue()
 
@@ -146,10 +173,16 @@ async def export_signatures():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"linkya_signatures_{timestamp}.csv"
 
-        return Response(content=csv_content, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     except Exception as e:
         logger.error(f"Erreur lors de l'export CSV: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}"
+        )
 
 
 @router.post("/import")
@@ -173,7 +206,13 @@ async def import_signatures(file):
         try:
             redis_client = get_redis_client()
             if redis_client:
-                message = json.dumps({"event": event, "data": data, "timestamp": datetime.utcnow().isoformat()})
+                message = json.dumps(
+                    {
+                        "event": event,
+                        "data": data,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("import:progress", message)
                 logger.info(f"Published {event} to Redis")
         except Exception as e:
@@ -181,7 +220,9 @@ async def import_signatures(file):
 
     try:
         # Publish import_start event
-        publish_progress_sync("import_start", {"status": "started", "filename": file.filename})
+        publish_progress_sync(
+            "import_start", {"status": "started", "filename": file.filename}
+        )
 
         # Lire le contenu du CSV
         content = await file.read()
@@ -196,15 +237,28 @@ async def import_signatures(file):
         # Valider les colonnes requises
         required_columns = {"appliance_name", "start_time", "end_time"}
         if not required_columns.issubset(csv_reader.fieldnames or []):
-            publish_progress_sync("import_error", {"error": f"Colonnes requises: {', '.join(required_columns)}"})
-            raise HTTPException(status_code=422, detail=f"Colonnes requises: {', '.join(required_columns)}")
+            publish_progress_sync(
+                "import_error",
+                {"error": f"Colonnes requises: {', '.join(required_columns)}"},
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"Colonnes requises: {', '.join(required_columns)}",
+            )
 
         # Supprimer toutes les signatures existantes avant l'import
         logger.info("Suppression de toutes les signatures existantes...")
         delete_result = db_manager.delete_all_signatures()
         logger.info(f"{delete_result['signatures_deleted']} signature(s) supprimée(s)")
 
-        publish_progress_sync("import_progress", {"status": "deleted_old_signatures", "count": delete_result["signatures_deleted"], "total_expected": total_lines_expected})
+        publish_progress_sync(
+            "import_progress",
+            {
+                "status": "deleted_old_signatures",
+                "count": delete_result["signatures_deleted"],
+                "total_expected": total_lines_expected,
+            },
+        )
 
         # Importer ligne par ligne
         celery_app = get_celery_app()
@@ -238,24 +292,52 @@ async def import_signatures(file):
                     raise ValueError("start_time doit être antérieur à end_time")
 
                 # Créer la signature via Celery
-                celery_app.send_task("add_nilm_signature", args=(appliance_name, start_time, end_time), kwargs={"is_negative": is_negative}, queue="nilm_cnn", routing_key="nilm.add_nilm_signature")
+                celery_app.send_task(
+                    "add_nilm_signature",
+                    args=(appliance_name, start_time, end_time),
+                    kwargs={"is_negative": is_negative},
+                    queue="nilm_cnn",
+                    routing_key="nilm.add_nilm_signature",
+                )
 
                 success_count += 1
 
                 # Publish progress every 5 lines
                 if processed_lines % 5 == 0:
-                    progress_percent = int((processed_lines / total_lines_expected) * 100) if total_lines_expected > 0 else 0
-                    publish_progress_sync("import_progress", {"total_lines": processed_lines, "success_count": success_count, "error_count": error_count, "progress_percent": progress_percent})
+                    progress_percent = (
+                        int((processed_lines / total_lines_expected) * 100)
+                        if total_lines_expected > 0
+                        else 0
+                    )
+                    publish_progress_sync(
+                        "import_progress",
+                        {
+                            "total_lines": processed_lines,
+                            "success_count": success_count,
+                            "error_count": error_count,
+                            "progress_percent": progress_percent,
+                        },
+                    )
 
             except ValueError as e:
                 error_count += 1
                 errors.append({"line": line_num, "error": str(e)})
             except Exception as e:
                 error_count += 1
-                errors.append({"line": line_num, "error": f"Erreur inattendue: {str(e)}"})
+                errors.append(
+                    {"line": line_num, "error": f"Erreur inattendue: {str(e)}"}
+                )
 
         # Publish import_complete event
-        publish_progress_sync("import_complete", {"status": "completed", "total_lines": processed_lines, "success_count": success_count, "error_count": error_count})
+        publish_progress_sync(
+            "import_complete",
+            {
+                "status": "completed",
+                "total_lines": processed_lines,
+                "success_count": success_count,
+                "error_count": error_count,
+            },
+        )
 
         return {
             "status": "completed",
@@ -270,4 +352,6 @@ async def import_signatures(file):
         raise
     except Exception as e:
         logger.error(f"Erreur lors de l'import CSV: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}"
+        )

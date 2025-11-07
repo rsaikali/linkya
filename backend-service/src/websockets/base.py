@@ -32,7 +32,9 @@ class BaseWebSocketManager:
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
-        logger.info(f"{self.manager_name} WS connected. Total: {len(self.active_connections)}")
+        logger.info(
+            f"{self.manager_name} WS connected. Total: {len(self.active_connections)}"
+        )
 
         if not self.listener_task:
             await self.start_redis_listener()
@@ -40,7 +42,9 @@ class BaseWebSocketManager:
     def disconnect(self, websocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
-        logger.info(f"{self.manager_name} WS disconnected. Total: {len(self.active_connections)}")
+        logger.info(
+            f"{self.manager_name} WS disconnected. Total: {len(self.active_connections)}"
+        )
 
     async def start_redis_listener(self):
         """Start listening to Redis Pub/Sub channel."""
@@ -48,7 +52,9 @@ class BaseWebSocketManager:
             redis_url = settings.celery_broker_url.replace("redis://", "")
             host_port = redis_url.split("/")[0]
 
-            self.redis_client = await aioredis.from_url(f"redis://{host_port}", decode_responses=True)
+            self.redis_client = await aioredis.from_url(
+                f"redis://{host_port}", decode_responses=True
+            )
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe(self.channel_name)
 
@@ -65,10 +71,14 @@ class BaseWebSocketManager:
             async for message in self.pubsub.listen():
                 if message["type"] == "message":
                     data = message["data"]
-                    logger.debug(f"Broadcasting {self.manager_name} to {len(self.active_connections)} clients")
+                    logger.debug(
+                        f"Broadcasting {self.manager_name} to {len(self.active_connections)} clients"
+                    )
                     await self.broadcast(data)
         except Exception as e:
-            logger.error(f"Error in {self.manager_name} Redis listener: {e}", exc_info=True)
+            logger.error(
+                f"Error in {self.manager_name} Redis listener: {e}", exc_info=True
+            )
         finally:
             logger.info(f"{self.manager_name} Redis listener task ending")
             if self.pubsub:

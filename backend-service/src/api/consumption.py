@@ -28,7 +28,12 @@ async def get_latest_consumption():
 
 
 @router.get("/history")
-async def get_consumption_history(interval=Query(default="auto", description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)")):
+async def get_consumption_history(
+    interval=Query(
+        default="auto",
+        description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)",
+    )
+):
     """
     Retrieves all consumption history data.
 
@@ -62,8 +67,16 @@ async def get_consumption_history(interval=Query(default="auto", description="Ag
 
         data = db_manager.get_consumption_history(start_time_dt, end_time_dt, interval)
         if not data:
-            raise HTTPException(status_code=404, detail="Aucune donnée disponible pour cette période")
+            raise HTTPException(
+                status_code=404, detail="Aucune donnée disponible pour cette période"
+            )
 
-        return {"start_time": start_time_dt.isoformat(), "end_time": end_time_dt.isoformat(), "interval": interval, "data_points": len(data), "data": data}
+        return {
+            "start_time": start_time_dt.isoformat(),
+            "end_time": end_time_dt.isoformat(),
+            "interval": interval,
+            "data_points": len(data),
+            "data": data,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")

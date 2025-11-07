@@ -5,12 +5,26 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import appliances_router, consumption_router, detections_router, nilm_router, signatures_router, system_router
+from .api import (
+    appliances_router,
+    consumption_router,
+    detections_router,
+    nilm_router,
+    signatures_router,
+    system_router,
+)
 from .config import settings
-from .websockets.routes import websocket_consumption_updates, websocket_detection_updates, websocket_import_progress, websocket_training_logs
+from .websockets.routes import (
+    websocket_consumption_updates,
+    websocket_detection_updates,
+    websocket_import_progress,
+    websocket_training_logs,
+)
 
 # Logging configuration
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -21,7 +35,14 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance
     """
-    app = FastAPI(title=settings.api_title, version=settings.api_version, description=settings.api_description, docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json")
+    app = FastAPI(
+        title=settings.api_title,
+        version=settings.api_version,
+        description=settings.api_description,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+    )
 
     # CORS configuration to allow requests from the frontend
     # Note: WebSocket connections bypass CORS middleware
