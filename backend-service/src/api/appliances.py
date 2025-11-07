@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..db import db_manager
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/appliances", tags=["Appliances"])
 

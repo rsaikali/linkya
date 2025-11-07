@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
 
+
 logger = logging.getLogger(__name__)
 
 

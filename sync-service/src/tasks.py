@@ -6,6 +6,7 @@ from celery import Celery
 from .config import settings
 from .database import db_manager
 
+
 # Configuration du logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

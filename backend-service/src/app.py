@@ -21,6 +21,7 @@ from .websockets.routes import (
     websocket_training_logs,
 )
 
+
 # Logging configuration
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

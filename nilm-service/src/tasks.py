@@ -10,12 +10,14 @@ from zoneinfo import ZoneInfo
 
 import redis
 
+
 # Filtrer les warnings Celery root avant les imports
 os.environ["C_FORCE_ROOT"] = "true"
 warnings.filterwarnings("ignore", message=".*superuser privileges.*")
 
 from celery import Celery  # noqa: E402
 from celery.schedules import crontab  # noqa: E402
+
 
 # Configuration du logger (doit être avant les imports locaux)
 logging.basicConfig(
@@ -28,6 +30,7 @@ LOCAL_TIMEZONE = ZoneInfo(os.environ.get("TZ", "Europe/Paris"))
 from .config import settings  # noqa: E402
 from .database import db_manager  # noqa: E402
 from .seq2point_nilm import Seq2PointNILMManager  # noqa: E402
+
 
 logger.info("🚀 Mode Sequence-to-Point (S2P) activé")
 nilm_manager = Seq2PointNILMManager()

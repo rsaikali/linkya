@@ -14,6 +14,7 @@ from ..db import db_manager
 from ..models import SignatureCreate
 from ..utils.redis_client import get_redis_client
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/signatures", tags=["Signatures"])
 

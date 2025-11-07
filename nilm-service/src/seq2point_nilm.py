@@ -29,6 +29,7 @@ from tensorflow.keras import callbacks, layers, models
 from .config import settings
 from .database import db_manager
 
+
 logger = logging.getLogger(__name__)
 
 

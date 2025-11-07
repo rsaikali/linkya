@@ -10,6 +10,7 @@ from ..config import get_celery_app
 from ..db import db_manager
 from ..utils.redis_client import get_redis_client
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/nilm", tags=["NILM"])
 
