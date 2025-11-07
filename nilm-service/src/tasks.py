@@ -71,6 +71,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=3600,  # 1 heure max par tâche
     worker_pool='solo',  # Pour éviter les conflits avec TensorFlow
+    task_routes={
+        'train_nilm_model': {'queue': 'nilm'},
+        'detect_nilm_appliances': {'queue': 'nilm'},
+        'add_nilm_signature': {'queue': 'nilm'},
+    },
 )
 
 # Redis client pour WebSocket real-time updates
@@ -83,37 +88,6 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ Redis client init failed: {e}")
     redis_client = None
-
-
-@celery_app.task(name='init_nilm_database')
-def init_nilm_database() -> Dict[str, Any]:
-    """
-    Initialise les tables NILM dans TimescaleDB
-    
-    Returns:
-        Statut de l'initialisation
-    """
-    try:
-        logger.info("Initialisation des tables NILM...")
-        
-        # Tester la connexion
-        if not db_manager.test_connection():
-            return {'status': 'error', 'message': 'Connexion à la base de données échouée'}
-        
-        # Créer les tables
-        db_manager.init_tables()
-        
-        logger.info("Tables NILM initialisées avec succès")
-        
-        return {
-            'status': 'success',
-            'message': 'Tables NILM créées',
-            'timestamp': datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation: {e}")
-        return {'status': 'error', 'message': str(e)}
 
 
 @celery_app.task(name='train_nilm_model', bind=True)
@@ -731,81 +705,6 @@ def add_nilm_signature(
         return {'status': 'error', 'message': str(e)}
 
 
-@celery_app.task(name='get_nilm_stats')
-def get_nilm_stats() -> Dict[str, Any]:
-    """
-    Récupère les statistiques du service NILM
-    
-    Returns:
-        Statistiques complètes
-    """
-    try:
-        from sqlalchemy import text
-        
-        stats = {}
-        
-        with db_manager.engine.connect() as conn:
-            # Nombre d'appareils
-            result = conn.execute(text("SELECT COUNT(*) FROM nilm_appliances"))
-            stats['num_appliances'] = result.scalar()
-            
-            # Nombre de signatures
-            result = conn.execute(text("SELECT COUNT(*) FROM nilm_signatures"))
-            stats['num_signatures'] = result.scalar()
-            
-            # Nombre de détections
-            result = conn.execute(text("SELECT COUNT(*) FROM nilm_detections"))
-            stats['num_detections'] = result.scalar()
-            
-            # Nombre de modèles
-            result = conn.execute(text("SELECT COUNT(*) FROM nilm_models"))
-            stats['num_models'] = result.scalar()
-            
-            # Modèle actif
-            result = conn.execute(
-                text("SELECT version, num_classes, metrics FROM nilm_models WHERE model_status = 'current' LIMIT 1")
-            )
-            row = result.first()
-            if row:
-                stats['active_model'] = {
-                    'version': row.version,
-                    'num_classes': row.num_classes,
-                    'metrics': row.metrics
-                }
-            
-            # Statistiques par appareil
-            result = conn.execute(text("""
-                SELECT 
-                    a.name,
-                    COUNT(DISTINCT s.id) as num_signatures,
-                    COUNT(DISTINCT d.id) as num_detections
-                FROM nilm_appliances a
-                LEFT JOIN nilm_signatures s ON a.id = s.appliance_id
-                LEFT JOIN nilm_detections d ON a.id = d.appliance_id
-                GROUP BY a.id, a.name
-                ORDER BY a.name
-            """))
-            
-            stats['appliances'] = [
-                {
-                    'name': row.name,
-                    'num_signatures': row.num_signatures,
-                    'num_detections': row.num_detections
-                }
-                for row in result
-            ]
-        
-        stats['timestamp'] = datetime.utcnow().isoformat()
-        
-        logger.info(f"Statistiques NILM: {stats['num_appliances']} appareils, {stats['num_signatures']} signatures")
-        
-        return stats
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des stats: {e}")
-        return {'status': 'error', 'message': str(e)}
-
-
 # Configuration des tâches périodiques
 celery_app.conf.beat_schedule = {
     'train-nilm-model': {
@@ -816,9 +715,5 @@ celery_app.conf.beat_schedule = {
         'task': 'detect_nilm_appliances',
         'schedule': settings.nilm_detection_interval_minutes * 60.0,
         'kwargs': {'hours': 2, 'min_confidence': 0.6}  # Analyse 2h pour couvrir les cycles HC/HP
-    },
-    'get-nilm-stats': {
-        'task': 'get_nilm_stats',
-        'schedule': 300.0,  # Toutes les 5 minutes
     },
 }

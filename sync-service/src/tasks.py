@@ -32,19 +32,6 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(name='init_database')
-def init_database():
-    """Initialise la base de données locale"""
-    logger.info("Initialisation de la base de données locale...")
-    try:
-        db_manager.init_local_db()
-        logger.info("Base de données initialisée avec succès")
-        return {"status": "success", "message": "Database initialized"}
-    except Exception as e:
-        logger.error(f"Erreur lors de l'initialisation: {e}")
-        return {"status": "error", "message": str(e)}
-
-
 @celery_app.task(name='full_sync')
 def full_sync():
     """Synchronisation complète des 48h de données"""
@@ -125,36 +112,10 @@ def incremental_sync():
         return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(name='get_stats')
-def get_stats():
-    """Récupère les statistiques de la base locale"""
-    try:
-        stats = db_manager.get_data_stats()
-        logger.info(f"Statistiques: {stats}")
-        return {
-            "status": "success",
-            "stats": stats,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des stats: {e}")
-        return {"status": "error", "message": str(e)}
-
-
 # Configuration du Beat scheduler pour les tâches périodiques
 celery_app.conf.beat_schedule = {
-    'incremental-sync-every-second': {
+    'incremental-sync': {
         'task': 'incremental_sync',
-        'schedule': 1.0,  # Toutes les secondes
-    },
-    'stats-every-minute': {
-        'task': 'get_stats',
-        'schedule': 60.0,
+        'schedule': float(settings.sync_interval_seconds),
     },
 }
-
-
-@celery_app.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    """Configuration des tâches périodiques au démarrage"""
-    logger.info("Configuration des tâches périodiques...")
