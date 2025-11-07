@@ -1,7 +1,7 @@
 [project]
-name = "nilmia-backend"
+name = "linkya-backend"
 version = "0.1.0"
-description = "Backend API FastAPI pour Nilmia"
+description = "Backend API FastAPI pour Linkya"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",

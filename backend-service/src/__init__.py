@@ -1,1 +1,1 @@
-"""Backend API FastAPI pour Nilmia."""
+"""Backend API FastAPI pour Linkya."""

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     local_db_password: str = "postgres"
 
     # API Configuration
-    api_title: str = "Nilmia API"
+    api_title: str = "Linkya API"
     api_version: str = "0.1.0"
     api_description: str = "API REST pour accéder aux données Linky et NILM"
     cors_origins: list[str] = [
@@ -54,7 +54,7 @@ def get_celery_app() -> Celery:
     
     if _celery_app is None:
         _celery_app = Celery(
-            "nilmia-backend",
+            "linkya-backend",
             broker=settings.celery_broker_url,
             backend=settings.celery_result_backend
         )

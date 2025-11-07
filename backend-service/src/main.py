@@ -1,4 +1,4 @@
-"""Main FastAPI backend for Nilmia."""
+"""Main FastAPI backend for Linkya."""
 
 import asyncio
 import json
@@ -65,7 +65,7 @@ app.add_middleware(
 async def root():
     """API root entry point."""
     return {
-        "message": "Nilmia API",
+        "message": "Linkya API",
         "version": settings.api_version,
         "endpoints": {
             "latest": "/api/consumption/latest",
@@ -748,7 +748,7 @@ async def export_signatures():
 
         # Générer le nom du fichier avec timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"nilmia_signatures_{timestamp}.csv"
+        filename = f"linkya_signatures_{timestamp}.csv"
 
         return Response(
             content=csv_content,
