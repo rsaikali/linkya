@@ -31,8 +31,11 @@
 - Python: Follow PEP 8 guidelines strictly
 - JavaScript/React: Follow Airbnb style guide
 - **NO emojis or emoticons** in code or logs (note: currently present in logs, should be removed if modifying)
-- No unnecessary documentation files - update existing README files only
-- Delete temporary scripts after use
+- **NEVER create documentation files** (ISORT.md, USAGE.md, etc.) - explain in chat only
+- **NEVER create example files** unless explicitly requested
+- **NEVER create utility scripts** unless explicitly requested
+- Update existing README files only when necessary
+- Delete temporary files after use
 
 **Important:** When modifying a service, update all related services accordingly. This is a tightly coupled microservices system.
 
