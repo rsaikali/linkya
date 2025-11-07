@@ -1,8 +1,9 @@
 """FastAPI backend configuration."""
 
 import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from celery import Celery
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://frontend:3000",
         "ws://localhost:3000",
-        "ws://frontend:3000"
+        "ws://frontend:3000",
     ]
 
     # Celery Configuration
@@ -51,12 +52,12 @@ _celery_app: Celery | None = None
 def get_celery_app() -> Celery:
     """Returns the Celery singleton instance."""
     global _celery_app
-    
+
     if _celery_app is None:
         _celery_app = Celery(
             "linkya-backend",
             broker=settings.celery_broker_url,
-            backend=settings.celery_result_backend
+            backend=settings.celery_result_backend,
         )
-    
+
     return _celery_app

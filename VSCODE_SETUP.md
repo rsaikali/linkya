@@ -42,6 +42,20 @@ Vous devriez maintenant avoir :
 
 Voir `.vscode/README.md` pour plus de détails.
 
+## 🎨 Qualité de code
+
+Vérifiez et corrigez automatiquement la qualité du code Python :
+
+```bash
+# Vérifier la qualité du code (Flake8 + isort)
+make code-quality-check
+
+# Corriger automatiquement (Black + isort)
+make code-quality-fix
+```
+
+Voir `CODE_QUALITY.md` pour plus de détails.
+
 ## ⚠️ Important
 
 - Les `.venv` sont **uniquement pour VS Code** (IntelliSense, linting)

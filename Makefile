@@ -25,93 +25,58 @@ clean: ## Supprime tous les containers et volumes
 	docker-compose down -v
 
 train: ## Lance l'entraînement NILM via l'API (utilise automatiquement les feedbacks utilisateur)
-	@echo "🧠 Lancement de l'entraînement via l'API (avec apprentissage par feedback)..."
+	@echo "Lancement de l'entraînement via l'API (avec apprentissage par feedback)..."
 	@curl -X POST http://localhost:8000/api/nilm/train | python3 -m json.tool
 
 detect: ## Lance la détection NILM via l'API
-	@echo "🔍 Lancement de la détection via l'API..."
+	@echo "Lancement de la détection via l'API..."
 	@curl -X POST http://localhost:8000/api/nilm/detect | python3 -m json.tool
 
-feedback-stats: ## Affiche les statistiques des feedbacks utilisateur
-	@echo "📊 Statistiques des feedbacks utilisateur..."
-	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		SELECT \
-			ca.name AS appareil, \
-			COUNT(CASE WHEN cd.is_correct = TRUE THEN 1 END) AS validations, \
-			COUNT(CASE WHEN cd.is_correct = FALSE THEN 1 END) AS invalidations, \
-			COUNT(CASE WHEN cd.user_validated IS NULL THEN 1 END) AS non_validees \
-		FROM nilm_detections cd \
-		JOIN nilm_appliances ca ON cd.appliance_id = ca.id \
-		GROUP BY ca.name \
-		ORDER BY (COUNT(CASE WHEN cd.is_correct = FALSE THEN 1 END)) DESC;"
+## VSCode Python Environment Management
+vscode-setup: ## Configure VS Code Python environments for local development
+	@echo "Setting up VS Code Python environments..."
+	@./.dev/setup-vscode-env.sh
 
-signatures-stats: ## Affiche les statistiques des signatures (positives et négatives)
-	@echo "📊 Statistiques des signatures..."
-	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		SELECT \
-			ca.name AS appareil, \
-			COUNT(CASE WHEN cs.is_negative = FALSE THEN 1 END) AS positives, \
-			COUNT(CASE WHEN cs.is_negative = TRUE THEN 1 END) AS negatives \
-		FROM nilm_signatures cs \
-		JOIN nilm_appliances ca ON cs.appliance_id = ca.id \
-		GROUP BY ca.name \
-		ORDER BY ca.name;"
+vscode-clean: ## Remove all Python virtual environments
+	@echo "Cleaning VS Code Python environments..."
+	@rm -rf backend-service/.venv
+	@rm -rf sync-service/.venv
+	@rm -rf nilm-service/.venv
+	@echo "✓ Virtual environments removed"
 
-detections-clean: ## Vide la table des détections (les signatures négatives sont préservées)
-	@echo "⚠️  Nettoyage de la table des détections..."
-	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		DELETE FROM nilm_detections; \
-		SELECT 'Toutes les détections ont été supprimées. Les signatures négatives sont préservées.' AS status;"
-	@echo "✅ Nettoyage terminé. Vous pouvez relancer make detect pour générer de nouvelles détections."
+vscode-reinstall: vscode-clean vscode-setup ## Clean and reinstall VS Code environments
+	@echo "✓ VS Code environments reinstalled"
 
-init-sync: ## Initialise la synchronisation des données
+## Code Quality
+code-quality-check: ## Check Python code quality (Flake8 + isort)
+	@echo "🔍 Checking Python code quality..."
+	@echo ""
+	@echo "📋 Checking with Flake8..."
+	@backend-service/.venv/bin/flake8 backend-service/src/ || true
+	@sync-service/.venv/bin/flake8 sync-service/src/ || true
+	@nilm-service/.venv/bin/flake8 nilm-service/src/ || true
+	@echo ""
+	@echo "📋 Checking import order with isort..."
+	@backend-service/.venv/bin/isort --check-only --diff backend-service/src/ || true
+	@sync-service/.venv/bin/isort --check-only --diff sync-service/src/ || true
+	@nilm-service/.venv/bin/isort --check-only --diff nilm-service/src/ || true
+	@echo ""
+	@echo "✅ Code quality check completed!"
 
+code-quality-fix: ## Fix Python code quality issues (Black + isort)
+	@echo "🔧 Fixing Python code quality issues..."
+	@echo ""
+	@echo "📝 Sorting imports with isort..."
+	@backend-service/.venv/bin/isort backend-service/src/
+	@sync-service/.venv/bin/isort sync-service/src/
+	@nilm-service/.venv/bin/isort nilm-service/src/
+	@echo ""
+	@echo "📝 Formatting code with Black..."
+	@backend-service/.venv/bin/black backend-service/src/
+	@sync-service/.venv/bin/black sync-service/src/
+	@nilm-service/.venv/bin/black nilm-service/src/
+	@echo ""
+	@echo "✅ Code quality fixes applied!"
+	@echo ""
+	@echo "💡 Run 'make code-quality-check' to verify"
 
-model-compare: ## Compare les métriques du modèle current vs backup
-	@echo "📊 Comparaison Current vs Backup..."
-	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		SELECT \
-			model_status, \
-			version, \
-			training_date, \
-			num_signatures, \
-			num_classes as appareils, \
-			training_duration_seconds as duree_s, \
-			metrics->'appliances' as details_appareils \
-		FROM nilm_models \
-		WHERE model_status IN ('current', 'backup') \
-		ORDER BY CASE model_status WHEN 'current' THEN 1 WHEN 'backup' THEN 2 END;"
-
-model-rollback: ## Revient au modèle backup (annule le dernier entraînement)
-	@echo "⚠️  Rollback vers le modèle backup..."
-	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		BEGIN; \
-		UPDATE nilm_models SET model_status = 'archived' WHERE model_status = 'current'; \
-		UPDATE nilm_models SET model_status = 'current' WHERE model_status = 'backup'; \
-		COMMIT; \
-		SELECT 'Rollback effectué ! Modèle backup promu en current.' AS status;"
-	@echo "✅ Rollback terminé. Relancez make detect pour utiliser le modèle restauré."
-
-model-status: ## Affiche le statut actuel des modèles (current/backup/archived)
-	@echo "📋 Statut des modèles..."
-	@docker-compose exec timescaledb psql -U postgres -d linkya_db -c "\
-		SELECT \
-			model_status, \
-			version, \
-			model_type, \
-			training_date, \
-			num_signatures, \
-			num_classes as appareils \
-		FROM nilm_models \
-		ORDER BY CASE model_status WHEN 'current' THEN 1 WHEN 'backup' THEN 2 ELSE 3 END, training_date DESC;"
-
-frontend-logs: ## Affiche les logs du frontend
-	@docker-compose logs -f frontend
-
-frontend-restart: ## Redémarre le frontend
-	@docker-compose restart frontend
-
-frontend-reload: ## Force le rechargement du frontend (utile sur WSL2)
-	@echo "🔄 Rechargement du frontend..."
-	@docker exec linkya-frontend touch /app/src/index.js
-	@echo "✅ Rechargement déclenché. Vérifiez votre navigateur."
