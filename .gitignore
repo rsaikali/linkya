@@ -40,7 +40,6 @@ env/
 !.vscode/launch.json
 !.vscode/tasks.json
 !.vscode/README.md
-!.vscode/FLAKE8.md
 .idea/
 *.swp
 *.swo
