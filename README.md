@@ -1,4 +1,4 @@
-# Nilmia - Plateforme d'analyse de consommation électrique
+# Linkya - Plateforme d'analyse de consommation électrique
 
 Plateforme complète pour la synchronisation et l'analyse intelligente des données de consommation électrique Linky, avec détection automatique d'appareils (NILM).
 
@@ -399,13 +399,13 @@ uv run pytest
 
 ```bash
 # Logs du worker
-docker logs -f nilmia-sync-worker
+docker logs -f linkya-sync-worker
 
 # Logs du beat scheduler
-docker logs -f nilmia-sync-beat
+docker logs -f linkya-sync-beat
 
 # Logs de TimescaleDB
-docker logs -f nilmia-timescaledb
+docker logs -f linkya-timescaledb
 ```
 
 ## 🐛 Dépannage
@@ -433,14 +433,14 @@ netstat -tulpn | grep 5555
 Testez la connexion depuis le container :
 
 ```bash
-docker exec -it nilmia-sync-worker python -c "from src.database import db_manager; print(db_manager.get_data_stats())"
+docker exec -it linkya-sync-worker python -c "from src.database import db_manager; print(db_manager.get_data_stats())"
 ```
 
 ## 📦 Structure du projet
 
 ```
 ```
-nilmia/
+linkya/
 ├── sync-service/                # Service de synchronisation Linky
 │   ├── src/
 │   │   ├── config.py           # Configuration (Pydantic)

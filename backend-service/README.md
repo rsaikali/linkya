@@ -1,6 +1,6 @@
 # Backend Service - API REST FastAPI
 
-Service API REST pour exposer les données Linky et NILM de la plateforme Nilmia.
+Service API REST pour exposer les données Linky et NILM de la plateforme Linkya.
 
 ## Technologies
 

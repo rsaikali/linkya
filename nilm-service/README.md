@@ -121,7 +121,7 @@ Entraîne le modèle NILM sur toutes les signatures disponibles.
 
 ```bash
 # Manuel
-docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call train_nilm_model
+docker exec linkya-nilm-worker celery -A src.tasks.celery_app call train_nilm_model
 ```
 
 ### detect_nilm_appliances
@@ -133,7 +133,7 @@ Détecte les appareils dans la période récente.
 
 ```bash
 # Manuel - dernière heure
-docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call detect_nilm_appliances --kwargs='{"hours": 1}'
+docker exec linkya-nilm-worker celery -A src.tasks.celery_app call detect_nilm_appliances --kwargs='{"hours": 1}'
 ```
 
 ### add_nilm_signature
@@ -141,7 +141,7 @@ Ajoute une signature manuelle soumise par l'utilisateur.
 
 ```bash
 # Exemple
-docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call add_nilm_signature \
+docker exec linkya-nilm-worker celery -A src.tasks.celery_app call add_nilm_signature \
   --kwargs='{"appliance_name": "Lave-linge", "start_time_str": "2025-10-22T10:00:00Z", "end_time_str": "2025-10-22T11:30:00Z", "description": "Cycle éco 40°C"}'
 ```
 
@@ -149,7 +149,7 @@ docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call add_nilm_sign
 Récupère les statistiques du service (automatique toutes les 5 minutes).
 
 ```bash
-docker exec nilmia-nilm-worker celery -A src.tasks.celery_app call get_nilm_stats
+docker exec linkya-nilm-worker celery -A src.tasks.celery_app call get_nilm_stats
 ```
 
 ## Workflow utilisateur
@@ -228,8 +228,8 @@ docker-compose build nilm-worker nilm-beat
 ### Logs
 
 ```bash
-docker logs nilmia-nilm-worker -f
-docker logs nilmia-nilm-beat -f
+docker logs linkya-nilm-worker -f
+docker logs linkya-nilm-beat -f
 ```
 
 ### Tests

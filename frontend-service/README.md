@@ -21,7 +21,7 @@ Interface utilisateur moderne pour visualiser et interagir avec les données Lin
 - **Détections NILM**: Overlay des appareils détectés sur le graphique
 - **Rafraîchissement automatique**: Mise à jour toutes les 30 secondes
 
-## Palette de couleurs Nilmia
+## Palette de couleurs Linkya
 
 Le thème Material-UI utilise la palette personnalisée :
 
