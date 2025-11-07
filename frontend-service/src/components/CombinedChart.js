@@ -1,28 +1,38 @@
-import React, { useRef, useEffect, useMemo, useCallback, useState } from 'react';
-import { Box } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { Box } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import {
-  Chart as ChartJS,
   CategoryScale,
+  Chart as ChartJS,
+  Decimation,
+  Filler,
+  Legend,
   LinearScale,
-  PointElement,
   LineElement,
+  PointElement,
+  TimeScale,
   Title,
   Tooltip,
-  Legend,
-  Filler,
-  Decimation,
-} from 'chart.js';
-import annotationPlugin from 'chartjs-plugin-annotation';
-import zoomPlugin from 'chartjs-plugin-zoom';
-import { Line } from 'react-chartjs-2';
-import { useData } from '../context/DataContext';
-import { useApplianceColors } from '../context/ApplianceColorsContext';
-import { formatHumanizedDate, formatDurationMinutes, formatDateTime, formatTimeOnly, formatDayName, formatDateFull } from '../utils/dateUtils';
+} from "chart.js";
+import "chartjs-adapter-date-fns";
+import annotationPlugin from "chartjs-plugin-annotation";
+import zoomPlugin from "chartjs-plugin-zoom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Line } from "react-chartjs-2";
+import { useApplianceColors } from "../context/ApplianceColorsContext";
+import { useData } from "../context/DataContext";
+import {
+  formatDateFull,
+  formatDateTime,
+  formatDayName,
+  formatDurationMinutes,
+  formatHumanizedDate,
+  formatTimeOnly,
+} from "../utils/dateUtils";
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
+  TimeScale,
   PointElement,
   LineElement,
   Title,
@@ -34,7 +44,13 @@ ChartJS.register(
   zoomPlugin
 );
 
-const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, isModalOpen }) => {
+const CombinedChart = ({
+  rawData,
+  detections,
+  signatures,
+  onSignatureModalOpen,
+  isModalOpen,
+}) => {
   const theme = useTheme();
   const chartRef = useRef(null);
   const { zoomState, setZoomState, setVisibleTimeRange } = useData();
@@ -47,39 +63,42 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
   const tooltipRef = useRef(null);
 
   // Custom plugin to draw horizontal Y-axis labels
-  const horizontalYLabelsPlugin = useMemo(() => ({
-    id: 'horizontalYLabels',
-    afterDraw: (chart) => {
-      const ctx = chart.ctx;
-      const chartArea = chart.chartArea;
-      
-      // Draw "Signatures" label
-      const ySignaturesScale = chart.scales.ySignatures;
-      if (ySignaturesScale) {
-        const yPos = (ySignaturesScale.top + ySignaturesScale.bottom) / 2;
-        ctx.save();
-        ctx.font = '400 11px sans-serif';
-        ctx.fillStyle = theme.palette.text.tertiary;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('Signatures', chartArea.left - 10, yPos);
-        ctx.restore();
-      }
-      
-      // Draw "Detections" label
-      const yDetectionsScale = chart.scales.yDetections;
-      if (yDetectionsScale) {
-        const yPos = (yDetectionsScale.top + yDetectionsScale.bottom) / 2;
-        ctx.save();
-        ctx.font = '400 11px sans-serif';
-        ctx.fillStyle = theme.palette.text.tertiary;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('Detections', chartArea.left - 10, yPos);
-        ctx.restore();
-      }
-    },
-  }), [theme]);
+  const horizontalYLabelsPlugin = useMemo(
+    () => ({
+      id: "horizontalYLabels",
+      afterDraw: (chart) => {
+        const ctx = chart.ctx;
+        const chartArea = chart.chartArea;
+
+        // Draw "Signatures" label
+        const ySignaturesScale = chart.scales.ySignatures;
+        if (ySignaturesScale) {
+          const yPos = (ySignaturesScale.top + ySignaturesScale.bottom) / 2;
+          ctx.save();
+          ctx.font = "400 11px sans-serif";
+          ctx.fillStyle = theme.palette.text.tertiary;
+          ctx.textAlign = "right";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Signatures", chartArea.left - 10, yPos);
+          ctx.restore();
+        }
+
+        // Draw "Detections" label
+        const yDetectionsScale = chart.scales.yDetections;
+        if (yDetectionsScale) {
+          const yPos = (yDetectionsScale.top + yDetectionsScale.bottom) / 2;
+          ctx.save();
+          ctx.font = "400 11px sans-serif";
+          ctx.fillStyle = theme.palette.text.tertiary;
+          ctx.textAlign = "right";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Detections", chartArea.left - 10, yPos);
+          ctx.restore();
+        }
+      },
+    }),
+    [theme]
+  );
 
   // Custom tooltip handler for annotations
   useEffect(() => {
@@ -88,19 +107,19 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
 
     // Create tooltip element if it doesn't exist
     if (!tooltipRef.current) {
-      const tooltip = document.createElement('div');
-      tooltip.style.position = 'absolute';
-      tooltip.style.pointerEvents = 'none';
-      tooltip.style.opacity = '0';
-      tooltip.style.transition = 'opacity 0.2s ease';
-      tooltip.style.zIndex = '10000';
-      tooltip.style.padding = '12px';
+      const tooltip = document.createElement("div");
+      tooltip.style.position = "absolute";
+      tooltip.style.pointerEvents = "none";
+      tooltip.style.opacity = "0";
+      tooltip.style.transition = "opacity 0.2s ease";
+      tooltip.style.zIndex = "10000";
+      tooltip.style.padding = "12px";
       tooltip.style.backgroundColor = theme.palette.overlay.white[95];
-      tooltip.style.borderRadius = '6px';
+      tooltip.style.borderRadius = "6px";
       tooltip.style.boxShadow = theme.palette.utility.tooltip.shadow;
-      tooltip.style.fontSize = '14px';
-      tooltip.style.lineHeight = '1.6';
-      tooltip.style.minWidth = '250px';
+      tooltip.style.fontSize = "14px";
+      tooltip.style.lineHeight = "1.6";
+      tooltip.style.minWidth = "250px";
       document.body.appendChild(tooltip);
       tooltipRef.current = tooltip;
     }
@@ -114,7 +133,8 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       const y = e.clientY - rect.top;
 
       // Get the annotations
-      const annotations = chart.config?.options?.plugins?.annotation?.annotations;
+      const annotations =
+        chart.config?.options?.plugins?.annotation?.annotations;
       if (!annotations) return;
 
       let foundTooltipData = null;
@@ -122,16 +142,16 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       // Check if mouse is over any annotation
       for (const key in annotations) {
         const annotation = annotations[key];
-        if (annotation.type === 'box' && annotation.tooltipData) {
+        if (annotation.type === "box" && annotation.tooltipData) {
           const xScale = chart.scales.x;
           const yScale = chart.scales[annotation.yScaleID];
-          
+
           if (xScale && yScale) {
             const xMin = xScale.getPixelForValue(annotation.xMin);
             const xMax = xScale.getPixelForValue(annotation.xMax);
             const yMin = yScale.getPixelForValue(annotation.yMax); // Inverted for canvas
             const yMax = yScale.getPixelForValue(annotation.yMin); // Inverted for canvas
-            
+
             if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) {
               foundTooltipData = annotation.tooltipData;
               break;
@@ -144,19 +164,23 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       if (!foundTooltipData) {
         const xScale = chart.scales.x;
         const yScale = chart.scales.yConsumption;
-        
+
         if (xScale && yScale) {
           const dataIndex = Math.round(xScale.getValueForPixel(x));
-          
+
           if (dataIndex >= 0 && dataIndex < rawData.data.length) {
             const dataPoint = rawData.data[dataIndex];
-            
+
             // Check if mouse is near the data point (within chart area)
             const chartArea = chart.chartArea;
-            if (x >= chartArea.left && x <= chartArea.right && 
-                y >= chartArea.top && y <= chartArea.bottom) {
+            if (
+              x >= chartArea.left &&
+              x <= chartArea.right &&
+              y >= chartArea.top &&
+              y <= chartArea.bottom
+            ) {
               foundTooltipData = {
-                type: 'consumption',
+                type: "consumption",
                 time: new Date(dataPoint.time),
                 power: dataPoint.avg_papp,
               };
@@ -168,51 +192,93 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       const tooltip = tooltipRef.current;
       if (foundTooltipData) {
         // Build tooltip HTML based on type
-        let html = '';
-        
-        if (foundTooltipData.type === 'detection') {
+        let html = "";
+
+        if (foundTooltipData.type === "detection") {
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <span class="material-symbols-outlined" style="font-size: 36px; color: ${foundTooltipData.color}; flex-shrink: 0;">
-                ${foundTooltipData.icon || 'power'}
+              <span class="material-symbols-outlined" style="font-size: 36px; color: ${
+                foundTooltipData.color
+              }; flex-shrink: 0;">
+                ${foundTooltipData.icon || "power"}
               </span>
-              <strong style="color: ${foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
+              <strong style="color: ${
+                foundTooltipData.color
+              }; font-size: 16px;">${foundTooltipData.name}</strong>
               <div style="font-size: 14px;">
-              à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
+              à <strong>${formatTimeOnly(
+                foundTooltipData.startTime
+              )}</strong> pendant <strong>${formatDurationMinutes(
+            foundTooltipData.durationSeconds
+          )}min</strong>
             </div>
             </div>
             
-            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; font-weight: 300;">
-              ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
+            <div style="color: ${
+              theme.palette.text.tertiary
+            }; font-size: 12px; font-weight: 300;">
+              ${formatHumanizedDate(
+                foundTooltipData.startTime
+              )} (${formatDateTime(
+            foundTooltipData.startTime
+          )} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; margin-top: 6px;">
+            <div style="color: ${
+              theme.palette.text.tertiary
+            }; font-size: 12px; margin-top: 6px;">
               Confiance: ${Math.round(foundTooltipData.confidenceScore * 100)}%
             </div>
           `;
           tooltip.style.borderLeft = `4px solid ${foundTooltipData.color}`;
-        } else if (foundTooltipData.type === 'signature') {
+        } else if (foundTooltipData.type === "signature") {
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-              <span class="material-symbols-outlined" style="font-size: 36px; color: ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}; flex-shrink: 0;">
-                ${foundTooltipData.icon || 'power'}
+              <span class="material-symbols-outlined" style="font-size: 36px; color: ${
+                foundTooltipData.isNegative
+                  ? theme.palette.chart.negativeSignature.main
+                  : foundTooltipData.color
+              }; flex-shrink: 0;">
+                ${foundTooltipData.icon || "power"}
               </span>
-              <strong style="color: ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}; font-size: 16px;">${foundTooltipData.name}</strong>
+              <strong style="color: ${
+                foundTooltipData.isNegative
+                  ? theme.palette.chart.negativeSignature.main
+                  : foundTooltipData.color
+              }; font-size: 16px;">${foundTooltipData.name}</strong>
               <div style="font-size: 14px;">
-              à <strong>${formatTimeOnly(foundTooltipData.startTime)}</strong> pendant <strong>${formatDurationMinutes(foundTooltipData.durationSeconds)}min</strong>
+              à <strong>${formatTimeOnly(
+                foundTooltipData.startTime
+              )}</strong> pendant <strong>${formatDurationMinutes(
+            foundTooltipData.durationSeconds
+          )}min</strong>
             </div>
             </div>
-            <div style="color: ${theme.palette.text.tertiary}; font-size: 12px; font-weight: 300;">
-              ${formatHumanizedDate(foundTooltipData.startTime)} (${formatDateTime(foundTooltipData.startTime)} - ${formatTimeOnly(foundTooltipData.endTime)})
+            <div style="color: ${
+              theme.palette.text.tertiary
+            }; font-size: 12px; font-weight: 300;">
+              ${formatHumanizedDate(
+                foundTooltipData.startTime
+              )} (${formatDateTime(
+            foundTooltipData.startTime
+          )} - ${formatTimeOnly(foundTooltipData.endTime)})
             </div>
-            ${foundTooltipData.isNegative ? `<div style="color: ${theme.palette.chart.negativeSignature.main}; font-size: 12px; margin-top: 6px; font-style: italic;">Issue d'une détection déclarée comme incorrecte par l'utilisateur.<br/>Elle aide le modèle IA à apprendre de ses erreurs.</div>` : ''}
+            ${
+              foundTooltipData.isNegative
+                ? `<div style="color: ${theme.palette.chart.negativeSignature.main}; font-size: 12px; margin-top: 6px; font-style: italic;">Issue d'une détection déclarée comme incorrecte par l'utilisateur.<br/>Elle aide le modèle IA à apprendre de ses erreurs.</div>`
+                : ""
+            }
           `;
-          tooltip.style.borderLeft = `4px solid ${foundTooltipData.isNegative ? theme.palette.chart.negativeSignature.main : foundTooltipData.color}`;
-        } else if (foundTooltipData.type === 'consumption') {
+          tooltip.style.borderLeft = `4px solid ${
+            foundTooltipData.isNegative
+              ? theme.palette.chart.negativeSignature.main
+              : foundTooltipData.color
+          }`;
+        } else if (foundTooltipData.type === "consumption") {
           const dayName = formatDayName(foundTooltipData.time);
           const formattedDate = formatDateFull(foundTooltipData.time);
           const formattedTime = formatTimeOnly(foundTooltipData.time);
           const powerW = Math.round(foundTooltipData.power);
-          
+
           html = `
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
               <strong style="color: ${theme.palette.chart.consumption.main}; font-size: 16px;">Consommation</strong><strong style="color: ${theme.palette.text.tertiary}; font-size: 16px;"> ${powerW} W</strong>
@@ -227,25 +293,25 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         tooltip.innerHTML = html;
         tooltip.style.left = `${e.pageX + 15}px`;
         tooltip.style.top = `${e.pageY - 10}px`;
-        tooltip.style.opacity = '1';
+        tooltip.style.opacity = "1";
       } else {
-        tooltip.style.opacity = '0';
+        tooltip.style.opacity = "0";
       }
     };
 
     const handleMouseLeave = () => {
       const tooltip = tooltipRef.current;
       if (tooltip) {
-        tooltip.style.opacity = '0';
+        tooltip.style.opacity = "0";
       }
     };
 
-    canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('mouseleave', handleMouseLeave);
-    
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mouseleave", handleMouseLeave);
+
     return () => {
-      canvas.removeEventListener('mousemove', handleMouseMove);
-      canvas.removeEventListener('mouseleave', handleMouseLeave);
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseleave", handleMouseLeave);
       if (tooltipRef.current) {
         document.body.removeChild(tooltipRef.current);
         tooltipRef.current = null;
@@ -256,7 +322,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
   // Hide tooltip when modal is open
   useEffect(() => {
     if (isModalOpen && tooltipRef.current) {
-      tooltipRef.current.style.opacity = '0';
+      tooltipRef.current.style.opacity = "0";
     }
   }, [isModalOpen]);
 
@@ -264,30 +330,33 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
   useEffect(() => {
     if (!chartRef.current || isUpdatingZoomRef.current) return;
     if (zoomState.min === null || zoomState.max === null) return;
-    
+
     const chart = chartRef.current;
     if (chart.options?.scales?.x) {
       chart.options.scales.x.min = zoomState.min;
       chart.options.scales.x.max = zoomState.max;
-      chart.update('none');
+      chart.update("none");
     }
   }, [zoomState]);
 
   // Handle zoom/pan complete
   const handleZoomPanComplete = useCallback(() => {
     if (!chartRef.current || !rawData?.data) return;
-    
+
     const chart = chartRef.current;
     if (chart.scales?.x) {
       const visibleMin = Math.max(0, Math.floor(chart.scales.x.min || 0));
-      const visibleMax = Math.min(rawData.data.length - 1, Math.ceil(chart.scales.x.max || rawData.data.length - 1));
-      
+      const visibleMax = Math.min(
+        rawData.data.length - 1,
+        Math.ceil(chart.scales.x.max || rawData.data.length - 1)
+      );
+
       if (rawData.data[visibleMin] && rawData.data[visibleMax]) {
         const startTime = new Date(rawData.data[visibleMin].time);
         const endTime = new Date(rawData.data[visibleMax].time);
         setVisibleTimeRange({ startTime, endTime });
       }
-      
+
       isUpdatingZoomRef.current = true;
       setZoomState({
         min: chart.scales.x.min,
@@ -305,12 +374,12 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
     if (!rawData || !rawData.data) return {};
 
     const annotations = {};
-    
+
     const assignRowLevels = (items) => {
       const sorted = [...items].sort((a, b) => a.startIndex - b.startIndex);
       const rowEndIndices = [];
-      
-      sorted.forEach(item => {
+
+      sorted.forEach((item) => {
         let assignedRow = -1;
         for (let i = 0; i < rowEndIndices.length; i++) {
           if (rowEndIndices[i] < item.startIndex) {
@@ -325,20 +394,24 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         }
         item.row = assignedRow;
       });
-      
+
       return Math.max(1, rowEndIndices.length);
     };
 
     // Detections annotations (on yDetections scale, 0-1)
     if (detections && detections.length > 0) {
       const detectionItems = detections
-        .filter(d => d.start_time && d.end_time && d.name)
-        .map(d => {
+        .filter((d) => d.start_time && d.end_time && d.name)
+        .map((d) => {
           const startTime = new Date(d.start_time).getTime();
           const endTime = new Date(d.end_time).getTime();
-          const startIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= startTime);
-          const endIndex = rawData.data.findIndex(dt => new Date(dt.time).getTime() >= endTime);
-          
+          const startIndex = rawData.data.findIndex(
+            (dt) => new Date(dt.time).getTime() >= startTime
+          );
+          const endIndex = rawData.data.findIndex(
+            (dt) => new Date(dt.time).getTime() >= endTime
+          );
+
           if (startIndex !== -1) {
             return {
               ...d,
@@ -351,33 +424,33 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         .filter(Boolean);
 
       const maxDetectionRows = assignRowLevels(detectionItems);
-      
-      detectionItems.forEach(d => {
+
+      detectionItems.forEach((d) => {
         const color = getApplianceColor(d.appliance_id || d.name);
         const icon = getApplianceIcon(d.appliance_id || d.name);
-        const rowHeight = 1 / (maxDetectionRows);
-        
+        const rowHeight = 1 / maxDetectionRows;
+
         const startTime = new Date(d.start_time);
         const endTime = new Date(d.end_time);
         const durationSeconds = Math.round((endTime - startTime) / 1000);
         const confidenceScore = d.confidence_score || 0;
-        
+
         annotations[`detection-${d.id}`] = {
-          type: 'box',
+          type: "box",
           xMin: d.startIndex,
           xMax: d.endIndex,
           yMin: d.row * rowHeight + 0.05,
           yMax: (d.row + 1) * rowHeight - 0.05,
-          yScaleID: 'yDetections',
+          yScaleID: "yDetections",
           backgroundColor: `${color}`,
           borderColor: color,
           borderWidth: 5,
           borderRadius: 10,
-          drawTime: 'beforeDatasetsDraw',
+          drawTime: "beforeDatasetsDraw",
           // Store tooltip data
           tooltipData: {
-            type: 'detection',
-            name: d.name || 'Inconnu',
+            type: "detection",
+            name: d.name || "Inconnu",
             startTime,
             endTime,
             durationSeconds,
@@ -392,21 +465,21 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
     // Signatures annotations (on ySignatures scale, 0-1)
     if (signatures && signatures.length > 0) {
       const signatureItems = signatures
-        .filter(s => s.start_time && s.end_time && s.appliance_name)
-        .map(s => {
+        .filter((s) => s.start_time && s.end_time && s.appliance_name)
+        .map((s) => {
           const startTime = new Date(s.start_time).getTime();
           const endTime = new Date(s.end_time).getTime();
-          
+
           let startIndex = -1;
           let endIndex = -1;
           let minStartDiff = Infinity;
           let minEndDiff = Infinity;
-          
+
           rawData.data.forEach((dt, idx) => {
             const dtTime = new Date(dt.time).getTime();
             const startDiff = Math.abs(dtTime - startTime);
             const endDiff = Math.abs(dtTime - endTime);
-            
+
             if (startDiff < minStartDiff) {
               minStartDiff = startDiff;
               startIndex = idx;
@@ -416,7 +489,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
               endIndex = idx;
             }
           });
-          
+
           if (startIndex !== -1 && endIndex !== -1) {
             return {
               ...s,
@@ -429,32 +502,35 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         .filter(Boolean);
 
       const maxSignatureRows = assignRowLevels(signatureItems);
-      
-      signatureItems.forEach(s => {
+
+      signatureItems.forEach((s) => {
         const color = getApplianceColor(s.appliance_id || s.appliance_name);
         const icon = getApplianceIcon(s.appliance_id || s.appliance_name);
         const isNegative = s.is_negative === true;
-        const rowHeight = 1 / (maxSignatureRows);
-        
+        const rowHeight = 1 / maxSignatureRows;
+
         const startTime = new Date(s.start_time);
         const endTime = new Date(s.end_time);
-        const durationSeconds = s.duration_seconds || Math.round((endTime - startTime) / 1000);
-        
+        const durationSeconds =
+          s.duration_seconds || Math.round((endTime - startTime) / 1000);
+
         annotations[`signature-${s.id}`] = {
-          type: 'box',
+          type: "box",
           xMin: s.startIndex,
           xMax: s.endIndex,
           yMin: s.row * rowHeight + 0.05,
           yMax: (s.row + 1) * rowHeight - 0.05,
-          yScaleID: 'ySignatures',
+          yScaleID: "ySignatures",
           backgroundColor: `${color}`,
-          borderColor: isNegative ? theme.palette.chart.negativeSignature.border : color,
+          borderColor: isNegative
+            ? theme.palette.chart.negativeSignature.border
+            : color,
           borderWidth: isNegative ? 3 : 5,
           borderRadius: 10,
-          drawTime: 'beforeDatasetsDraw',
+          drawTime: "beforeDatasetsDraw",
           // Store tooltip data
           tooltipData: {
-            type: 'signature',
+            type: "signature",
             name: s.appliance_name,
             startTime,
             endTime,
@@ -468,7 +544,14 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
     }
 
     return annotations;
-  }, [rawData, detections, signatures, getApplianceColor, getApplianceIcon, theme]);
+  }, [
+    rawData,
+    detections,
+    signatures,
+    getApplianceColor,
+    getApplianceIcon,
+    theme,
+  ]);
 
   // Handle right-click selection for signature creation
   useEffect(() => {
@@ -482,10 +565,10 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
 
     const handleMouseDown = (e) => {
       if (e.button !== 2) return;
-      
+
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      
+
       selectionRef.current = {
         isSelecting: true,
         startX: x,
@@ -498,10 +581,10 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
 
     const handleMouseMove = (e) => {
       if (!selectionRef.current.isSelecting) return;
-      
+
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      
+
       selectionRef.current.endX = x;
       setSelectionEnd(x);
     };
@@ -512,17 +595,17 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         e.stopPropagation();
         e.stopImmediatePropagation();
       }
-      
+
       if (!selectionRef.current.isSelecting || e.button !== 2) {
         selectionRef.current.isSelecting = false;
         setIsSelecting(false);
         return;
       }
-      
+
       const rect = canvas.getBoundingClientRect();
       const endX = e.clientX - rect.left;
       const startX = selectionRef.current.startX;
-      
+
       if (Math.abs(endX - startX) < 10) {
         selectionRef.current.isSelecting = false;
         setIsSelecting(false);
@@ -530,32 +613,35 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         setSelectionEnd(null);
         return;
       }
-      
+
       const chart = chartRef.current;
       if (!chart?.scales?.x) {
         selectionRef.current.isSelecting = false;
         setIsSelecting(false);
         return;
       }
-      
+
       const xScale = chart.scales.x;
       const minX = Math.min(startX, endX);
       const maxX = Math.max(startX, endX);
-      
+
       const startIndex = Math.round(xScale.getValueForPixel(minX));
       const endIndex = Math.round(xScale.getValueForPixel(maxX));
-      
-      if (startIndex >= 0 && endIndex >= 0 && 
-          startIndex < rawData.data.length && endIndex < rawData.data.length) {
-        
+
+      if (
+        startIndex >= 0 &&
+        endIndex >= 0 &&
+        startIndex < rawData.data.length &&
+        endIndex < rawData.data.length
+      ) {
         const startTime = new Date(rawData.data[startIndex].time);
         const endTime = new Date(rawData.data[endIndex].time);
-        
+
         setTimeout(() => {
           onSignatureModalOpen({ startTime, endTime });
         }, 0);
       }
-      
+
       selectionRef.current.isSelecting = false;
       setIsSelecting(false);
       setSelectionStart(null);
@@ -571,29 +657,29 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       }
     };
 
-    canvas.addEventListener('contextmenu', handleContextMenu);
-    canvas.addEventListener('mousedown', handleMouseDown);
-    canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('mouseup', handleMouseUp);
-    canvas.addEventListener('mouseleave', handleMouseLeave);
+    canvas.addEventListener("contextmenu", handleContextMenu);
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mouseup", handleMouseUp);
+    canvas.addEventListener("mouseleave", handleMouseLeave);
 
     return () => {
-      canvas.removeEventListener('contextmenu', handleContextMenu);
-      canvas.removeEventListener('mousedown', handleMouseDown);
-      canvas.removeEventListener('mousemove', handleMouseMove);
-      canvas.removeEventListener('mouseup', handleMouseUp);
-      canvas.removeEventListener('mouseleave', handleMouseLeave);
+      canvas.removeEventListener("contextmenu", handleContextMenu);
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("mouseleave", handleMouseLeave);
     };
   }, [rawData, onSignatureModalOpen]);
 
   // Update annotations
   useEffect(() => {
     if (!chartRef.current || !annotationsData) return;
-    
+
     const chart = chartRef.current;
     if (chart.options?.plugins?.annotation) {
       chart.options.plugins.annotation.annotations = annotationsData;
-      chart.update('none');
+      chart.update("none");
     }
   }, [annotationsData]);
 
@@ -604,26 +690,26 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
     }
 
     const labels = rawData.data.map((d, index) => index);
-    const powerData = rawData.data.map(d => d.avg_papp);
+    const powerData = rawData.data.map((d) => d.avg_papp);
 
     return {
       labels,
       datasets: [
         // Signatures dataset (invisible, just for ySignatures scale) - Will be at bottom
         {
-          label: 'Signatures',
+          label: "Signatures",
           data: rawData.data.map(() => 0),
-          yAxisID: 'ySignatures',
-          borderColor: 'transparent',
-          backgroundColor: 'transparent',
+          yAxisID: "ySignatures",
+          borderColor: "transparent",
+          backgroundColor: "transparent",
           pointRadius: 0,
           pointHoverRadius: 0,
         },
         // Consumption dataset (main) - Will be in middle
         {
-          label: 'Puissance moyenne (W)',
+          label: "Puissance moyenne (W)",
           data: powerData,
-          yAxisID: 'yConsumption',
+          yAxisID: "yConsumption",
           borderColor: theme.palette.chart.consumption.main,
           backgroundColor: theme.palette.chart.consumption.background,
           fill: true,
@@ -634,11 +720,11 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
         // Detections dataset (invisible, just for yDetections scale) - Will be at top
         {
-          label: 'Detections',
+          label: "Detections",
           data: rawData.data.map(() => 0),
-          yAxisID: 'yDetections',
-          borderColor: 'transparent',
-          backgroundColor: 'transparent',
+          yAxisID: "yDetections",
+          borderColor: "transparent",
+          backgroundColor: "transparent",
           pointRadius: 0,
           pointHoverRadius: 0,
         },
@@ -649,19 +735,21 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
   // Chart options
   const options = useMemo(() => {
     if (!rawData || !rawData.data) return {};
-    
+
     const now = new Date();
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-    const minIndex48h = rawData.data.findIndex(d => new Date(d.time) >= fortyEightHoursAgo);
+    const minIndex48h = rawData.data.findIndex(
+      (d) => new Date(d.time) >= fortyEightHoursAgo
+    );
     const maxIndex48h = rawData.data.length - 1;
     const initialMin = minIndex48h !== -1 ? minIndex48h : 0;
-    
+
     return {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
       interaction: {
-        mode: 'index',
+        mode: "index",
         intersect: false,
       },
       layout: {
@@ -675,7 +763,7 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
       plugins: {
         annotation: {
           annotations: {},
-          drawTime: 'beforeDatasetsDraw',
+          drawTime: "beforeDatasetsDraw",
         },
         legend: { display: false },
         title: { display: false },
@@ -684,21 +772,21 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
           zoom: {
             wheel: { enabled: true, speed: 0.1 },
             pinch: { enabled: true },
-            mode: 'x',
-            scaleMode: 'x',
+            mode: "x",
+            scaleMode: "x",
             onZoomComplete: handleZoomPanComplete,
           },
           pan: {
             enabled: true,
-            mode: 'x',
-            scaleMode: 'x',
+            mode: "x",
+            scaleMode: "x",
             modifierKey: null,
             onPanComplete: handleZoomPanComplete,
             threshold: 10,
           },
           limits: {
-            x: { 
-              min: 0, 
+            x: {
+              min: 0,
               max: rawData.data.length - 1,
               minRange: 10,
             },
@@ -706,22 +794,22 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
         decimation: {
           enabled: true,
-          algorithm: 'lttb',
+          algorithm: "lttb",
           samples: 1000,
         },
       },
       scales: {
         // Signatures Y axis (bottom, 15% height)
         ySignatures: {
-          type: 'linear',
-          position: 'left',
+          type: "linear",
+          position: "left",
           min: 0,
           max: 1,
           display: true,
-          title: { 
+          title: {
             display: false,
           },
-          stack: 'demo',
+          stack: "demo",
           stackWeight: 1,
           grid: { display: false },
           ticks: { display: false },
@@ -729,30 +817,30 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         },
         // Consumption Y axis (middle, 70% height)
         yConsumption: {
-          type: 'linear',
-          position: 'left',
+          type: "linear",
+          position: "left",
           beginAtZero: true,
           display: true,
-          title: { 
-            display: true, 
-            text: 'Puissance (W)',
+          title: {
+            display: true,
+            text: "Puissance (W)",
             font: { size: 12, weight: 600 },
           },
-          stack: 'demo',
+          stack: "demo",
           stackWeight: 7,
           grid: { drawOnChartArea: true },
         },
         // Detections Y axis (top, 15% height)
         yDetections: {
-          type: 'linear',
-          position: 'left',
+          type: "linear",
+          position: "left",
           min: 0,
           max: 1,
           display: true,
-          title: { 
+          title: {
             display: false,
           },
-          stack: 'demo',
+          stack: "demo",
           stackWeight: 1,
           grid: { display: false },
           ticks: { display: false },
@@ -761,24 +849,57 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
         x: {
           min: initialMin,
           max: maxIndex48h,
-          type: 'linear',
+          type: "linear",
           title: { display: false },
-          ticks: { 
-            maxRotation: 0, 
+          ticks: {
+            maxRotation: 0,
             minRotation: 0,
             autoSkip: true,
             maxTicksLimit: 20,
             callback: (value) => {
-              if (rawData?.data && rawData.data[value]) {
-                const date = new Date(rawData.data[value].time);
-                const dayName = formatDayName(date);
-                const day = String(date.getDate()).padStart(2, '0');
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
+              if (rawData?.data && rawData.data[Math.floor(value)]) {
+                const date = new Date(rawData.data[Math.floor(value)].time);
+
+                // Round to nearest appropriate time unit based on zoom level
+                const totalPoints = rawData.data.length;
+                const visiblePoints =
+                  (chartRef.current?.scales?.x?.max || maxIndex48h) -
+                  (chartRef.current?.scales?.x?.min || initialMin);
+                const zoomRatio = visiblePoints / totalPoints;
+
+                let roundedDate = new Date(date);
+
+                // If zoomed out (>50% of data visible), round to hours
+                if (zoomRatio > 0.5) {
+                  roundedDate.setMinutes(0, 0, 0);
+                }
+                // If medium zoom (10-50% visible), round to 15 minutes
+                else if (zoomRatio > 0.1) {
+                  const minutes =
+                    Math.round(roundedDate.getMinutes() / 15) * 15;
+                  roundedDate.setMinutes(minutes, 0, 0);
+                }
+                // If zoomed in (<10% visible), round to 5 minutes
+                else {
+                  const minutes = Math.round(roundedDate.getMinutes() / 5) * 5;
+                  roundedDate.setMinutes(minutes, 0, 0);
+                }
+
+                const dayName = formatDayName(roundedDate);
+                const day = String(roundedDate.getDate()).padStart(2, "0");
+                const month = String(roundedDate.getMonth() + 1).padStart(
+                  2,
+                  "0"
+                );
+                const hours = String(roundedDate.getHours()).padStart(2, "0");
+                const minutes = String(roundedDate.getMinutes()).padStart(
+                  2,
+                  "0"
+                );
+
                 return [`${dayName} ${day}.${month}`, `${hours}:${minutes}`];
               }
-              return '';
+              return "";
             },
           },
         },
@@ -789,23 +910,30 @@ const CombinedChart = ({ rawData, detections, signatures, onSignatureModalOpen, 
   if (!rawData || !chartData) return null;
 
   return (
-    <Box 
-      sx={{ height: 600, position: 'relative' }}
+    <Box
+      sx={{ height: 600, position: "relative" }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <Line ref={chartRef} data={chartData} options={options} plugins={[horizontalYLabelsPlugin]} />
-      
+      <Line
+        ref={chartRef}
+        data={chartData}
+        options={options}
+        plugins={[horizontalYLabelsPlugin]}
+      />
+
       {isSelecting && selectionStart !== null && selectionEnd !== null && (
         <Box
           sx={{
-            position: 'absolute',
+            position: "absolute",
             top: 0,
             left: Math.min(selectionStart, selectionEnd),
             width: Math.abs(selectionEnd - selectionStart),
-            height: '100%',
-            backgroundColor: (theme) => theme.palette.chart.selection.background,
-            border: (theme) => `2px solid ${theme.palette.chart.selection.border}`,
-            pointerEvents: 'none',
+            height: "100%",
+            backgroundColor: (theme) =>
+              theme.palette.chart.selection.background,
+            border: (theme) =>
+              `2px solid ${theme.palette.chart.selection.border}`,
+            pointerEvents: "none",
             zIndex: 1000,
           }}
         />
