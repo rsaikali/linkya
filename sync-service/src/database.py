@@ -109,9 +109,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_remote_data(
-        self, since: Optional[datetime] = None, limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def get_remote_data(self, since=None, limit=None):
         """Récupère les données depuis la base distante MySQL"""
         with self.remote_engine.connect() as conn:
             query = f"SELECT * FROM {settings.remote_db_table}"
@@ -142,7 +140,7 @@ class DatabaseManager:
                 )
             return rows
 
-    def get_last_sync_timestamp(self) -> Optional[datetime]:
+    def get_last_sync_timestamp(self):
         """Récupère le timestamp de la dernière synchronisation"""
         with self.local_engine.connect() as conn:
             result = conn.execute(
@@ -151,7 +149,7 @@ class DatabaseManager:
             row = result.fetchone()
             return row[0] if row and row[0] else None
 
-    def bulk_insert_data(self, data: List[Dict[str, Any]]) -> int:
+    def bulk_insert_data(self, data):
         """Insère des données en masse dans la base locale"""
         if not data:
             return 0
@@ -205,7 +203,7 @@ class DatabaseManager:
 
             return inserted
 
-    def get_data_stats(self) -> Dict[str, Any]:
+    def get_data_stats(self):
         """Récupère des statistiques sur les données locales"""
         with self.local_engine.connect() as conn:
             result = conn.execute(

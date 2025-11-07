@@ -90,9 +90,7 @@ except Exception as e:
 
 
 @celery_app.task(name="train_nilm_model", bind=True)
-def train_nilm_model(
-    self, min_signatures: int = 2, generation: int = 0
-) -> Dict[str, Any]:
+def train_nilm_model(self, min_signatures=2, generation=0):
     """
     Entraîne un nouveau modèle NILM (S2P) - remplace l'ancien modèle
 
@@ -260,9 +258,7 @@ def train_nilm_model(
 
 
 @celery_app.task(name="detect_nilm_appliances")
-def detect_nilm_appliances(
-    hours: int = None, min_confidence: float = 0.3
-) -> Dict[str, Any]:
+def detect_nilm_appliances(hours=None, min_confidence=0.3):
     """
     Détecte et désagrège les appareils (S2P)
 
@@ -603,11 +599,11 @@ def detect_nilm_appliances(
 
 @celery_app.task(name="add_nilm_signature")
 def add_nilm_signature(
-    appliance_name: str,
-    start_time_str: str,
-    end_time_str: str,
-    is_negative: bool = False,
-) -> Dict[str, Any]:
+    appliance_name,
+    start_time_str,
+    end_time_str,
+    is_negative=False,
+):
     """
     Ajoute une signature manuelle soumise par l'utilisateur
 

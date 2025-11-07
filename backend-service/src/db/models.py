@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ModelRepository(DatabaseBase):
     """Repository for NILM model operations."""
 
-    def get_latest_nilm_model(self) -> dict[str, Any] | None:
+    def get_latest_nilm_model(self):
         """
         Retrieves the latest trained NILM model.
 
@@ -58,7 +58,7 @@ class ModelRepository(DatabaseBase):
                 "training_duration_seconds": result[9],
             }
 
-    def delete_all_models(self) -> int:
+    def delete_all_models(self):
         """
         Deletes all NILM models from the database.
 

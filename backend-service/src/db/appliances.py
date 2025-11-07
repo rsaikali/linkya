@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ApplianceRepository(DatabaseBase):
     """Repository for appliance operations."""
 
-    def get_all_appliances(self) -> list[dict[str, Any]]:
+    def get_all_appliances(self):
         """Retrieves all appliances with stats from linky_realtime."""
         query = text(
             """
@@ -102,9 +102,7 @@ class ApplianceRepository(DatabaseBase):
 
             return appliances_list
 
-    def update_appliance(
-        self, appliance_id: int, name: str | None = None
-    ) -> dict[str, Any] | None:
+    def update_appliance(self, appliance_id, name=None):
         """
         Updates the name of an appliance.
 
@@ -166,7 +164,7 @@ class ApplianceRepository(DatabaseBase):
                 }
             return None
 
-    def delete_appliance(self, appliance_id: int) -> dict[str, int] | None:
+    def delete_appliance(self, appliance_id):
         """
         Deletes an appliance and all its associated data.
 
@@ -245,7 +243,7 @@ class ApplianceRepository(DatabaseBase):
                 "detections_deleted": detections_count or 0,
             }
 
-    def get_or_create_appliance(self, appliance_name: str) -> int:
+    def get_or_create_appliance(self, appliance_name):
         """
         Gets or creates an appliance by name.
 

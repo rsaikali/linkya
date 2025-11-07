@@ -167,7 +167,7 @@ class DatabaseManager:
         finally:
             session.close()
 
-    def test_connection(self) -> bool:
+    def test_connection(self):
         """Teste la connexion à la base de données"""
         try:
             with self.engine.connect() as conn:
@@ -208,9 +208,7 @@ class DatabaseManager:
             logger.error(f"Erreur lors de l'initialisation des tables: {e}")
             raise
 
-    def get_consumption_data(
-        self, start_time: datetime, end_time: datetime, resample_seconds: int = 1
-    ) -> List[Dict[str, Any]]:
+    def get_consumption_data(self, start_time, end_time, resample_seconds=1):
         """
         Récupère les données de consommation depuis linky_realtime
 
@@ -259,11 +257,11 @@ class DatabaseManager:
 
     def add_signature(
         self,
-        appliance_id: int,
-        start_time: datetime,
-        end_time: datetime,
-        is_negative: bool = False,
-    ) -> Optional[int]:
+        appliance_id,
+        start_time,
+        end_time,
+        is_negative=False,
+    ):
         """
         Ajoute une signature de courbe soumise par l'utilisateur.
         Capture les data points et calcule l'analyse morphologique.
@@ -399,7 +397,7 @@ class DatabaseManager:
             logger.error(f"Erreur lors de l'ajout de la signature: {e}")
             return None
 
-    def get_all_signatures(self) -> List[Dict[str, Any]]:
+    def get_all_signatures(self):
         """
         Récupère toutes les signatures pour l'entraînement
         Note: raw_data est récupéré à la volée depuis linky_realtime

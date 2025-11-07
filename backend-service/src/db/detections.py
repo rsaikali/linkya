@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 class DetectionRepository(DatabaseBase):
     """Repository for detection operations."""
 
-    def get_detected_appliances(
-        self, start_time: datetime | None = None, end_time: datetime | None = None
-    ) -> list[dict[str, Any]]:
+    def get_detected_appliances(self, start_time=None, end_time=None):
         """
         Retrieves appliances detected by NILM-CNN.
 
@@ -113,7 +111,7 @@ class DetectionRepository(DatabaseBase):
 
             return detections
 
-    def delete_detection(self, detection_id: int) -> dict[str, Any] | None:
+    def delete_detection(self, detection_id):
         """
         Deletes a specific detection from the database.
 
@@ -168,7 +166,7 @@ class DetectionRepository(DatabaseBase):
 
             return detection_info
 
-    def delete_all_detections(self) -> dict[str, Any]:
+    def delete_all_detections(self):
         """
         Deletes all detections from the database.
 
@@ -200,9 +198,7 @@ class DetectionRepository(DatabaseBase):
                 "status": "success",
             }
 
-    def validate_detection(
-        self, detection_id: int, is_correct: bool
-    ) -> dict[str, Any] | None:
+    def validate_detection(self, detection_id, is_correct):
         """
         Marks a detection as validated by the user.
 
@@ -389,9 +385,7 @@ class DetectionRepository(DatabaseBase):
 
             return detection_info
 
-    def reassign_detection(
-        self, detection_id: int, correct_appliance_name: str
-    ) -> dict[str, Any] | None:
+    def reassign_detection(self, detection_id, correct_appliance_name):
         """
         Reassigns a detection to the correct appliance.
         Creates a positive signature for the correct appliance

@@ -170,7 +170,7 @@ class RedisTrainingCallback(callbacks.Callback):
     by WebSocket endpoints.
     """
 
-    def __init__(self, model_name: str, total_epochs: int, batch_update_freq: int = 10):
+    def __init__(self, model_name, total_epochs, batch_update_freq=10):
         """
         Args:
             model_name: Model name identifier (format: linkya_model_<timestamp>)
@@ -205,7 +205,7 @@ class RedisTrainingCallback(callbacks.Callback):
             logger.warning(f"⚠️  RedisTrainingCallback: Could not connect to Redis: {e}")
             self.redis_client = None
 
-    def _publish(self, event_type: str, data: Dict[str, Any]):
+    def _publish(self, event_type, data):
         """Publish event to Redis Pub/Sub channel"""
         if not self.redis_client:
             print(f"[RedisCallback] Cannot publish {event_type}: no Redis client")
@@ -313,7 +313,7 @@ class MultiHeadAttentionLayer(layers.Layer):
     appareils simultanés.
     """
 
-    def __init__(self, num_heads: int = 4, key_dim: int = 32, **kwargs):
+    def __init__(self, num_heads=4, key_dim=32, **kwargs):
         super(MultiHeadAttentionLayer, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
@@ -355,10 +355,10 @@ class Seq2PointMultiOutputModel:
 
     def __init__(
         self,
-        appliance_ids: List[int],
-        appliance_names: List[str],
-        sequence_length: int = 599,
-        model_type: str = "gru",
+        appliance_ids,
+        appliance_names,
+        sequence_length=599,
+        model_type="gru",
     ):
         self.appliance_ids = appliance_ids
         self.appliance_names = appliance_names
@@ -367,7 +367,7 @@ class Seq2PointMultiOutputModel:
         )
         self.model_type = model_type
         self.num_appliances = len(appliance_ids)
-        self.model: Optional[keras.Model] = None
+        self.model = None
         self.preprocessor = Seq2PointPreprocessor(self.sequence_length)
         self.history = None
         self.use_gpu = self._configure_device()
@@ -380,7 +380,7 @@ class Seq2PointMultiOutputModel:
             idx: app_id for app_id, idx in self.appliance_id_to_idx.items()
         }
 
-    def _configure_device(self) -> bool:
+    def _configure_device(self):
         gpus = tf.config.list_physical_devices("GPU")
         if gpus:
             for gpu in gpus:
@@ -390,7 +390,7 @@ class Seq2PointMultiOutputModel:
         logger.info("💻 Device: CPU")
         return False
 
-    def build_model(self) -> keras.Model:
+    def build_model(self):
         """
         Construit le modèle Multi-Output avec attention.
 
@@ -491,14 +491,14 @@ class Seq2PointMultiOutputModel:
 
     def train(
         self,
-        all_signatures: Dict[int, List[Dict[str, Any]]],
-        model_name: str,
-        epochs: int = 30,
-        batch_size: int = 32,
-        validation_split: float = 0.15,
-        use_feedback: bool = True,
-        fine_tune: bool = False,
-    ) -> Dict[str, Any]:
+        all_signatures,
+        model_name,
+        epochs=30,
+        batch_size=32,
+        validation_split=0.15,
+        use_feedback=True,
+        fine_tune=False,
+    ):
         """
         Entraîne le modèle Multi-Output.
 
@@ -740,9 +740,7 @@ class Seq2PointMultiOutputModel:
 
         return metrics
 
-    def predict(
-        self, aggregate_power: np.ndarray, stride: int = 1
-    ) -> Dict[int, np.ndarray]:
+    def predict(self, aggregate_power, stride=1):
         """
         Prédit la consommation pour TOUS les appareils simultanément.
 
@@ -808,8 +806,8 @@ class Seq2PointMultiOutputModel:
 
     @staticmethod
     def _load_signature_data_static(
-        signature: Dict[str, Any],
-    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        signature,
+    ):
         """Charge les données d'une signature (méthode statique)."""
         try:
             with db_manager.engine.connect() as conn:
@@ -849,11 +847,11 @@ class Seq2PointMultiOutputModel:
 
     def _add_negative_examples_multioutput(
         self,
-        X_aggregate: List,
-        y_outputs: Dict[int, List],
-        timestamps: List,
-        class_counts: Dict[int, int],
-    ) -> int:
+        X_aggregate,
+        y_outputs,
+        timestamps,
+        class_counts,
+    ):
         """Ajoute exemples négatifs pour Multi-Output."""
         negative_count = 0
         negative_sigs = self._load_negative_signatures()
@@ -899,7 +897,7 @@ class Seq2PointMultiOutputModel:
 
         return negative_count
 
-    def _load_negative_signatures(self) -> Dict[int, List[Dict[str, Any]]]:
+    def _load_negative_signatures(self):
         """Charge les signatures négatives depuis la base."""
         negative_sigs = {}
         try:
@@ -931,7 +929,7 @@ class Seq2PointMultiOutputModel:
 
         return negative_sigs
 
-    def _load_aggregate_data(self, start_time, end_time) -> Optional[np.ndarray]:
+    def _load_aggregate_data(self, start_time, end_time):
         """Charge les données agrégées pour une période."""
         try:
             with db_manager.engine.connect() as conn:
@@ -956,7 +954,7 @@ class Seq2PointMultiOutputModel:
             logger.error(f"Erreur chargement données agrégées: {e}")
             return None
 
-    def save(self, filepath: str, metadata: Optional[Dict[str, Any]] = None):
+    def save(self, filepath, metadata=None):
         """Sauvegarde le modèle Multi-Output."""
         if self.model is None:
             raise ValueError("Aucun modèle à sauvegarder")
@@ -981,7 +979,7 @@ class Seq2PointMultiOutputModel:
             json.dump(meta, f, indent=2)
         logger.info(f"📝 Métadonnées sauvegardées: {meta_path}")
 
-    def load(self, filepath: str):
+    def load(self, filepath):
         """Charge le modèle Multi-Output."""
         custom_objects = {
             "MultiHeadAttentionLayer": MultiHeadAttentionLayer,
@@ -1008,7 +1006,7 @@ class Seq2PointMultiOutputModel:
             logger.info(f"📋 Métadonnées chargées: {self.num_appliances} appareils")
 
 
-def normalize_name_for_tensorflow(name: str) -> str:
+def normalize_name_for_tensorflow(name):
     """
     Normalise un nom pour être compatible avec TensorFlow/Keras.
     Les noms de scope TensorFlow doivent correspondre au pattern: ^[A-Za-z0-9.][A-Za-z0-9_.\\/>-]*$
@@ -1044,7 +1042,7 @@ class ChangePointPatternDetector:
     4. Reconstruit des cycles complets
     """
 
-    def __init__(self, min_power_change: float = 500, min_duration: int = 300):
+    def __init__(self, min_power_change=500, min_duration=300):
         """
         Args:
             min_power_change: Seuil minimal pour détecter un change point (W)
@@ -1056,12 +1054,12 @@ class ChangePointPatternDetector:
 
     def add_signature_profile(
         self,
-        appliance_id: int,
-        appliance_name: str,
-        power_sequence: np.ndarray,
-        duration: int,
-        signature_id: Optional[int] = None,
-        morphology: Optional[Dict[str, Any]] = None,
+        appliance_id,
+        appliance_name,
+        power_sequence,
+        duration,
+        signature_id=None,
+        morphology=None,
     ):
         """
         Ajoute un profil de signature avec analyse morphologique.
@@ -1100,7 +1098,7 @@ class ChangePointPatternDetector:
 
                 self.signature_profiles[appliance_id]["profiles"].append(profile)
 
-    def detect_change_points(self, aggregate_power: np.ndarray) -> List[Dict[str, Any]]:
+    def detect_change_points(self, aggregate_power):
         """
         Détecte les change points dans la consommation agrégée.
 
@@ -1156,9 +1154,7 @@ class ChangePointPatternDetector:
         logger.info(f"Change points détectés: {len(change_points)}")
         return change_points
 
-    def extract_patterns(
-        self, aggregate_power: np.ndarray, change_points: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def extract_patterns(self, aggregate_power, change_points):
         """
         Extrait les patterns entre les change points.
 
@@ -1241,9 +1237,9 @@ class ChangePointPatternDetector:
 
     def match_pattern(
         self,
-        pattern_data: Dict[str, Any],
-        pattern_morphology: Optional[Dict[str, Any]] = None,
-    ) -> Optional[Tuple[int, str, Optional[int], float]]:
+        pattern_data,
+        pattern_morphology=None,
+    ):
         """
         Compare un pattern avec les profils de signatures connus.
         Utilise features morphologiques si disponibles pour meilleur matching.
@@ -1268,8 +1264,8 @@ class ChangePointPatternDetector:
             return None
         pattern_normalized = pattern / pattern_max
 
-        best_match: Optional[Tuple[int, str, Optional[int], float]] = None
-        best_score: float = 0.0
+        best_match = None
+        best_score = 0.0
 
         for appliance_id, data in self.signature_profiles.items():
             appliance_name = data["name"]
@@ -1380,9 +1376,7 @@ class ChangePointPatternDetector:
             )
             return None
 
-    def _compute_morphology_similarity(
-        self, morpho1: Dict[str, Any], morpho2: Dict[str, Any]
-    ) -> float:
+    def _compute_morphology_similarity(self, morpho1, morpho2):
         """
         Calcule similarité entre deux analyses morphologiques.
 
@@ -1488,7 +1482,7 @@ class ChangePointPatternDetector:
 class ApplianceStateDetector:
     """Détecteur d'états/cycles pour un appareil"""
 
-    def __init__(self, n_states: int = 5):
+    def __init__(self, n_states=5):
         """
         Args:
             n_states: Nombre d'états à détecter (par défaut 5: off, low, medium, high, peak)
@@ -1497,7 +1491,7 @@ class ApplianceStateDetector:
         self.kmeans = None
         self.state_thresholds = None
 
-    def fit(self, power_values: np.ndarray) -> "ApplianceStateDetector":
+    def fit(self, power_values):
         """
         Entraîne le détecteur d'états sur des données de consommation
 
@@ -1529,9 +1523,7 @@ class ApplianceStateDetector:
         )
         return self
 
-    def predict_states(
-        self, power_values: np.ndarray
-    ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
+    def predict_states(self, power_values):
         """
         Prédit les états pour une séquence de consommation
 
@@ -1553,9 +1545,7 @@ class ApplianceStateDetector:
 
         return states, cycles
 
-    def _detect_cycles(
-        self, states: np.ndarray, power_values: np.ndarray
-    ) -> List[Dict[str, Any]]:
+    def _detect_cycles(self, states, power_values):
         """
         Détecte les cycles/phases dans les transitions d'états
 
@@ -1615,7 +1605,7 @@ class ApplianceStateDetector:
 class Seq2PointPreprocessor:
     """Preprocessing pour modèle Sequence-to-Point"""
 
-    def __init__(self, sequence_length: int = 599):
+    def __init__(self, sequence_length=599):
         """
         Args:
             sequence_length: Longueur de la fenêtre d'entrée (impair pour point central)
@@ -1628,9 +1618,7 @@ class Seq2PointPreprocessor:
         self.target_scaler = MinMaxScaler(feature_range=(0, 1))
         self.fitted = False
 
-    def create_sequences(
-        self, aggregate_power: np.ndarray, appliance_power: np.ndarray, stride: int = 1
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def create_sequences(self, aggregate_power, appliance_power, stride=1):
         """
         Crée des séquences pour l'entraînement Sequence-to-Point
 
@@ -1671,7 +1659,7 @@ class Seq2PointPreprocessor:
 
         return X, y
 
-    def fit(self, aggregate_power: np.ndarray, appliance_power: np.ndarray):
+    def fit(self, aggregate_power, appliance_power):
         """
         Ajuste les scalers sur les données d'entraînement
 
@@ -1691,9 +1679,7 @@ class Seq2PointPreprocessor:
             f"target=[{appliance_power.min():.1f}, {appliance_power.max():.1f}]"
         )
 
-    def transform(
-        self, X: np.ndarray, y: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    def transform(self, X, y=None):
         """
         Transforme les données avec les scalers
 
@@ -1721,7 +1707,7 @@ class Seq2PointPreprocessor:
 
         return X_scaled, y_scaled
 
-    def inverse_transform_target(self, y_scaled: np.ndarray) -> np.ndarray:
+    def inverse_transform_target(self, y_scaled):
         """
         Inverse la transformation pour les prédictions
 
@@ -1753,14 +1739,14 @@ class Seq2PointNILMManager:
         logger.info("Change Point Pattern Detector initialisé")
 
         # Modèle Multi-Output
-        self.multioutput_model: Optional[Seq2PointMultiOutputModel] = None
+        self.multioutput_model = None
 
         logger.info(
             f"🎯 Architecture: {self.architecture.upper()}, "
             f"Type: {self.model_type.upper()}"
         )
 
-    def load_model(self, model_path: str):
+    def load_model(self, model_path):
         """
         Charge un modèle existant pour fine-tuning.
 
@@ -1806,9 +1792,7 @@ class Seq2PointNILMManager:
             logger.error(f"❌ Erreur chargement modèle: {e}")
             raise
 
-    def train_all_appliances(
-        self, model_name: str, fine_tune: bool = False
-    ) -> Dict[str, Any]:
+    def train_all_appliances(self, model_name, fine_tune=False):
         """
         Entraîne le modèle sur tous les appareils (Multi-Output).
 
@@ -1839,7 +1823,7 @@ class Seq2PointNILMManager:
             appliance_names = [row[1] for row in appliances]
 
             # Charger les signatures
-            all_signatures: Dict[int, List[Dict[str, Any]]] = {}
+            all_signatures = {}
             with db_manager.get_session() as session:
                 for appliance_id in appliance_ids:
                     query = """
@@ -1958,9 +1942,7 @@ class Seq2PointNILMManager:
             logger.error(f"Erreur entraînement global: {e}", exc_info=True)
             return {"error": str(e)}
 
-    def _filter_against_negative_signatures(
-        self, detections: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _filter_against_negative_signatures(self, detections):
         """
         Filtre les détections qui ressemblent aux signatures négatives.
 
@@ -2229,9 +2211,7 @@ class Seq2PointNILMManager:
             f"appareils, {total_profiles} profils"
         )
 
-    def disaggregate(
-        self, start_time: datetime, end_time: datetime
-    ) -> List[Dict[str, Any]]:
+    def disaggregate(self, start_time, end_time):
         """
         Désagrège la consommation totale pour tous les appareils.
         Utilise l'architecture Multi-Output avec détection hybride.
@@ -2373,9 +2353,7 @@ class Seq2PointNILMManager:
             logger.error(f"Erreur désagrégation: {e}", exc_info=True)
             return []
 
-    def _merge_consecutive_cycles(
-        self, cycles: List[Dict[str, Any]], max_gap_seconds: int = 120
-    ) -> List[Dict[str, Any]]:
+    def _merge_consecutive_cycles(self, cycles, max_gap_seconds=120):
         """
         Fusionne les cycles consécutifs séparés par moins de max_gap_seconds.
         Générique : fonctionne pour tous les appareils.
@@ -2433,11 +2411,11 @@ class Seq2PointNILMManager:
 
     def _find_active_segments(
         self,
-        active_mask: np.ndarray,
-        timestamps: List[datetime],
-        predictions: np.ndarray,
-        min_duration: int,
-    ) -> List[Dict[str, Any]]:
+        active_mask,
+        timestamps,
+        predictions,
+        min_duration,
+    ):
         """
         Trouve les segments actifs dans les prédictions, en détectant les gaps
         pour fragmenter les longues périodes en cycles individuels.

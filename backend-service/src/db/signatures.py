@@ -10,7 +10,7 @@ from .base import DatabaseBase, format_datetime
 class SignatureRepository(DatabaseBase):
     """Repository for signature operations."""
 
-    def get_appliance_signatures(self, appliance_id: int) -> list[dict[str, Any]]:
+    def get_appliance_signatures(self, appliance_id):
         """
         Retrieves all signatures for a specific appliance.
 
@@ -70,7 +70,7 @@ class SignatureRepository(DatabaseBase):
 
             return signatures_list
 
-    def delete_all_signatures(self) -> dict[str, int]:
+    def delete_all_signatures(self):
         """
         Deletes all signatures from all appliances.
 
@@ -99,7 +99,7 @@ class SignatureRepository(DatabaseBase):
 
             return {"signatures_deleted": signatures_count}
 
-    def delete_signature(self, signature_id: int) -> dict[str, Any] | None:
+    def delete_signature(self, signature_id):
         """
         Deletes a specific signature.
 
@@ -157,7 +157,7 @@ class SignatureRepository(DatabaseBase):
 
             return signature_info
 
-    def get_all_signatures_with_appliance(self) -> list[dict[str, Any]]:
+    def get_all_signatures_with_appliance(self):
         """
         Retrieves all signatures with associated appliance information.
 

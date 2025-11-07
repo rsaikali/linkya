@@ -11,7 +11,7 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 
-def format_datetime(dt: datetime | None) -> str | None:
+def format_datetime(dt):
     """
     Formats a datetime to ISO string.
 

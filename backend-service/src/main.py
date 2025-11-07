@@ -41,9 +41,9 @@ except Exception as e:
 class SignatureCreate(BaseModel):
     """Model for creating a new appliance signature."""
 
-    appliance_name: str
-    start_time: str  # ISO format
-    end_time: str  # ISO format
+    appliance_name = None
+    start_time = None  # ISO format
+    end_time = None  # ISO format
 
 
 # FastAPI application creation
@@ -111,7 +111,7 @@ async def get_latest_consumption():
 
 @app.get("/api/consumption/history", tags=["Consumption"])
 async def get_consumption_history(
-    interval: str = Query(
+    interval=Query(
         default="auto",
         description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)",
     ),
@@ -183,7 +183,7 @@ async def get_all_appliances():
 
 
 @app.patch("/api/appliances/{appliance_id}", tags=["Appliances"])
-async def update_appliance(appliance_id: int, appliance_data: dict):
+async def update_appliance(appliance_id, appliance_data):
     """
     Updates an appliance name.
 
@@ -259,7 +259,7 @@ async def delete_all_signatures():
 
 
 @app.delete("/api/signatures/{signature_id}", tags=["Signatures"])
-async def delete_signature(signature_id: int):
+async def delete_signature(signature_id):
     """
     Deletes a specific signature.
 
@@ -330,7 +330,7 @@ async def delete_all_detections():
 
 
 @app.patch("/api/detections/{detection_id}/validate", tags=["Detections"])
-async def validate_detection(detection_id: int):
+async def validate_detection(detection_id):
     """
     Marque une détection comme correcte pour l'apprentissage par feedback.
 
@@ -360,7 +360,7 @@ async def validate_detection(detection_id: int):
 
 
 @app.patch("/api/detections/{detection_id}/invalidate", tags=["Detections"])
-async def invalidate_detection(detection_id: int):
+async def invalidate_detection(detection_id):
     """
     Marque une détection comme incorrecte pour l'apprentissage par feedback.
 
@@ -390,7 +390,7 @@ async def invalidate_detection(detection_id: int):
 
 
 @app.patch("/api/detections/{detection_id}/reassign", tags=["Detections"])
-async def reassign_detection(detection_id: int, request: dict):
+async def reassign_detection(detection_id, request):
     """
     Reassigns a detection to the correct appliance.
     Creates a positive signature for the correct appliance
@@ -460,7 +460,7 @@ async def get_detected_appliances():
 
 
 @app.post("/api/signatures", tags=["Signatures"])
-async def create_signature(signature: SignatureCreate):
+async def create_signature(signature):
     """
     Crée une nouvelle signature d'appareil pour l'entraînement NILM.
 
@@ -742,7 +742,7 @@ async def export_signatures():
 
 
 @app.post("/api/signatures/import")
-async def import_signatures(file: UploadFile):
+async def import_signatures(file):
     """
     Importe des signatures depuis un fichier CSV.
 
@@ -759,7 +759,7 @@ async def import_signatures(file: UploadFile):
     from io import StringIO
 
     # Helper function to publish progress to WebSocket
-    def publish_progress_sync(event: str, data: dict):
+    def publish_progress_sync(event, data):
         """Publish import progress to Redis for WebSocket streaming"""
         try:
             if redis_client:
@@ -921,12 +921,12 @@ class TrainingLogsManager:
     """Manages WebSocket connections for real-time training logs."""
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
+        self.active_connections = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         """Accept new WebSocket connection."""
         # Accept connection from any origin for WebSocket
         # (WebSocket origin checking is handled differently than HTTP CORS)
@@ -938,7 +938,7 @@ class TrainingLogsManager:
         if not self.listener_task:
             await self.start_redis_listener()
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(f"WebSocket disconnected. Total: {len(self.active_connections)}")
@@ -985,7 +985,7 @@ class TrainingLogsManager:
             if self.redis_client:
                 await self.redis_client.close()
 
-    async def broadcast(self, message: str):
+    async def broadcast(self, message):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
         for connection in self.active_connections:
@@ -1008,12 +1008,12 @@ class ConsumptionUpdatesManager:
     """Manages WebSocket connections for real-time consumption data."""
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
+        self.active_connections = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
@@ -1022,7 +1022,7 @@ class ConsumptionUpdatesManager:
         if not self.listener_task:
             await self.start_redis_listener()
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(
@@ -1068,7 +1068,7 @@ class ConsumptionUpdatesManager:
             if self.redis_client:
                 await self.redis_client.close()
 
-    async def broadcast(self, message: str):
+    async def broadcast(self, message):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
         for connection in self.active_connections:
@@ -1090,12 +1090,12 @@ class DetectionUpdatesManager:
     """Manages WebSocket connections for real-time detection updates."""
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
+        self.active_connections = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
@@ -1104,7 +1104,7 @@ class DetectionUpdatesManager:
         if not self.listener_task:
             await self.start_redis_listener()
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(f"Detection WS disconnected. Total: {len(self.active_connections)}")
@@ -1148,7 +1148,7 @@ class DetectionUpdatesManager:
             if self.redis_client:
                 await self.redis_client.close()
 
-    async def broadcast(self, message: str):
+    async def broadcast(self, message):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
         for connection in self.active_connections:
@@ -1170,12 +1170,12 @@ class ImportProgressManager:
     """Manages WebSocket connections for real-time import progress."""
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
+        self.active_connections = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
@@ -1184,7 +1184,7 @@ class ImportProgressManager:
         if not self.listener_task:
             await self.start_redis_listener()
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(f"Import WS disconnected. Total: {len(self.active_connections)}")
@@ -1228,7 +1228,7 @@ class ImportProgressManager:
             if self.redis_client:
                 await self.redis_client.close()
 
-    async def broadcast(self, message: str):
+    async def broadcast(self, message):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
         for connection in self.active_connections:
@@ -1246,7 +1246,7 @@ import_progress_manager = ImportProgressManager()
 
 
 @app.websocket("/ws/training")
-async def websocket_training_logs(websocket: WebSocket):
+async def websocket_training_logs(websocket):
     """
     WebSocket endpoint for real-time training logs.
 
@@ -1275,7 +1275,7 @@ async def websocket_training_logs(websocket: WebSocket):
 
 
 @app.websocket("/ws/consumption")
-async def websocket_consumption_updates(websocket: WebSocket):
+async def websocket_consumption_updates(websocket):
     """
     WebSocket endpoint for real-time consumption data updates.
 
@@ -1300,7 +1300,7 @@ async def websocket_consumption_updates(websocket: WebSocket):
 
 
 @app.websocket("/ws/detections")
-async def websocket_detection_updates(websocket: WebSocket):
+async def websocket_detection_updates(websocket):
     """
     WebSocket endpoint for real-time detection updates.
 
@@ -1325,7 +1325,7 @@ async def websocket_detection_updates(websocket: WebSocket):
 
 
 @app.websocket("/ws/import")
-async def websocket_import_progress(websocket: WebSocket):
+async def websocket_import_progress(websocket):
     """
     WebSocket endpoint for real-time import progress updates.
 

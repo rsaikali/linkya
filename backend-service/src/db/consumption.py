@@ -11,7 +11,7 @@ from .base import DatabaseBase, format_datetime
 class ConsumptionRepository(DatabaseBase):
     """Repository for consumption data operations."""
 
-    def get_latest_consumption(self) -> dict[str, Any] | None:
+    def get_latest_consumption(self):
         """Retrieves the latest consumption value."""
         query = text(
             """
@@ -35,7 +35,7 @@ class ConsumptionRepository(DatabaseBase):
                 }
             return None
 
-    def get_consumption_time_range(self) -> dict[str, datetime] | None:
+    def get_consumption_time_range(self):
         """
         Get the min and max timestamps from linky_realtime table.
 
@@ -58,9 +58,7 @@ class ConsumptionRepository(DatabaseBase):
                 }
             return None
 
-    def get_consumption_history(
-        self, start_time: datetime, end_time: datetime, interval: str = "5 minutes"
-    ) -> list[dict[str, Any]]:
+    def get_consumption_history(self, start_time, end_time, interval="5 minutes"):
         """
         Retrieves consumption history over a period.
 

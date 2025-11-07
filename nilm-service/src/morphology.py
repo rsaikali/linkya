@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class MorphologyAnalyzer:
     """Analyzer for extracting morphological features from power signatures."""
 
-    def __init__(self, sampling_rate_hz: float = 1.0):
+    def __init__(self, sampling_rate_hz=1.0):
         """
         Initialize the morphology analyzer.
 
@@ -34,7 +34,7 @@ class MorphologyAnalyzer:
         """
         self.sampling_rate = sampling_rate_hz
 
-    def analyze(self, power_values: np.ndarray, start_time: datetime) -> Dict[str, Any]:
+    def analyze(self, power_values, start_time):
         """
         Perform complete morphological analysis on power signature.
 
@@ -74,7 +74,7 @@ class MorphologyAnalyzer:
             logger.error(f"Error during morphological analysis: {e}")
             return self._empty_analysis()
 
-    def _empty_analysis(self) -> Dict[str, Any]:
+    def _empty_analysis(self):
         """Return empty analysis structure."""
         return {
             "version": "1.0",
@@ -82,7 +82,7 @@ class MorphologyAnalyzer:
             "error": "Insufficient data for analysis",
         }
 
-    def _compute_basic_stats(self, power: np.ndarray) -> Dict[str, float]:
+    def _compute_basic_stats(self, power):
         """Compute basic statistical features."""
         duration_sec = len(power) / self.sampling_rate
 
@@ -96,7 +96,7 @@ class MorphologyAnalyzer:
             "total_energy_wh": float(np.sum(power) / 3600.0),
         }
 
-    def _compute_shape_features(self, power: np.ndarray) -> Dict[str, Any]:
+    def _compute_shape_features(self, power):
         """Compute shape-related features."""
         # Normalize power for shape analysis
         power_normalized = (power - np.min(power)) / (
@@ -122,7 +122,7 @@ class MorphologyAnalyzer:
             "variation_coefficient": float(variation_coef),
         }
 
-    def _classify_pattern(self, power_norm: np.ndarray) -> str:
+    def _classify_pattern(self, power_norm):
         """Classify the power pattern type."""
         # Calculate gradient
         gradient = np.gradient(power_norm)
@@ -158,7 +158,7 @@ class MorphologyAnalyzer:
         # Default: constant
         return "constant"
 
-    def _compute_gradient_features(self, power: np.ndarray) -> Dict[str, float]:
+    def _compute_gradient_features(self, power):
         """Compute gradient-based features."""
         gradient = np.gradient(power) * self.sampling_rate
 
@@ -169,7 +169,7 @@ class MorphologyAnalyzer:
             "gradient_std": float(np.std(gradient)),
         }
 
-    def _detect_plateaus(self, power: np.ndarray) -> List[Dict[str, Any]]:
+    def _detect_plateaus(self, power):
         """Detect stable power plateaus."""
         plateaus = []
 
@@ -212,7 +212,7 @@ class MorphologyAnalyzer:
 
         return plateaus
 
-    def _compute_oscillation_features(self, power: np.ndarray) -> Dict[str, Any]:
+    def _compute_oscillation_features(self, power):
         """Compute oscillation characteristics."""
         # Find peaks
         peaks, properties = signal.find_peaks(
@@ -244,7 +244,7 @@ class MorphologyAnalyzer:
             "avg_peak_amplitude": float(np.mean(properties.get("prominences", [0]))),
         }
 
-    def _compute_statistical_moments(self, power: np.ndarray) -> Dict[str, float]:
+    def _compute_statistical_moments(self, power):
         """Compute higher-order statistical moments."""
         return {
             "skewness": float(stats.skew(power)),
@@ -252,7 +252,7 @@ class MorphologyAnalyzer:
             "variance": float(np.var(power)),
         }
 
-    def _compute_frequency_features(self, power: np.ndarray) -> Dict[str, Any]:
+    def _compute_frequency_features(self, power):
         """Compute frequency domain features using FFT."""
         # Apply FFT
         n = len(power)
@@ -298,7 +298,7 @@ class MorphologyAnalyzer:
             "has_harmonics": len(dominant_freqs) > 1,
         }
 
-    def _detect_phases(self, power: np.ndarray) -> List[Dict[str, Any]]:
+    def _detect_phases(self, power):
         """Detect distinct phases in multi-phase patterns."""
         # Use change point detection
         gradient = np.abs(np.gradient(power))
