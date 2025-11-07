@@ -3,42 +3,48 @@
 import asyncio
 import json
 import logging
-import redis
-import redis.asyncio as aioredis
 from datetime import datetime
 from typing import Set
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+import redis
+import redis.asyncio as aioredis
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .config import settings
 from .db import db_manager
 
 # Logging configuration
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # Redis client for publishing real-time events
 try:
-    redis_client = redis.from_url(
-        settings.celery_broker_url,
-        decode_responses=True
-    )
+    redis_client = redis.from_url(settings.celery_broker_url, decode_responses=True)
     logger.info("✅ Redis client initialized for real-time events")
 except Exception as e:
     logger.warning(f"⚠️ Redis client init failed: {e}")
     redis_client = None
 
+
 # Pydantic models
 class SignatureCreate(BaseModel):
     """Model for creating a new appliance signature."""
+
     appliance_name: str
     start_time: str  # ISO format
-    end_time: str    # ISO format
+    end_time: str  # ISO format
+
 
 # FastAPI application creation
 app = FastAPI(
@@ -107,7 +113,7 @@ async def get_latest_consumption():
 async def get_consumption_history(
     interval: str = Query(
         default="auto",
-        description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)"
+        description="Aggregation interval (auto, raw, 1 minute, 5 minutes, 15 minutes, 1 hour)",
     ),
 ):
     """
@@ -123,13 +129,10 @@ async def get_consumption_history(
         # Get min/max timestamps from database
         all_data_range = db_manager.get_consumption_time_range()
         if not all_data_range:
-            raise HTTPException(
-                status_code=404,
-                detail="Aucune donnée disponible"
-            )
-        start_time_dt = all_data_range['min_time']
-        end_time_dt = all_data_range['max_time']
-        
+            raise HTTPException(status_code=404, detail="Aucune donnée disponible")
+        start_time_dt = all_data_range["min_time"]
+        end_time_dt = all_data_range["max_time"]
+
         # Auto-determine optimal interval based on data range
         if interval == "auto":
             duration_hours = (end_time_dt - start_time_dt).total_seconds() / 3600
@@ -144,13 +147,10 @@ async def get_consumption_history(
             else:
                 interval = "1 hour"
 
-        data = db_manager.get_consumption_history(
-            start_time_dt, end_time_dt, interval
-        )
+        data = db_manager.get_consumption_history(start_time_dt, end_time_dt, interval)
         if not data:
             raise HTTPException(
-                status_code=404,
-                detail="Aucune donnée disponible pour cette période"
+                status_code=404, detail="Aucune donnée disponible pour cette période"
             )
 
         return {
@@ -196,22 +196,19 @@ async def update_appliance(appliance_id: int, appliance_data: dict):
     """
     try:
         name = appliance_data.get("name")
-        
+
         if not name:
-            raise HTTPException(
-                status_code=400, detail="Name is required"
-            )
-        
+            raise HTTPException(status_code=400, detail="Name is required")
+
         updated_appliance = db_manager.update_appliance(
-            appliance_id=appliance_id,
-            name=name
+            appliance_id=appliance_id, name=name
         )
-        
+
         if not updated_appliance:
             raise HTTPException(
                 status_code=404, detail=f"Appliance {appliance_id} not found"
             )
-        
+
         return updated_appliance
     except HTTPException:
         raise
@@ -230,16 +227,14 @@ async def get_all_signatures():
     """
     try:
         signatures = db_manager.get_all_signatures_with_appliance()
-        
+
         return {
             "total": len(signatures),
             "signatures": signatures,
         }
     except Exception as e:
         logger.error(f"Error retrieving signatures: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
 @app.delete("/api/signatures", tags=["Signatures"])
@@ -252,11 +247,11 @@ async def delete_all_signatures():
     """
     try:
         result = db_manager.delete_all_signatures()
-        
+
         return {
             "status": "success",
             "message": f"{result['signatures_deleted']} signature(s) supprimée(s)",
-            "signatures_deleted": result['signatures_deleted']
+            "signatures_deleted": result["signatures_deleted"],
         }
     except Exception as e:
         logger.error(f"Erreur lors de la suppression des signatures: {str(e)}")
@@ -282,12 +277,14 @@ async def delete_signature(signature_id: int):
         return {
             "status": "success",
             "message": f"Signature supprimée: {result['appliance_name']}",
-            "signature": result
+            "signature": result,
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -301,28 +298,31 @@ async def delete_all_detections():
     """
     try:
         result = db_manager.delete_all_detections()
-        
+
         # Publish detections_cleared event to Redis for WebSocket streaming
         if redis_client:
             try:
                 import json
                 from datetime import datetime
-                message = json.dumps({
-                    "event": "detections_cleared",
-                    "data": {
-                        "deleted_count": result['deleted_count']
-                    },
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+
+                message = json.dumps(
+                    {
+                        "event": "detections_cleared",
+                        "data": {"deleted_count": result["deleted_count"]},
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("detections:updates", message)
-                logger.info(f"📢 Published detections_cleared to Redis ({result['deleted_count']} deleted)")
+                logger.info(
+                    f"📢 Published detections_cleared to Redis ({result['deleted_count']} deleted)"
+                )
             except Exception as e:
                 logger.error(f"Failed to publish detections_cleared to Redis: {e}")
 
         return {
             "status": "success",
             "message": f"{result['deleted_count']} détection(s) supprimée(s)",
-            "deleted_count": result['deleted_count']
+            "deleted_count": result["deleted_count"],
         }
     except Exception as e:
         logger.error(f"Erreur lors de la suppression des détections: {str(e)}")
@@ -348,12 +348,14 @@ async def validate_detection(detection_id: int):
         return {
             "status": "success",
             "message": f"Détection validée comme correcte: {result['appliance_name']}",
-            "detection": result
+            "detection": result,
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de la validation de la détection {detection_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de la validation de la détection {detection_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -376,12 +378,14 @@ async def invalidate_detection(detection_id: int):
         return {
             "status": "success",
             "message": f"Détection marquée comme incorrecte: {result['appliance_name']}",
-            "detection": result
+            "detection": result,
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}")
+        logger.error(
+            f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -403,8 +407,7 @@ async def reassign_detection(detection_id: int, request: dict):
         appliance_name = request.get("appliance_name")
         if not appliance_name:
             raise HTTPException(
-                status_code=400,
-                detail="Le nom de l'appareil est requis"
+                status_code=400, detail="Le nom de l'appareil est requis"
             )
 
         result = db_manager.reassign_detection(detection_id, appliance_name)
@@ -417,7 +420,7 @@ async def reassign_detection(detection_id: int, request: dict):
                 f"Détection réassignée de {result['incorrect_appliance']} "
                 f"à {result['correct_appliance']}"
             ),
-            "reassignment": result
+            "reassignment": result,
         }
     except HTTPException:
         raise
@@ -448,183 +451,165 @@ async def get_detected_appliances():
             "total_detections": len(detections),
             "detections": detections,
         }
-        logger.info(f"🔍 Returning response with {len(result['detections'])} detections")
+        logger.info(
+            f"🔍 Returning response with {len(result['detections'])} detections"
+        )
         return result
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
 @app.post("/api/signatures", tags=["Signatures"])
 async def create_signature(signature: SignatureCreate):
     """
     Crée une nouvelle signature d'appareil pour l'entraînement NILM.
-    
+
     Cette endpoint envoie une tâche Celery au service NILM pour traiter
     la signature et ajouter les données d'entraînement.
-    
+
     Args:
         signature: Données de la signature (appliance_name, start_time, end_time)
-    
+
     Returns:
         Confirmation message with signature details
     """
     try:
         from .config import get_celery_app
-        
+
         celery_app = get_celery_app()
         logger.info(
             f"Création de signature pour {signature.appliance_name} "
             f"de {signature.start_time} à {signature.end_time}"
         )
-        
+
         # Envoyer la tâche au service NILM
         task = celery_app.send_task(
-            'add_nilm_signature',
+            "add_nilm_signature",
             args=[
                 signature.appliance_name,
                 signature.start_time,
                 signature.end_time,
-                False  # is_negative=False (signature positive)
+                False,  # is_negative=False (signature positive)
             ],
-            queue='nilm',
-            routing_key='nilm.add_nilm_signature'
+            queue="nilm",
+            routing_key="nilm.add_nilm_signature",
         )
-        
+
         logger.info(f"Tâche de création de signature créée: {task.id}")
-        
+
         return {
             "status": "success",
             "message": f"Signature créée pour {signature.appliance_name}",
             "task_id": str(task.id),
             "appliance_name": signature.appliance_name,
             "start_time": signature.start_time,
-            "end_time": signature.end_time
+            "end_time": signature.end_time,
         }
-        
+
     except Exception as e:
         logger.error(
-            f"Erreur lors de la création de la signature: {str(e)}",
-            exc_info=True
+            f"Erreur lors de la création de la signature: {str(e)}", exc_info=True
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
 @app.post("/api/nilm/train", tags=["NILM"])
 async def trigger_nilm_training():
     """
     Lance l'entraînement manuel du modèle NILM.
-    
+
     Annule automatiquement tous les entraînements en cours ou en attente
     avant de lancer le nouveau.
-    
+
     Returns:
         Task ID and status
     """
     try:
         from .config import get_celery_app
-        
+
         celery_app = get_celery_app()
         logger.info("Lancement de l'entraînement NILM")
-        
+
         # Incrémenter un compteur pour marquer ce training comme légitime
         training_generation = 0
         if redis_client:
             try:
                 # Incrémenter atomiquement le compteur de génération
-                training_generation = redis_client.incr(
-                    "nilm:training:generation"
-                )
-                logger.info(
-                    f"Nouvelle génération de training: {training_generation}"
-                )
+                training_generation = redis_client.incr("nilm:training:generation")
+                logger.info(f"Nouvelle génération de training: {training_generation}")
             except Exception as e:
-                logger.warning(
-                    f"Impossible d'incrémenter génération: {e}"
-                )
-        
+                logger.warning(f"Impossible d'incrémenter génération: {e}")
+
         # 4. Envoyer la nouvelle tâche avec la génération en argument
         task = celery_app.send_task(
-            'train_nilm_model',
+            "train_nilm_model",
             args=[2, training_generation],  # min_signatures, generation
-            queue='nilm',
-            routing_key='nilm.train_nilm_model'
+            queue="nilm",
+            routing_key="nilm.train_nilm_model",
         )
-        
+
         logger.info(f"Tâche d'entraînement créée: {task.id}")
-        
+
         return {
             "status": "pending",
             "message": "Entraînement du modèle NILM lancé",
             "task_id": str(task.id),
         }
-        
+
     except Exception as e:
         logger.error(
-            f"Erreur lors du lancement de l'entraînement: {str(e)}",
-            exc_info=True
+            f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
-
-
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
 @app.post("/api/nilm/detect", tags=["NILM"])
 async def trigger_nilm_detection():
     """
     Lance la détection automatique d'appareils par NILM.
-    
+
     Returns:
         Task ID and status
     """
     try:
         from .config import get_celery_app
-        
+
         celery_app = get_celery_app()
         logger.info("Lancement de la détection NILM")
-        
+
         # Envoyer la tâche à la queue NILM
         task = celery_app.send_task(
-            'detect_nilm_appliances',
-            queue='nilm',
-            routing_key='nilm.detect_nilm_appliances'
+            "detect_nilm_appliances",
+            queue="nilm",
+            routing_key="nilm.detect_nilm_appliances",
         )
-        
+
         logger.info(f"Tâche de détection créée: {task.id}")
-        
+
         return {
             "status": "pending",
             "message": "Détection NILM lancée",
             "task_id": str(task.id),
         }
-        
+
     except Exception as e:
-        logger.error(f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
+        logger.error(
+            f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True
         )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
 @app.get("/api/nilm/models", tags=["NILM"])
 async def get_nilm_models():
     """
     Récupère le dernier modèle NILM entraîné.
-    
+
     Returns:
         Le dernier modèle avec ses métriques, ou None si aucun modèle
     """
     try:
         model = db_manager.get_latest_nilm_model()
-        
+
         if model:
             return {
                 "models": [model],
@@ -635,13 +620,12 @@ async def get_nilm_models():
                 "models": [],
                 "total": 0,
             }
-        
+
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
+        logger.error(
+            f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True
         )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
 @app.delete("/api/nilm/models", tags=["NILM"])
@@ -655,22 +639,22 @@ async def delete_all_nilm_models():
     Raises:
         HTTPException 500: Erreur serveur
     """
-    import os
     import glob
+    import os
 
     try:
         # Supprimer tous les modèles de la base de données
         deleted_count = db_manager.delete_all_models()
-        
+
         deleted_files = []
         errors = []
-        
+
         # Nettoyer tous les fichiers dans /models
         models_dir = "/models"
         if os.path.exists(models_dir):
             all_files = glob.glob(os.path.join(models_dir, "*.keras"))
             all_files += glob.glob(os.path.join(models_dir, "*.metadata.json"))
-            
+
             for file_path in all_files:
                 try:
                     os.remove(file_path)
@@ -678,28 +662,25 @@ async def delete_all_nilm_models():
                     logger.info(f"Fichier supprimé: {file_path}")
                 except OSError as e:
                     errors.append(f"Fichier {file_path}: {str(e)}")
-        
+
         logger.info(
             f"Suppression terminée: "
             f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)"
         )
-        
+
         return {
             "message": f"{deleted_count} modèle(s) supprimé(s) avec succès",
             "deleted_count": deleted_count,
             "deleted_files": deleted_files,
             "errors": errors if errors else None,
         }
-        
+
     except Exception as e:
         logger.error(
             f"Erreur lors de la suppression de tous les modèles: {str(e)}",
-            exc_info=True
+            exc_info=True,
         )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
 # ============================================================================
@@ -718,6 +699,7 @@ async def export_signatures():
     """
     import csv
     from io import StringIO
+
     from fastapi.responses import Response
 
     try:
@@ -728,21 +710,18 @@ async def export_signatures():
         writer = csv.writer(output)
 
         # Header
-        writer.writerow([
-            "appliance_name",
-            "start_time",
-            "end_time",
-            "is_negative"
-        ])
+        writer.writerow(["appliance_name", "start_time", "end_time", "is_negative"])
 
         # Données
         for sig in signatures:
-            writer.writerow([
-                sig["appliance_name"],
-                sig["start_time"],
-                sig["end_time"],
-                sig.get("is_negative", False)
-            ])
+            writer.writerow(
+                [
+                    sig["appliance_name"],
+                    sig["start_time"],
+                    sig["end_time"],
+                    sig.get("is_negative", False),
+                ]
+            )
 
         csv_content = output.getvalue()
 
@@ -753,15 +732,12 @@ async def export_signatures():
         return Response(
             content=csv_content,
             media_type="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except Exception as e:
         logger.error(f"Erreur lors de l'export CSV: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur lors de l'export: {str(e)}"
+            status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}"
         )
 
 
@@ -787,11 +763,13 @@ async def import_signatures(file: UploadFile):
         """Publish import progress to Redis for WebSocket streaming"""
         try:
             if redis_client:
-                message = json.dumps({
-                    "event": event,
-                    "data": data,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                message = json.dumps(
+                    {
+                        "event": event,
+                        "data": data,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("import:progress", message)
                 logger.info(f"📢 Published {event} to Redis")
         except Exception as e:
@@ -799,51 +777,49 @@ async def import_signatures(file: UploadFile):
 
     try:
         # Publish import_start event
-        publish_progress_sync("import_start", {
-            "status": "started",
-            "filename": file.filename
-        })
+        publish_progress_sync(
+            "import_start", {"status": "started", "filename": file.filename}
+        )
 
         # Lire le contenu du CSV
         content = await file.read()
-        content_str = content.decode('utf-8')
-        
+        content_str = content.decode("utf-8")
+
         # Premier passage : compter les lignes totales
-        lines = content_str.strip().split('\n')
+        lines = content_str.strip().split("\n")
         total_lines_expected = len(lines) - 1  # -1 pour le header
-        
+
         csv_reader = csv.DictReader(StringIO(content_str))
 
         # Valider les colonnes requises
-        required_columns = {
-            "appliance_name",
-            "start_time",
-            "end_time"
-        }
+        required_columns = {"appliance_name", "start_time", "end_time"}
         if not required_columns.issubset(csv_reader.fieldnames or []):
-            publish_progress_sync("import_error", {
-                "error": f"Colonnes requises: {', '.join(required_columns)}"
-            })
+            publish_progress_sync(
+                "import_error",
+                {"error": f"Colonnes requises: {', '.join(required_columns)}"},
+            )
             raise HTTPException(
                 status_code=422,
-                detail=f"Colonnes requises: {', '.join(required_columns)}"
+                detail=f"Colonnes requises: {', '.join(required_columns)}",
             )
 
         # Supprimer toutes les signatures existantes avant l'import
         logger.info("Suppression de toutes les signatures existantes...")
         delete_result = db_manager.delete_all_signatures()
-        logger.info(
-            f"{delete_result['signatures_deleted']} signature(s) supprimée(s)"
-        )
+        logger.info(f"{delete_result['signatures_deleted']} signature(s) supprimée(s)")
 
-        publish_progress_sync("import_progress", {
-            "status": "deleted_old_signatures",
-            "count": delete_result['signatures_deleted'],
-            "total_expected": total_lines_expected
-        })
+        publish_progress_sync(
+            "import_progress",
+            {
+                "status": "deleted_old_signatures",
+                "count": delete_result["signatures_deleted"],
+                "total_expected": total_lines_expected,
+            },
+        )
 
         # Importer ligne par ligne
         from .config import get_celery_app
+
         celery_app = get_celery_app()
 
         processed_lines = 0
@@ -859,74 +835,68 @@ async def import_signatures(file: UploadFile):
                 appliance_name = row["appliance_name"].strip()
                 start_time = row["start_time"].strip()
                 end_time = row["end_time"].strip()
-                
+
                 # is_negative est optionnel (par défaut False)
                 is_negative_str = row.get("is_negative", "False").strip()
-                is_negative = is_negative_str.lower() in (
-                    'true', '1', 'yes', 'oui'
-                )
+                is_negative = is_negative_str.lower() in ("true", "1", "yes", "oui")
 
                 if not appliance_name:
-                    raise ValueError(
-                        "Le nom de l'appareil ne peut pas être vide"
-                    )
+                    raise ValueError("Le nom de l'appareil ne peut pas être vide")
 
                 # Valider les timestamps
                 start_dt = datetime.fromisoformat(start_time)
                 end_dt = datetime.fromisoformat(end_time)
 
                 if start_dt >= end_dt:
-                    raise ValueError(
-                        "start_time doit être antérieur à end_time"
-                    )
+                    raise ValueError("start_time doit être antérieur à end_time")
 
                 # Créer la signature via Celery
                 celery_app.send_task(
-                    'add_nilm_signature',
-                    args=(
-                        appliance_name,
-                        start_time,
-                        end_time
-                    ),
-                    kwargs={'is_negative': is_negative},
-                    queue='nilm_cnn',
-                    routing_key="nilm.add_nilm_signature"
+                    "add_nilm_signature",
+                    args=(appliance_name, start_time, end_time),
+                    kwargs={"is_negative": is_negative},
+                    queue="nilm_cnn",
+                    routing_key="nilm.add_nilm_signature",
                 )
 
                 success_count += 1
 
                 # Publish progress every 5 lines
                 if processed_lines % 5 == 0:
-                    progress_percent = int(
-                        (processed_lines / total_lines_expected) * 100
-                    ) if total_lines_expected > 0 else 0
-                    publish_progress_sync("import_progress", {
-                        "total_lines": processed_lines,
-                        "success_count": success_count,
-                        "error_count": error_count,
-                        "progress_percent": progress_percent
-                    })
+                    progress_percent = (
+                        int((processed_lines / total_lines_expected) * 100)
+                        if total_lines_expected > 0
+                        else 0
+                    )
+                    publish_progress_sync(
+                        "import_progress",
+                        {
+                            "total_lines": processed_lines,
+                            "success_count": success_count,
+                            "error_count": error_count,
+                            "progress_percent": progress_percent,
+                        },
+                    )
 
             except ValueError as e:
                 error_count += 1
-                errors.append({
-                    "line": line_num,
-                    "error": str(e)
-                })
+                errors.append({"line": line_num, "error": str(e)})
             except Exception as e:
                 error_count += 1
-                errors.append({
-                    "line": line_num,
-                    "error": f"Erreur inattendue: {str(e)}"
-                })
+                errors.append(
+                    {"line": line_num, "error": f"Erreur inattendue: {str(e)}"}
+                )
 
         # Publish import_complete event
-        publish_progress_sync("import_complete", {
-            "status": "completed",
-            "total_lines": processed_lines,
-            "success_count": success_count,
-            "error_count": error_count
-        })
+        publish_progress_sync(
+            "import_complete",
+            {
+                "status": "completed",
+                "total_lines": processed_lines,
+                "success_count": success_count,
+                "error_count": error_count,
+            },
+        )
 
         return {
             "status": "completed",
@@ -934,7 +904,7 @@ async def import_signatures(file: UploadFile):
             "total_lines": processed_lines,
             "success_count": success_count,
             "error_count": error_count,
-            "errors": errors
+            "errors": errors,
         }
 
     except HTTPException:
@@ -942,21 +912,20 @@ async def import_signatures(file: UploadFile):
     except Exception as e:
         logger.error(f"Erreur lors de l'import CSV: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"Erreur serveur lors de l'import: {str(e)}"
+            status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}"
         )
 
 
 # --- WebSocket Manager for Training Logs ---
 class TrainingLogsManager:
     """Manages WebSocket connections for real-time training logs."""
-    
+
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
-    
+
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection."""
         # Accept connection from any origin for WebSocket
@@ -964,46 +933,47 @@ class TrainingLogsManager:
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"WebSocket connected. Total: {len(self.active_connections)}")
-        
+
         # Start Redis listener if not already running
         if not self.listener_task:
             await self.start_redis_listener()
-    
+
     def disconnect(self, websocket: WebSocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(f"WebSocket disconnected. Total: {len(self.active_connections)}")
-    
+
     async def start_redis_listener(self):
         """Start listening to Redis Pub/Sub channel."""
         try:
-            redis_url = settings.celery_broker_url.replace('redis://', '')
-            host_port = redis_url.split('/')[0]
-            
+            redis_url = settings.celery_broker_url.replace("redis://", "")
+            host_port = redis_url.split("/")[0]
+
             self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}",
-                decode_responses=True
+                f"redis://{host_port}", decode_responses=True
             )
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("training:logs")
-            
+
             logger.info("✅ Started Redis listener for training:logs")
-            
+
             # Start background task
             self.listener_task = asyncio.create_task(self._listen_redis())
-            
+
         except Exception as e:
             logger.error(f"Failed to start Redis listener: {e}")
-    
+
     async def _listen_redis(self):
         """Background task that listens to Redis and broadcasts to WebSockets."""
         logger.info("🎧 Redis listener task started")
         try:
             async for message in self.pubsub.listen():
                 logger.debug(f"📨 Redis message received: {message}")
-                if message['type'] == 'message':
-                    data = message['data']
-                    logger.info(f"📢 Broadcasting to {len(self.active_connections)} clients")
+                if message["type"] == "message":
+                    data = message["data"]
+                    logger.info(
+                        f"📢 Broadcasting to {len(self.active_connections)} clients"
+                    )
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in Redis listener: {e}", exc_info=True)
@@ -1014,7 +984,7 @@ class TrainingLogsManager:
                 await self.pubsub.close()
             if self.redis_client:
                 await self.redis_client.close()
-    
+
     async def broadcast(self, message: str):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
@@ -1024,7 +994,7 @@ class TrainingLogsManager:
             except Exception as e:
                 logger.warning(f"Failed to send to WebSocket: {e}")
                 disconnected.add(connection)
-        
+
         # Remove disconnected clients
         for conn in disconnected:
             self.disconnect(conn)
@@ -1036,54 +1006,57 @@ training_logs_manager = TrainingLogsManager()
 # --- WebSocket Manager for Consumption Updates ---
 class ConsumptionUpdatesManager:
     """Manages WebSocket connections for real-time consumption data."""
-    
+
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
-    
+
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"Consumption WS connected. Total: {len(self.active_connections)}")
-        
+
         if not self.listener_task:
             await self.start_redis_listener()
-    
+
     def disconnect(self, websocket: WebSocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
-        logger.info(f"Consumption WS disconnected. Total: {len(self.active_connections)}")
-    
+        logger.info(
+            f"Consumption WS disconnected. Total: {len(self.active_connections)}"
+        )
+
     async def start_redis_listener(self):
         """Start listening to Redis Pub/Sub channel."""
         try:
-            redis_url = settings.celery_broker_url.replace('redis://', '')
-            host_port = redis_url.split('/')[0]
-            
+            redis_url = settings.celery_broker_url.replace("redis://", "")
+            host_port = redis_url.split("/")[0]
+
             self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}",
-                decode_responses=True
+                f"redis://{host_port}", decode_responses=True
             )
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("consumption:updates")
-            
+
             logger.info("✅ Started Redis listener for consumption:updates")
             self.listener_task = asyncio.create_task(self._listen_redis())
-            
+
         except Exception as e:
             logger.error(f"Failed to start consumption Redis listener: {e}")
-    
+
     async def _listen_redis(self):
         """Background task that listens to Redis and broadcasts to WebSockets."""
         logger.info("🎧 Consumption Redis listener task started")
         try:
             async for message in self.pubsub.listen():
-                if message['type'] == 'message':
-                    data = message['data']
-                    logger.debug(f"📢 Broadcasting consumption to {len(self.active_connections)} clients")
+                if message["type"] == "message":
+                    data = message["data"]
+                    logger.debug(
+                        f"📢 Broadcasting consumption to {len(self.active_connections)} clients"
+                    )
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in consumption Redis listener: {e}", exc_info=True)
@@ -1094,7 +1067,7 @@ class ConsumptionUpdatesManager:
                 await self.pubsub.close()
             if self.redis_client:
                 await self.redis_client.close()
-    
+
     async def broadcast(self, message: str):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
@@ -1104,7 +1077,7 @@ class ConsumptionUpdatesManager:
             except Exception as e:
                 logger.warning(f"Failed to send to consumption WebSocket: {e}")
                 disconnected.add(connection)
-        
+
         for conn in disconnected:
             self.disconnect(conn)
 
@@ -1115,54 +1088,55 @@ consumption_updates_manager = ConsumptionUpdatesManager()
 # --- WebSocket Manager for Detection Updates ---
 class DetectionUpdatesManager:
     """Manages WebSocket connections for real-time detection updates."""
-    
+
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
-    
+
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"Detection WS connected. Total: {len(self.active_connections)}")
-        
+
         if not self.listener_task:
             await self.start_redis_listener()
-    
+
     def disconnect(self, websocket: WebSocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(f"Detection WS disconnected. Total: {len(self.active_connections)}")
-    
+
     async def start_redis_listener(self):
         """Start listening to Redis Pub/Sub channel."""
         try:
-            redis_url = settings.celery_broker_url.replace('redis://', '')
-            host_port = redis_url.split('/')[0]
-            
+            redis_url = settings.celery_broker_url.replace("redis://", "")
+            host_port = redis_url.split("/")[0]
+
             self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}",
-                decode_responses=True
+                f"redis://{host_port}", decode_responses=True
             )
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("detections:updates")
-            
+
             logger.info("✅ Started Redis listener for detections:updates")
             self.listener_task = asyncio.create_task(self._listen_redis())
-            
+
         except Exception as e:
             logger.error(f"Failed to start detection Redis listener: {e}")
-    
+
     async def _listen_redis(self):
         """Background task that listens to Redis and broadcasts to WebSockets."""
         logger.info("🎧 Detection Redis listener task started")
         try:
             async for message in self.pubsub.listen():
-                if message['type'] == 'message':
-                    data = message['data']
-                    logger.debug(f"📢 Broadcasting detection to {len(self.active_connections)} clients")
+                if message["type"] == "message":
+                    data = message["data"]
+                    logger.debug(
+                        f"📢 Broadcasting detection to {len(self.active_connections)} clients"
+                    )
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in detection Redis listener: {e}", exc_info=True)
@@ -1173,7 +1147,7 @@ class DetectionUpdatesManager:
                 await self.pubsub.close()
             if self.redis_client:
                 await self.redis_client.close()
-    
+
     async def broadcast(self, message: str):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
@@ -1183,7 +1157,7 @@ class DetectionUpdatesManager:
             except Exception as e:
                 logger.warning(f"Failed to send to detection WebSocket: {e}")
                 disconnected.add(connection)
-        
+
         for conn in disconnected:
             self.disconnect(conn)
 
@@ -1194,54 +1168,55 @@ detection_updates_manager = DetectionUpdatesManager()
 # --- WebSocket Manager for Import Progress ---
 class ImportProgressManager:
     """Manages WebSocket connections for real-time import progress."""
-    
+
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self.redis_client = None
         self.pubsub = None
         self.listener_task = None
-    
+
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
         logger.info(f"Import WS connected. Total: {len(self.active_connections)}")
-        
+
         if not self.listener_task:
             await self.start_redis_listener()
-    
+
     def disconnect(self, websocket: WebSocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
         logger.info(f"Import WS disconnected. Total: {len(self.active_connections)}")
-    
+
     async def start_redis_listener(self):
         """Start listening to Redis Pub/Sub channel."""
         try:
-            redis_url = settings.celery_broker_url.replace('redis://', '')
-            host_port = redis_url.split('/')[0]
-            
+            redis_url = settings.celery_broker_url.replace("redis://", "")
+            host_port = redis_url.split("/")[0]
+
             self.redis_client = await aioredis.from_url(
-                f"redis://{host_port}",
-                decode_responses=True
+                f"redis://{host_port}", decode_responses=True
             )
             self.pubsub = self.redis_client.pubsub()
             await self.pubsub.subscribe("import:progress")
-            
+
             logger.info("✅ Started Redis listener for import:progress")
             self.listener_task = asyncio.create_task(self._listen_redis())
-            
+
         except Exception as e:
             logger.error(f"Failed to start import Redis listener: {e}")
-    
+
     async def _listen_redis(self):
         """Background task that listens to Redis and broadcasts to WebSockets."""
         logger.info("🎧 Import Redis listener task started")
         try:
             async for message in self.pubsub.listen():
-                if message['type'] == 'message':
-                    data = message['data']
-                    logger.debug(f"📢 Broadcasting import progress to {len(self.active_connections)} clients")
+                if message["type"] == "message":
+                    data = message["data"]
+                    logger.debug(
+                        f"📢 Broadcasting import progress to {len(self.active_connections)} clients"
+                    )
                     await self.broadcast(data)
         except Exception as e:
             logger.error(f"Error in import Redis listener: {e}", exc_info=True)
@@ -1252,7 +1227,7 @@ class ImportProgressManager:
                 await self.pubsub.close()
             if self.redis_client:
                 await self.redis_client.close()
-    
+
     async def broadcast(self, message: str):
         """Broadcast message to all connected WebSocket clients."""
         disconnected = set()
@@ -1262,7 +1237,7 @@ class ImportProgressManager:
             except Exception as e:
                 logger.warning(f"Failed to send to import WebSocket: {e}")
                 disconnected.add(connection)
-        
+
         for conn in disconnected:
             self.disconnect(conn)
 
@@ -1274,7 +1249,7 @@ import_progress_manager = ImportProgressManager()
 async def websocket_training_logs(websocket: WebSocket):
     """
     WebSocket endpoint for real-time training logs.
-    
+
     Clients connect to this endpoint to receive live updates during model training.
     Events include: training_start, epoch_start, epoch_end, batch_update, training_complete.
     """
@@ -1303,7 +1278,7 @@ async def websocket_training_logs(websocket: WebSocket):
 async def websocket_consumption_updates(websocket: WebSocket):
     """
     WebSocket endpoint for real-time consumption data updates.
-    
+
     Clients connect to receive live consumption data as it arrives from sync-service.
     Events include: new_consumption with latest PAPP, temperature, counters.
     """
@@ -1328,7 +1303,7 @@ async def websocket_consumption_updates(websocket: WebSocket):
 async def websocket_detection_updates(websocket: WebSocket):
     """
     WebSocket endpoint for real-time detection updates.
-    
+
     Clients connect to receive live NILM detection results as they are created.
     Events include: new_detection with appliance, timing, power, confidence.
     """
@@ -1353,7 +1328,7 @@ async def websocket_detection_updates(websocket: WebSocket):
 async def websocket_import_progress(websocket: WebSocket):
     """
     WebSocket endpoint for real-time import progress updates.
-    
+
     Clients connect to receive live progress during CSV signature import.
     Events include: import_start, import_progress, import_complete.
     """
@@ -1372,4 +1347,3 @@ async def websocket_import_progress(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Import WebSocket error: {e}")
         import_progress_manager.disconnect(websocket)
-

@@ -7,23 +7,25 @@ Architecture basée sur LSTM/GRU avec mécanisme d'attention pour :
 - Détection d'états : identifie les différentes phases/cycles (chauffage, lavage, etc.)
 - Appareils concurrents : gère plusieurs appareils fonctionnant simultanément
 """
+
 from __future__ import annotations
+
+import json
 import logging
-import numpy as np
-from typing import List, Dict, Any, Tuple, Optional
+import os
 from datetime import datetime
 from pathlib import Path
-import json
-import os
-import redis
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+import redis
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, models, callbacks
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.cluster import KMeans
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sqlalchemy import text
+from tensorflow import keras
+from tensorflow.keras import callbacks, layers, models
 
 from .config import settings
 from .database import db_manager
@@ -32,14 +34,14 @@ logger = logging.getLogger(__name__)
 
 
 # --- Custom Loss Functions ---
-@tf.keras.utils.register_keras_serializable(package='custom_losses')
+@tf.keras.utils.register_keras_serializable(package="custom_losses")
 def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
     """
     Focal Loss pour se concentrer sur les exemples difficiles.
-    
+
     Réduit la perte pour les exemples bien classifiés et augmente
     pour les difficiles. Utile pour rejeter les faux positifs.
-    
+
     Args:
         y_true: Valeurs réelles (None si utilisé comme constructeur)
         y_pred: Valeurs prédites (None si utilisé comme constructeur)
@@ -47,7 +49,7 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
                Plus élevé = focus sur difficiles
         alpha: Facteur de balance (0.25 par défaut).
                Poids relatif des classes
-        
+
     Returns:
         Perte calculée si y_true et y_pred fournis, sinon fonction de perte
     """
@@ -55,100 +57,100 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
     if y_true is not None and y_pred is not None:
         # MAE de base
         mae = tf.abs(y_true - y_pred)
-        
+
         # Normaliser les erreurs pour focal
         # Pour les prédictions proches de la vérité, p_t sera proche de 1
         # Pour les erreurs importantes, p_t sera proche de 0
         max_error = tf.reduce_max(mae) + 1e-7
         p_t = 1.0 - (mae / max_error)
-        
+
         # Focal term: (1 - p_t)^gamma
         # Quand p_t proche de 1 (bonne prédiction): focal_weight ~0
         # Quand p_t proche de 0 (mauvaise prédiction): focal_weight ~1
         focal_weight = tf.pow(1.0 - p_t, gamma)
-        
+
         # Pénaliser plus les faux positifs (y_true=0 mais y_pred>0)
         false_positive_mask = tf.cast(y_true < 0.1, tf.float32)
         alpha_weight = 1.0 + alpha * false_positive_mask
-        
+
         # Loss finale
         loss = alpha_weight * focal_weight * mae
-        
+
         return tf.reduce_mean(loss)
-    
+
     # Sinon retourner une fonction de perte paramétrée
     def loss_fn(y_true, y_pred):
         # MAE de base
         mae = tf.abs(y_true - y_pred)
-        
+
         # Normaliser les erreurs pour focal
         # Pour les prédictions proches de la vérité, p_t sera proche de 1
         # Pour les erreurs importantes, p_t sera proche de 0
         max_error = tf.reduce_max(mae) + 1e-7
         p_t = 1.0 - (mae / max_error)
-        
+
         # Focal term: (1 - p_t)^gamma
         # Quand p_t proche de 1 (bonne prédiction): focal_weight ~0
         # Quand p_t proche de 0 (mauvaise prédiction): focal_weight ~1
         focal_weight = tf.pow(1.0 - p_t, gamma)
-        
+
         # Pénaliser plus les faux positifs (y_true=0 mais y_pred>0)
         false_positive_mask = tf.cast(y_true < 0.1, tf.float32)
         alpha_weight = 1.0 + alpha * false_positive_mask
-        
+
         # Loss finale
         loss = alpha_weight * focal_weight * mae
-        
+
         return tf.reduce_mean(loss)
-    
+
     return loss_fn
 
 
-@tf.keras.utils.register_keras_serializable(package='custom_losses')
+@tf.keras.utils.register_keras_serializable(package="custom_losses")
 def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=1.5):
     """
     Loss asymétrique qui pénalise plus les faux positifs.
-    
+
     Quand y_true=0 (appareil éteint ou signature négative),
     les erreurs de prédiction sont pénalisées davantage.
-    
+
     Args:
         y_true: Valeurs réelles (None si utilisé comme constructeur)
         y_pred: Valeurs prédites (None si utilisé comme constructeur)
         false_positive_penalty: Multiplicateur pour les faux positifs
                                 (défaut: 1.5, réduit de 2.5 pour être moins agressif)
-        
+
     Returns:
         Perte calculée si y_true et y_pred fournis, sinon fonction de perte
     """
     # Si y_true et y_pred sont fournis, calculer la perte directement
     if y_true is not None and y_pred is not None:
         mae = tf.abs(y_true - y_pred)
-        
+
         # Détecter où y_true est proche de 0 (OFF ou négatif)
         is_negative = tf.cast(y_true < 0.1, tf.float32)
-        
+
         # Pénaliser plus les erreurs quand l'appareil devrait être OFF
         weight = 1.0 + (false_positive_penalty - 1.0) * is_negative
-        
+
         weighted_mae = weight * mae
-        
+
         return tf.reduce_mean(weighted_mae)
-    
+
     # Sinon retourner une fonction de perte paramétrée
     def loss_fn(y_true, y_pred):
         mae = tf.abs(y_true - y_pred)
-        
+
         # Détecter où y_true est proche de 0 (OFF ou négatif)
         is_negative = tf.cast(y_true < 0.1, tf.float32)
-        
+
         # Pénaliser plus les erreurs quand l'appareil devrait être OFF
         weight = 1.0 + (false_positive_penalty - 1.0) * is_negative
-        
+
         weighted_mae = weight * mae
-        
+
         return tf.reduce_mean(weighted_mae)
-    
+
     return loss_fn
 
 
@@ -156,18 +158,18 @@ def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=1.5):
 class RedisTrainingCallback(callbacks.Callback):
     """
     Custom Keras callback that publishes training events to Redis Pub/Sub.
-    
+
     Events published:
     - training_start: When training begins
     - epoch_start: At the beginning of each epoch
     - epoch_end: At the end of each epoch with metrics
     - batch_update: Every N batches with current metrics
     - training_complete: When training finishes
-    
+
     Messages are published to Redis channel 'training:logs' for consumption
     by WebSocket endpoints.
     """
-    
+
     def __init__(self, model_name: str, total_epochs: int, batch_update_freq: int = 10):
         """
         Args:
@@ -183,140 +185,153 @@ class RedisTrainingCallback(callbacks.Callback):
         self.channel = "training:logs"
         self.current_epoch = 0
         self.training_start_time = None
-        
+
         # Initialize Redis connection
         try:
-            redis_host = os.environ.get('REDIS_HOST', 'redis')
-            redis_port = int(os.environ.get('REDIS_PORT', 6379))
+            redis_host = os.environ.get("REDIS_HOST", "redis")
+            redis_port = int(os.environ.get("REDIS_PORT", 6379))
             print(f"[RedisCallback] Connecting to Redis at {redis_host}:{redis_port}")
             self.redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                db=0,
-                decode_responses=True
+                host=redis_host, port=redis_port, db=0, decode_responses=True
             )
             # Test connection
             self.redis_client.ping()
             print(f"[RedisCallback] ✅ Connected to Redis")
-            logger.info(f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}")
+            logger.info(
+                f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}"
+            )
         except Exception as e:
             print(f"[RedisCallback] ❌ Failed to connect to Redis: {e}")
             logger.warning(f"⚠️  RedisTrainingCallback: Could not connect to Redis: {e}")
             self.redis_client = None
-    
+
     def _publish(self, event_type: str, data: Dict[str, Any]):
         """Publish event to Redis Pub/Sub channel"""
         if not self.redis_client:
             print(f"[RedisCallback] Cannot publish {event_type}: no Redis client")
             return
-        
+
         try:
             message = {
-                'event': event_type,
-                'model_name': self.model_name,
-                'timestamp': datetime.utcnow().isoformat(),
-                'data': data
+                "event": event_type,
+                "model_name": self.model_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": data,
             }
             result = self.redis_client.publish(self.channel, json.dumps(message))
             print(f"[RedisCallback] Published {event_type} to {result} subscribers")
         except Exception as e:
             print(f"[RedisCallback] Failed to publish {event_type}: {e}")
             logger.error(f"Failed to publish to Redis: {e}")
-    
+
     def on_train_begin(self, logs=None):
         """Called at the beginning of training"""
         print("[RedisCallback] on_train_begin called")
         self.training_start_time = datetime.utcnow()
-        self._publish('training_start', {
-            'total_epochs': self.total_epochs,
-            'message': f'Starting training for model {self.model_name}'
-        })
-    
+        self._publish(
+            "training_start",
+            {
+                "total_epochs": self.total_epochs,
+                "message": f"Starting training for model {self.model_name}",
+            },
+        )
+
     def on_epoch_begin(self, epoch, logs=None):
         """Called at the beginning of each epoch"""
         self.current_epoch = epoch + 1
-        print(f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}")
-        self._publish('epoch_start', {
-            'epoch': self.current_epoch,
-            'total_epochs': self.total_epochs,
-            'progress': round((self.current_epoch / self.total_epochs) * 100, 1)
-        })
-    
+        print(
+            f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}"
+        )
+        self._publish(
+            "epoch_start",
+            {
+                "epoch": self.current_epoch,
+                "total_epochs": self.total_epochs,
+                "progress": round((self.current_epoch / self.total_epochs) * 100, 1),
+            },
+        )
+
     def on_epoch_end(self, epoch, logs=None):
         """Called at the end of each epoch"""
         logs = logs or {}
-        
+
         # Calculate ETA
         elapsed = (datetime.utcnow() - self.training_start_time).total_seconds()
-        eta_seconds = (elapsed / self.current_epoch) * (self.total_epochs - self.current_epoch)
-        
-        self._publish('epoch_end', {
-            'epoch': self.current_epoch,
-            'total_epochs': self.total_epochs,
-            'metrics': {k: float(v) for k, v in logs.items()},
-            'progress': round((self.current_epoch / self.total_epochs) * 100, 1),
-            'elapsed_seconds': round(elapsed, 1),
-            'eta_seconds': round(eta_seconds, 1)
-        })
-    
+        eta_seconds = (elapsed / self.current_epoch) * (
+            self.total_epochs - self.current_epoch
+        )
+
+        self._publish(
+            "epoch_end",
+            {
+                "epoch": self.current_epoch,
+                "total_epochs": self.total_epochs,
+                "metrics": {k: float(v) for k, v in logs.items()},
+                "progress": round((self.current_epoch / self.total_epochs) * 100, 1),
+                "elapsed_seconds": round(elapsed, 1),
+                "eta_seconds": round(eta_seconds, 1),
+            },
+        )
+
     def on_batch_end(self, batch, logs=None):
         """Called at the end of each batch"""
         # Only publish every N batches to avoid flooding
         if batch % self.batch_update_freq == 0:
             logs = logs or {}
-            self._publish('batch_update', {
-                'epoch': self.current_epoch,
-                'batch': batch,
-                'metrics': {k: float(v) for k, v in logs.items()}
-            })
-    
+            self._publish(
+                "batch_update",
+                {
+                    "epoch": self.current_epoch,
+                    "batch": batch,
+                    "metrics": {k: float(v) for k, v in logs.items()},
+                },
+            )
+
     def on_train_end(self, logs=None):
         """Called at the end of training"""
         logs = logs or {}
         elapsed = (datetime.utcnow() - self.training_start_time).total_seconds()
-        
-        self._publish('training_complete', {
-            'epochs_completed': self.current_epoch,
-            'final_metrics': {k: float(v) for k, v in logs.items()},
-            'total_duration_seconds': round(elapsed, 1),
-            'message': f'Training completed for model {self.model_name}'
-        })
+
+        self._publish(
+            "training_complete",
+            {
+                "epochs_completed": self.current_epoch,
+                "final_metrics": {k: float(v) for k, v in logs.items()},
+                "total_duration_seconds": round(elapsed, 1),
+                "message": f"Training completed for model {self.model_name}",
+            },
+        )
 
 
 # --- Multi-Head Attention Layer ---
-@tf.keras.utils.register_keras_serializable(package='custom_layers')
+@tf.keras.utils.register_keras_serializable(package="custom_layers")
 # --- Multi-Head Attention Layer ---
-@tf.keras.utils.register_keras_serializable(package='custom_layers')
+@tf.keras.utils.register_keras_serializable(package="custom_layers")
 class MultiHeadAttentionLayer(layers.Layer):
     """
     Multi-Head Attention pour mieux capturer les patterns de multiples
     appareils simultanés.
     """
+
     def __init__(self, num_heads: int = 4, key_dim: int = 32, **kwargs):
         super(MultiHeadAttentionLayer, self).__init__(**kwargs)
         self.num_heads = num_heads
         self.key_dim = key_dim
-        self.attention = layers.MultiHeadAttention(
-            num_heads=num_heads,
-            key_dim=key_dim
-        )
-    
+        self.attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim)
+
     def call(self, inputs):
         """
         Args:
             inputs: (batch, sequence, features)
-        
+
         Returns:
             Attended features de même shape
         """
         return self.attention(inputs, inputs)
-    
+
     def get_config(self):
         config = super(MultiHeadAttentionLayer, self).get_config()
-        config.update({
-            'num_heads': self.num_heads,
-            'key_dim': self.key_dim
-        })
+        config.update({"num_heads": self.num_heads, "key_dim": self.key_dim})
         return config
 
 
@@ -324,32 +339,31 @@ class MultiHeadAttentionLayer(layers.Layer):
 class Seq2PointMultiOutputModel:
     """
     Modèle Sequence-to-Point avec Multi-Output architecture.
-    
+
     Architecture:
     1. Input aggregate power (séquence temporelle)
     2. Feature extraction (Conv1D + GRU/LSTM)
     3. Multi-Head Attention (pour patterns simultanés)
     4. Output branches: une par appareil
-    
+
     Avantages :
     - Désagrégation simultanée de N appareils
     - Détection native de chevauchements temporels
     - Pas besoin de conditioning (one-hot encoding)
     - Architecture simple et efficace
     """
-    
+
     def __init__(
         self,
         appliance_ids: List[int],
         appliance_names: List[str],
         sequence_length: int = 599,
-        model_type: str = "gru"
+        model_type: str = "gru",
     ):
         self.appliance_ids = appliance_ids
         self.appliance_names = appliance_names
         self.sequence_length = (
-            sequence_length if sequence_length % 2 == 1
-            else sequence_length - 1
+            sequence_length if sequence_length % 2 == 1 else sequence_length - 1
         )
         self.model_type = model_type
         self.num_appliances = len(appliance_ids)
@@ -357,7 +371,7 @@ class Seq2PointMultiOutputModel:
         self.preprocessor = Seq2PointPreprocessor(self.sequence_length)
         self.history = None
         self.use_gpu = self._configure_device()
-        
+
         # Mapping appareil ID -> index
         self.appliance_id_to_idx = {
             app_id: idx for idx, app_id in enumerate(appliance_ids)
@@ -365,9 +379,9 @@ class Seq2PointMultiOutputModel:
         self.appliance_idx_to_id = {
             idx: app_id for app_id, idx in self.appliance_id_to_idx.items()
         }
-    
+
     def _configure_device(self) -> bool:
-        gpus = tf.config.list_physical_devices('GPU')
+        gpus = tf.config.list_physical_devices("GPU")
         if gpus:
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
@@ -375,11 +389,11 @@ class Seq2PointMultiOutputModel:
             return True
         logger.info("💻 Device: CPU")
         return False
-    
+
     def build_model(self) -> keras.Model:
         """
         Construit le modèle Multi-Output avec attention.
-        
+
         Architecture:
         - Input: aggregate_power (sequence_length, 1)
         - Conv1D: extraction de features locales
@@ -390,55 +404,43 @@ class Seq2PointMultiOutputModel:
         """
         # Input
         aggregate_input = layers.Input(
-            shape=(self.sequence_length, 1),
-            name='aggregate_power'
+            shape=(self.sequence_length, 1), name="aggregate_power"
         )
-        
+
         # Conv1D pour features locales
         x = layers.Conv1D(
-            64, kernel_size=5, padding='same', activation='relu',
-            name='conv1d_1'
+            64, kernel_size=5, padding="same", activation="relu", name="conv1d_1"
         )(aggregate_input)
-        x = layers.MaxPooling1D(pool_size=2, name='pool_1')(x)
-        
+        x = layers.MaxPooling1D(pool_size=2, name="pool_1")(x)
+
         # Recurrent layers pour features temporelles
         if self.model_type == "gru":
-            x = layers.GRU(
-                128, return_sequences=True, name='gru_1'
-            )(x)
+            x = layers.GRU(128, return_sequences=True, name="gru_1")(x)
             x = layers.Dropout(0.2)(x)
-            x = layers.GRU(
-                64, return_sequences=True, name='gru_2'
-            )(x)
+            x = layers.GRU(64, return_sequences=True, name="gru_2")(x)
             x = layers.Dropout(0.2)(x)
         elif self.model_type == "lstm":
-            x = layers.LSTM(
-                128, return_sequences=True, name='lstm_1'
-            )(x)
+            x = layers.LSTM(128, return_sequences=True, name="lstm_1")(x)
             x = layers.Dropout(0.2)(x)
-            x = layers.LSTM(
-                64, return_sequences=True, name='lstm_2'
-            )(x)
+            x = layers.LSTM(64, return_sequences=True, name="lstm_2")(x)
             x = layers.Dropout(0.2)(x)
         else:
             raise ValueError(f"Type de modèle inconnu: {self.model_type}")
-        
+
         # Multi-Head Attention pour capturer patterns simultanés
         x = MultiHeadAttentionLayer(
-            num_heads=4, key_dim=16, name='multi_head_attention'
+            num_heads=4, key_dim=16, name="multi_head_attention"
         )(x)
-        
+
         # Flatten pour dense layers
-        x = layers.Flatten(name='flatten')(x)
-        
+        x = layers.Flatten(name="flatten")(x)
+
         # Shared dense layers
-        shared = layers.Dense(128, activation='relu', name='shared_dense_1')(x)
+        shared = layers.Dense(128, activation="relu", name="shared_dense_1")(x)
         shared = layers.Dropout(0.2)(shared)
-        shared = layers.Dense(64, activation='relu', name='shared_dense_2')(
-            shared
-        )
+        shared = layers.Dense(64, activation="relu", name="shared_dense_2")(shared)
         shared = layers.Dropout(0.1)(shared)
-        
+
         # Output branches (une par appareil)
         # Utilise l'ID de l'appareil pour les noms de layers
         # pour que le modèle reste valide si l'utilisateur renomme
@@ -448,37 +450,33 @@ class Seq2PointMultiOutputModel:
             zip(self.appliance_ids, self.appliance_names)
         ):
             # Utiliser l'ID de l'appareil pour le nom du layer
-            output_name = f'output_appliance_{app_id}'
+            output_name = f"output_appliance_{app_id}"
             output_names.append(output_name)
-            
+
             # Branch spécifique à l'appareil
             branch = layers.Dense(
-                32, activation='relu',
-                name=f'branch_appliance_{app_id}'
+                32, activation="relu", name=f"branch_appliance_{app_id}"
             )(shared)
-            output = layers.Dense(
-                1, activation='linear',
-                name=output_name
-            )(branch)
+            output = layers.Dense(1, activation="linear", name=output_name)(branch)
             outputs.append(output)
-        
+
         # Build model
         model = models.Model(
             inputs=aggregate_input,
             outputs=outputs,
-            name=f's2p_multioutput_{self.model_type}'
+            name=f"s2p_multioutput_{self.model_type}",
         )
-        
+
         # Compile avec loss asymétrique pour chaque output
         losses = {name: asymmetric_loss for name in output_names}
-        metrics_dict = {name: ['mae', 'mse'] for name in output_names}
-        
+        metrics_dict = {name: ["mae", "mse"] for name in output_names}
+
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=0.001),
             loss=losses,
-            metrics=metrics_dict
+            metrics=metrics_dict,
         )
-        
+
         logger.info(
             f"🎬 Modèle S2P-MultiOutput {self.model_type.upper()} "
             f"construit:\n"
@@ -488,9 +486,9 @@ class Seq2PointMultiOutputModel:
             f"   - Architecture: Multi-Output + Multi-Head Attention\n"
             f"   - Loss: asymmetric (FP penalty=1.5)"
         )
-        
+
         return model
-    
+
     def train(
         self,
         all_signatures: Dict[int, List[Dict[str, Any]]],
@@ -499,17 +497,17 @@ class Seq2PointMultiOutputModel:
         batch_size: int = 32,
         validation_split: float = 0.15,
         use_feedback: bool = True,
-        fine_tune: bool = False
+        fine_tune: bool = False,
     ) -> Dict[str, Any]:
         """
         Entraîne le modèle Multi-Output.
-        
+
         Args:
             all_signatures: Dict[appliance_id, List[signature]]
             model_name: Name of the model
             use_feedback: Utiliser détections invalidées comme négatifs
             fine_tune: Continue entraînement modèle existant
-        
+
         Returns:
             Dictionnaire de métriques
         """
@@ -521,33 +519,31 @@ class Seq2PointMultiOutputModel:
         else:
             logger.info("🆕 Entraînement from-scratch Multi-Output")
             learning_rate = 0.001
-        
+
         # Préparer les données
         X_aggregate = []
         y_outputs = {idx: [] for idx in range(self.num_appliances)}
         timestamps = []
         class_counts = {idx: 0 for idx in range(self.num_appliances)}
-        
+
         for appliance_id, signatures in all_signatures.items():
             if appliance_id not in self.appliance_id_to_idx:
                 logger.warning(f"Appareil {appliance_id} inconnu, ignoré")
                 continue
-            
+
             app_idx = self.appliance_id_to_idx[appliance_id]
-            
+
             for sig in signatures:
                 aggregate, power = self._load_signature_data_static(sig)
                 if aggregate is None or len(aggregate) < self.sequence_length:
                     continue
-                
+
                 # Créer les séquences
-                X, y = self.preprocessor.create_sequences(
-                    aggregate, power, stride=10
-                )
-                
+                X, y = self.preprocessor.create_sequences(aggregate, power, stride=10)
+
                 if len(X) > 0:
                     X_aggregate.append(X)
-                    
+
                     # Pour chaque appareil, créer target
                     for other_idx in range(self.num_appliances):
                         if other_idx == app_idx:
@@ -556,19 +552,17 @@ class Seq2PointMultiOutputModel:
                             class_counts[other_idx] += len(y)
                         else:
                             # Autres appareils: zéro
-                            y_outputs[other_idx].append(
-                                np.zeros_like(y)
-                            )
-                    
+                            y_outputs[other_idx].append(np.zeros_like(y))
+
                     # Timestamps
-                    sig_start = sig['start_time']
+                    sig_start = sig["start_time"]
                     sig_timestamp = (
                         sig_start.timestamp()
-                        if hasattr(sig_start, 'timestamp')
+                        if hasattr(sig_start, "timestamp")
                         else sig_start
                     )
                     timestamps.extend([sig_timestamp] * len(X))
-        
+
         # Ajouter exemples négatifs si demandé
         if use_feedback:
             negative_count = self._add_negative_examples_multioutput(
@@ -576,21 +570,20 @@ class Seq2PointMultiOutputModel:
             )
             if negative_count > 0:
                 logger.info(
-                    f"✅ {negative_count} exemples négatifs ajoutés "
-                    f"(Multi-Output)"
+                    f"✅ {negative_count} exemples négatifs ajoutés " f"(Multi-Output)"
                 )
-        
+
         # Concaténer
         if not X_aggregate:
             logger.error("Aucune donnée pour entraînement Multi-Output")
             return {}
-        
+
         X = np.concatenate(X_aggregate, axis=0)
         y_dict = {
             idx: np.concatenate(y_outputs[idx], axis=0)
             for idx in range(self.num_appliances)
         }
-        
+
         # Calculer class weights (inverse proportionnel)
         total_samples = len(X)
         class_weights = {}
@@ -601,7 +594,7 @@ class Seq2PointMultiOutputModel:
                 class_weights[idx] = weight
             else:
                 class_weights[idx] = 1.0
-        
+
         logger.info("📊 Class weights:")
         for idx, app_id in self.appliance_idx_to_id.items():
             app_name = self.appliance_names[idx]
@@ -609,65 +602,63 @@ class Seq2PointMultiOutputModel:
                 f"   {app_name}: {class_weights[idx]:.2f} "
                 f"({class_counts[idx]} samples)"
             )
-        
+
         # Ajuster scalers (from-scratch seulement)
         if not is_fine_tuning:
             logger.info("Ajustement scalers (from-scratch)")
             self.preprocessor.input_scaler.fit(X.reshape(-1, 1))
             # Pour multi-output, on normalise avec toutes les cibles
-            all_y = np.concatenate(
-                [y_dict[idx] for idx in range(self.num_appliances)]
-            )
+            all_y = np.concatenate([y_dict[idx] for idx in range(self.num_appliances)])
             self.preprocessor.target_scaler.fit(all_y.reshape(-1, 1))
             self.preprocessor.fitted = True
         else:
             logger.info("Réutilisation scalers existants (fine-tuning)")
-        
+
         # Normaliser
         X_scaled, _ = self.preprocessor.transform(X)
         X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-        
+
         y_scaled_dict = {}
         for idx in range(self.num_appliances):
             y_scaled = self.preprocessor.target_scaler.transform(
                 y_dict[idx].reshape(-1, 1)
             ).flatten()
             y_scaled_dict[idx] = y_scaled
-        
+
         # Time Series Cross-Validation
         timestamps_array = np.array(timestamps)
         sorted_indices = np.argsort(timestamps_array)
-        
+
         tscv = TimeSeriesSplit(n_splits=5)
         all_splits = list(tscv.split(sorted_indices))
         train_idx, val_idx = all_splits[-1]
-        
+
         idx_train = sorted_indices[train_idx]
         idx_val = sorted_indices[val_idx]
-        
+
         logger.info(
             f"📅 Dernier fold utilisé: {len(idx_train)} train / "
             f"{len(idx_val)} val "
             f"({100*len(idx_val)/len(sorted_indices):.1f}% récent)"
         )
-        
+
         X_train = X_scaled[idx_train]
         X_val = X_scaled[idx_val]
-        
+
         y_train_dict = {}
         y_val_dict = {}
         safe_output_names = []
-        
+
         for idx, (app_id, app_name) in enumerate(
             zip(self.appliance_ids, self.appliance_names)
         ):
             # Utiliser l'ID de l'appareil pour le nom du layer
-            output_name = f'output_appliance_{app_id}'
+            output_name = f"output_appliance_{app_id}"
             safe_output_names.append(output_name)
-            
+
             y_train_dict[output_name] = y_scaled_dict[idx][idx_train]
             y_val_dict[output_name] = y_scaled_dict[idx][idx_val]
-        
+
         # Debug: vérifier les types et shapes
         logger.info(f"📊 y_train_dict keys: {list(y_train_dict.keys())}")
         for key, val in y_train_dict.items():
@@ -676,41 +667,32 @@ class Seq2PointMultiOutputModel:
                 f"shape={val.shape if hasattr(val, 'shape') else 'N/A'}, "
                 f"dtype={val.dtype if hasattr(val, 'dtype') else 'N/A'}"
             )
-        
+
         # Convertir les dictionnaires en listes dans l'ordre des outputs
         # Keras accepte mieux les listes pour les multi-output models
         y_train_list = [y_train_dict[name] for name in safe_output_names]
         y_val_list = [y_val_dict[name] for name in safe_output_names]
-        
+
         # Construire ou ajuster modèle
         if not is_fine_tuning:
             self.model = self.build_model()
         else:
             logger.info(f"Ajustement learning rate: {learning_rate}")
             self.model.optimizer.learning_rate.assign(learning_rate)
-        
+
         # Callbacks
         callbacks_list = [
             callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=10,
-                restore_best_weights=True,
-                verbose=1
+                monitor="val_loss", patience=10, restore_best_weights=True, verbose=1
             ),
             callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,
-                patience=5,
-                min_lr=1e-6,
-                verbose=1
-            )
+                monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1
+            ),
         ]
-        
+
         # Redis real-time training logs callback
         redis_callback = RedisTrainingCallback(
-            model_name=model_name,
-            total_epochs=epochs,
-            batch_update_freq=10
+            model_name=model_name, total_epochs=epochs, batch_update_freq=10
         )
         callbacks_list.append(redis_callback)
         logger.info("Real-time logs → channel 'training:logs'")
@@ -723,350 +705,332 @@ class Seq2PointMultiOutputModel:
             epochs=epochs,
             batch_size=batch_size,
             callbacks=callbacks_list,
-            verbose=1
+            verbose=1,
         )
-        
+
         logger.info("✅ Entraînement Multi-Output terminé")
-        
+
         # Métriques
         metrics = {
-            'epochs_trained': len(self.history.history['loss']),
-            'train_loss': float(self.history.history['loss'][-1]),
-            'val_loss': float(self.history.history['val_loss'][-1]),
-            'appliances': self.appliance_names,
-            'architecture': 'MultiOutput',
-            'class_weights': {
+            "epochs_trained": len(self.history.history["loss"]),
+            "train_loss": float(self.history.history["loss"][-1]),
+            "val_loss": float(self.history.history["val_loss"][-1]),
+            "appliances": self.appliance_names,
+            "architecture": "MultiOutput",
+            "class_weights": {
                 self.appliance_names[idx]: float(class_weights[idx])
                 for idx in range(self.num_appliances)
-            }
+            },
         }
-        
+
         # Métriques par appareil
         for idx, (app_id, app_name) in enumerate(
             zip(self.appliance_ids, self.appliance_names)
         ):
             # Utiliser l'ID de l'appareil pour retrouver les métriques
-            output_name = f'output_appliance_{app_id}'
-            mae_key = f'{output_name}_mae'
+            output_name = f"output_appliance_{app_id}"
+            mae_key = f"{output_name}_mae"
             if mae_key in self.history.history:
-                metrics[f'{app_name}_train_mae'] = float(
+                metrics[f"{app_name}_train_mae"] = float(
                     self.history.history[mae_key][-1]
                 )
-                metrics[f'{app_name}_val_mae'] = float(
-                    self.history.history[f'val_{mae_key}'][-1]
+                metrics[f"{app_name}_val_mae"] = float(
+                    self.history.history[f"val_{mae_key}"][-1]
                 )
-        
+
         return metrics
-    
+
     def predict(
-        self,
-        aggregate_power: np.ndarray,
-        stride: int = 1
+        self, aggregate_power: np.ndarray, stride: int = 1
     ) -> Dict[int, np.ndarray]:
         """
         Prédit la consommation pour TOUS les appareils simultanément.
-        
+
         Args:
             aggregate_power: Série agrégée
             stride: Pas de fenêtre glissante
-        
+
         Returns:
             Dict[appliance_id, predictions]
         """
         if self.model is None:
             raise ValueError("Modèle Multi-Output non entraîné/chargé")
-        
+
         # Créer fenêtres glissantes
-        X = self.preprocessor.create_prediction_windows(
-            aggregate_power, stride=stride
-        )
-        
+        X = self.preprocessor.create_prediction_windows(aggregate_power, stride=stride)
+
         if len(X) == 0:
             return {
-                app_id: np.zeros_like(aggregate_power)
-                for app_id in self.appliance_ids
+                app_id: np.zeros_like(aggregate_power) for app_id in self.appliance_ids
             }
-        
+
         # Normaliser
         X_scaled, _ = self.preprocessor.transform(X)
         X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-        
+
         # Prédiction (liste de N outputs)
-        predictions_scaled_list = self.model.predict(
-            X_scaled,
-            batch_size=32,
-            verbose=0
-        )
-        
+        predictions_scaled_list = self.model.predict(X_scaled, batch_size=32, verbose=0)
+
         # Dénormaliser et reconstruire pour chaque appareil
         result = {}
         half_window = self.sequence_length // 2
-        
+
         for idx, app_id in enumerate(self.appliance_ids):
             predictions_scaled = predictions_scaled_list[idx]
             predictions = self.preprocessor.target_scaler.inverse_transform(
                 predictions_scaled
             ).flatten()
-            
+
             # Post-traitement
             predictions = np.maximum(predictions, 0)
-            
+
             # Reconstruction signal complet
             signal = np.zeros(len(aggregate_power))
-            
+
             for i, pred in enumerate(predictions):
                 sig_idx = i * stride + half_window
                 if sig_idx < len(signal):
                     signal[sig_idx] = pred
-            
+
             # Interpolation si stride > 1
             if stride > 1:
                 from scipy.interpolate import interp1d
+
                 indices = np.arange(0, len(signal), stride)
                 indices = np.minimum(indices, len(signal) - 1)
                 values = signal[indices]
-                f = interp1d(
-                    indices, values,
-                    kind='linear',
-                    fill_value='extrapolate'
-                )
+                f = interp1d(indices, values, kind="linear", fill_value="extrapolate")
                 signal = f(np.arange(len(signal)))
-            
+
             result[app_id] = signal
-        
+
         return result
-    
+
     @staticmethod
     def _load_signature_data_static(
-        signature: Dict[str, Any]
+        signature: Dict[str, Any],
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """Charge les données d'une signature (méthode statique)."""
         try:
             with db_manager.engine.connect() as conn:
-                query = text("""
+                query = text(
+                    """
                     SELECT time, papp
                     FROM linky_realtime
                     WHERE time >= :start_time AND time <= :end_time
                     ORDER BY time
-                """)
-                
+                """
+                )
+
                 result = conn.execute(
                     query,
                     {
-                        'start_time': signature['start_time'],
-                        'end_time': signature['end_time']
-                    }
+                        "start_time": signature["start_time"],
+                        "end_time": signature["end_time"],
+                    },
                 )
-                
-                aggregate_power = [
-                    row[1] for row in result if row[1] is not None
-                ]
-                
+
+                aggregate_power = [row[1] for row in result if row[1] is not None]
+
                 if not aggregate_power:
                     return None, None
-                
+
                 aggregate_power = np.array(aggregate_power, dtype=np.float32)
-                
-                if signature.get('is_negative', False):
-                    appliance_power = np.zeros(
-                        len(aggregate_power), dtype=np.float32
-                    )
+
+                if signature.get("is_negative", False):
+                    appliance_power = np.zeros(len(aggregate_power), dtype=np.float32)
                 else:
                     appliance_power = aggregate_power.copy()
-                
+
                 return aggregate_power, appliance_power
         except Exception as e:
             logger.error(f"Erreur chargement données signature: {e}")
             return None, None
-    
+
     def _add_negative_examples_multioutput(
         self,
         X_aggregate: List,
         y_outputs: Dict[int, List],
         timestamps: List,
-        class_counts: Dict[int, int]
+        class_counts: Dict[int, int],
     ) -> int:
         """Ajoute exemples négatifs pour Multi-Output."""
         negative_count = 0
         negative_sigs = self._load_negative_signatures()
-        
+
         for appliance_id, signatures in negative_sigs.items():
             if appliance_id not in self.appliance_id_to_idx:
                 continue
-            
+
             app_idx = self.appliance_id_to_idx[appliance_id]
-            
+
             for sig in signatures:
                 aggregate = self._load_aggregate_data(
-                    sig['start_time'],
-                    sig['end_time']
+                    sig["start_time"], sig["end_time"]
                 )
-                
+
                 if aggregate is None or len(aggregate) < self.sequence_length:
                     continue
-                
+
                 zero_target = np.zeros(len(aggregate), dtype=np.float32)
-                
+
                 X, y = self.preprocessor.create_sequences(
                     aggregate, zero_target, stride=15
                 )
-                
+
                 if len(X) > 0:
                     X_aggregate.append(X)
-                    
+
                     # Pour chaque appareil
                     for other_idx in range(self.num_appliances):
                         y_outputs[other_idx].append(np.zeros_like(y))
-                    
+
                     # Compter pour l'appareil concerné
                     class_counts[app_idx] += len(y)
-                    
-                    sig_start = sig['start_time']
+
+                    sig_start = sig["start_time"]
                     sig_timestamp = (
                         sig_start.timestamp()
-                        if hasattr(sig_start, 'timestamp')
+                        if hasattr(sig_start, "timestamp")
                         else sig_start
                     )
                     timestamps.extend([sig_timestamp] * len(X))
                     negative_count += 1
-        
+
         return negative_count
-    
+
     def _load_negative_signatures(self) -> Dict[int, List[Dict[str, Any]]]:
         """Charge les signatures négatives depuis la base."""
         negative_sigs = {}
         try:
             with db_manager.get_session() as session:
-                query = text("""
+                query = text(
+                    """
                     SELECT id, appliance_id, start_time, end_time
                     FROM nilm_signatures
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
-                """)
+                """
+                )
                 result = session.execute(query)
-                
+
                 for row in result:
                     app_id = row[1]
                     if app_id not in negative_sigs:
                         negative_sigs[app_id] = []
-                    negative_sigs[app_id].append({
-                        'id': row[0],
-                        'appliance_id': app_id,
-                        'start_time': row[2],
-                        'end_time': row[3]
-                    })
+                    negative_sigs[app_id].append(
+                        {
+                            "id": row[0],
+                            "appliance_id": app_id,
+                            "start_time": row[2],
+                            "end_time": row[3],
+                        }
+                    )
         except Exception as e:
             logger.error(f"Erreur chargement signatures négatives: {e}")
-        
+
         return negative_sigs
-    
-    def _load_aggregate_data(
-        self,
-        start_time,
-        end_time
-    ) -> Optional[np.ndarray]:
+
+    def _load_aggregate_data(self, start_time, end_time) -> Optional[np.ndarray]:
         """Charge les données agrégées pour une période."""
         try:
             with db_manager.engine.connect() as conn:
-                query = text("""
+                query = text(
+                    """
                     SELECT papp
                     FROM linky_realtime
                     WHERE time >= :start_time AND time <= :end_time
                     ORDER BY time
-                """)
+                """
+                )
                 result = conn.execute(
-                    query,
-                    {'start_time': start_time, 'end_time': end_time}
+                    query, {"start_time": start_time, "end_time": end_time}
                 )
                 data = [row[0] for row in result if row[0] is not None]
-                
+
                 if not data:
                     return None
-                
+
                 return np.array(data, dtype=np.float32)
         except Exception as e:
             logger.error(f"Erreur chargement données agrégées: {e}")
             return None
-    
+
     def save(self, filepath: str, metadata: Optional[Dict[str, Any]] = None):
         """Sauvegarde le modèle Multi-Output."""
         if self.model is None:
             raise ValueError("Aucun modèle à sauvegarder")
-        
+
         self.model.save(filepath)
         logger.info(f"💾 Modèle Multi-Output sauvegardé: {filepath}")
-        
+
         meta = {
-            'architecture': 'MultiOutput',
-            'model_type': self.model_type,
-            'sequence_length': self.sequence_length,
-            'num_appliances': self.num_appliances,
-            'appliance_ids': self.appliance_ids,
-            'appliance_names': self.appliance_names,
-            'appliance_id_to_idx': self.appliance_id_to_idx
+            "architecture": "MultiOutput",
+            "model_type": self.model_type,
+            "sequence_length": self.sequence_length,
+            "num_appliances": self.num_appliances,
+            "appliance_ids": self.appliance_ids,
+            "appliance_names": self.appliance_names,
+            "appliance_id_to_idx": self.appliance_id_to_idx,
         }
         if metadata:
             meta.update(metadata)
-        
-        meta_path = filepath.replace('.keras', '.metadata.json')
-        with open(meta_path, 'w') as f:
+
+        meta_path = filepath.replace(".keras", ".metadata.json")
+        with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
         logger.info(f"📝 Métadonnées sauvegardées: {meta_path}")
-    
+
     def load(self, filepath: str):
         """Charge le modèle Multi-Output."""
         custom_objects = {
-            'MultiHeadAttentionLayer': MultiHeadAttentionLayer,
-            'asymmetric_loss': asymmetric_loss,
-            'focal_loss_fixed': focal_loss_fixed
+            "MultiHeadAttentionLayer": MultiHeadAttentionLayer,
+            "asymmetric_loss": asymmetric_loss,
+            "focal_loss_fixed": focal_loss_fixed,
         }
-        self.model = keras.models.load_model(
-            filepath,
-            custom_objects=custom_objects
-        )
+        self.model = keras.models.load_model(filepath, custom_objects=custom_objects)
         logger.info(f"📂 Modèle Multi-Output chargé: {filepath}")
-        
-        meta_path = filepath.replace('.keras', '.metadata.json')
+
+        meta_path = filepath.replace(".keras", ".metadata.json")
         if Path(meta_path).exists():
-            with open(meta_path, 'r') as f:
+            with open(meta_path, "r") as f:
                 meta = json.load(f)
-            
-            self.appliance_ids = meta['appliance_ids']
-            self.appliance_names = meta['appliance_names']
-            self.num_appliances = meta['num_appliances']
+
+            self.appliance_ids = meta["appliance_ids"]
+            self.appliance_names = meta["appliance_names"]
+            self.num_appliances = meta["num_appliances"]
             self.appliance_id_to_idx = {
-                int(k): v for k, v in meta['appliance_id_to_idx'].items()
+                int(k): v for k, v in meta["appliance_id_to_idx"].items()
             }
             self.appliance_idx_to_id = {
                 v: int(k) for k, v in self.appliance_id_to_idx.items()
             }
-            logger.info(
-                f"📋 Métadonnées chargées: {self.num_appliances} appareils"
-            )
+            logger.info(f"📋 Métadonnées chargées: {self.num_appliances} appareils")
 
 
 def normalize_name_for_tensorflow(name: str) -> str:
     """
     Normalise un nom pour être compatible avec TensorFlow/Keras.
     Les noms de scope TensorFlow doivent correspondre au pattern: ^[A-Za-z0-9.][A-Za-z0-9_.\\/>-]*$
-    
+
     Args:
         name: Nom à normaliser
-        
+
     Returns:
         Nom normalisé (espaces → underscores, caractères spéciaux supprimés)
     """
     import re
+
     # Remplacer les espaces par des underscores
-    normalized = name.replace(' ', '_')
+    normalized = name.replace(" ", "_")
     # Remplacer les apostrophes par rien
-    normalized = normalized.replace("'", '')
+    normalized = normalized.replace("'", "")
     # Garder uniquement les caractères alphanumériques, points, underscores, slashes, tirets
-    normalized = re.sub(r'[^A-Za-z0-9._/\->]', '', normalized)
+    normalized = re.sub(r"[^A-Za-z0-9._/\->]", "", normalized)
     # S'assurer que le nom commence par une lettre, chiffre ou point
-    if normalized and not re.match(r'^[A-Za-z0-9.]', normalized):
-        normalized = 'appliance_' + normalized
-    return normalized if normalized else 'unknown_appliance'
+    if normalized and not re.match(r"^[A-Za-z0-9.]", normalized):
+        normalized = "appliance_" + normalized
+    return normalized if normalized else "unknown_appliance"
 
 
 class ChangePointPatternDetector:
@@ -1097,7 +1061,7 @@ class ChangePointPatternDetector:
         power_sequence: np.ndarray,
         duration: int,
         signature_id: Optional[int] = None,
-        morphology: Optional[Dict[str, Any]] = None
+        morphology: Optional[Dict[str, Any]] = None,
     ):
         """
         Ajoute un profil de signature avec analyse morphologique.
@@ -1112,8 +1076,8 @@ class ChangePointPatternDetector:
         """
         if appliance_id not in self.signature_profiles:
             self.signature_profiles[appliance_id] = {
-                'name': appliance_name,
-                'profiles': []
+                "name": appliance_name,
+                "profiles": [],
             }
 
         # Normaliser le profil (0-1)
@@ -1121,22 +1085,20 @@ class ChangePointPatternDetector:
             profile_max = np.max(power_sequence)
             if profile_max > 0:
                 normalized = power_sequence / profile_max
-                
+
                 profile = {
-                    'signature_id': signature_id,
-                    'pattern': normalized,
-                    'duration': duration,
-                    'avg_power': float(np.mean(power_sequence)),
-                    'max_power': float(profile_max)
+                    "signature_id": signature_id,
+                    "pattern": normalized,
+                    "duration": duration,
+                    "avg_power": float(np.mean(power_sequence)),
+                    "max_power": float(profile_max),
                 }
-                
+
                 # Ajouter features morphologiques si disponibles
                 if morphology:
-                    profile['morphology'] = morphology
-                
-                self.signature_profiles[appliance_id]['profiles'].append(
-                    profile
-                )
+                    profile["morphology"] = morphology
+
+                self.signature_profiles[appliance_id]["profiles"].append(profile)
 
     def detect_change_points(self, aggregate_power: np.ndarray) -> List[Dict[str, Any]]:
         """
@@ -1159,7 +1121,9 @@ class ChangePointPatternDetector:
         # Lisser pour éviter le bruit (moyenne mobile sur 5 points)
         window_size = 5
         if len(gradient) >= window_size:
-            gradient_smooth = np.convolve(gradient, np.ones(window_size)/window_size, mode='valid')
+            gradient_smooth = np.convolve(
+                gradient, np.ones(window_size) / window_size, mode="valid"
+            )
         else:
             gradient_smooth = gradient
 
@@ -1177,11 +1141,13 @@ class ChangePointPatternDetector:
 
                 if abs(cumsum) > threshold:
                     # Change point détecté
-                    change_points.append({
-                        'index': i + window_size // 2,  # Ajuster pour le lissage
-                        'amplitude': float(cumsum),
-                        'direction': 'up' if cumsum > 0 else 'down'
-                    })
+                    change_points.append(
+                        {
+                            "index": i + window_size // 2,  # Ajuster pour le lissage
+                            "amplitude": float(cumsum),
+                            "direction": "up" if cumsum > 0 else "down",
+                        }
+                    )
                     # Sauter la fenêtre pour éviter les doublons
                     i = window_end
                     continue
@@ -1191,9 +1157,7 @@ class ChangePointPatternDetector:
         return change_points
 
     def extract_patterns(
-        self,
-        aggregate_power: np.ndarray,
-        change_points: List[Dict[str, Any]]
+        self, aggregate_power: np.ndarray, change_points: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Extrait les patterns entre les change points.
@@ -1206,7 +1170,7 @@ class ChangePointPatternDetector:
             Liste de patterns avec séquences et métadonnées
         """
         from src.morphology import MorphologyAnalyzer
-        
+
         if len(change_points) < 2:
             return []
 
@@ -1218,17 +1182,17 @@ class ChangePointPatternDetector:
         while i < len(change_points):
             cp = change_points[i]
 
-            if cp['direction'] == 'up':
+            if cp["direction"] == "up":
                 # Chercher le change point DOWN correspondant
                 end_idx = None
                 for j in range(i + 1, len(change_points)):
-                    if change_points[j]['direction'] == 'down':
+                    if change_points[j]["direction"] == "down":
                         end_idx = j
                         break
 
                 if end_idx is not None:
-                    start = cp['index']
-                    end = change_points[end_idx]['index']
+                    start = cp["index"]
+                    end = change_points[end_idx]["index"]
                     duration = end - start
 
                     if duration >= self.min_duration:
@@ -1241,30 +1205,30 @@ class ChangePointPatternDetector:
                         # Le change point detection isole déjà les
                         # périodes d'activation.
 
-                        if (len(pattern) > 0 and
-                                np.max(pattern) > self.min_power_change):
+                        if len(pattern) > 0 and np.max(pattern) > self.min_power_change:
                             # Calculer morphologie du pattern détecté
                             try:
                                 morphology = analyzer.analyze(
-                                    pattern.tolist(),
-                                    start_time=None
+                                    pattern.tolist(), start_time=None
                                 )
                             except Exception as e:
                                 logger.warning(
                                     f"Erreur calcul morphologie pattern: {e}"
                                 )
                                 morphology = None
-                            
-                            patterns.append({
-                                'start_idx': start,
-                                'end_idx': end,
-                                'duration': duration,
-                                'pattern': pattern,
-                                'avg_power': float(np.mean(pattern)),
-                                'max_power': float(np.max(pattern)),
-                                'energy_wh': float(np.sum(pattern) / 3600),
-                                'morphology': morphology
-                            })
+
+                            patterns.append(
+                                {
+                                    "start_idx": start,
+                                    "end_idx": end,
+                                    "duration": duration,
+                                    "pattern": pattern,
+                                    "avg_power": float(np.mean(pattern)),
+                                    "max_power": float(np.max(pattern)),
+                                    "energy_wh": float(np.sum(pattern) / 3600),
+                                    "morphology": morphology,
+                                }
+                            )
 
                     i = end_idx + 1
                 else:
@@ -1278,7 +1242,7 @@ class ChangePointPatternDetector:
     def match_pattern(
         self,
         pattern_data: Dict[str, Any],
-        pattern_morphology: Optional[Dict[str, Any]] = None
+        pattern_morphology: Optional[Dict[str, Any]] = None,
     ) -> Optional[Tuple[int, str, Optional[int], float]]:
         """
         Compare un pattern avec les profils de signatures connus.
@@ -1294,9 +1258,9 @@ class ChangePointPatternDetector:
         if not self.signature_profiles:
             return None
 
-        pattern = pattern_data['pattern']
-        pattern_duration = pattern_data['duration']
-        pattern_power = pattern_data['avg_power']
+        pattern = pattern_data["pattern"]
+        pattern_duration = pattern_data["duration"]
+        pattern_power = pattern_data["avg_power"]
 
         # Normaliser le pattern (0-1)
         pattern_max = np.max(pattern)
@@ -1308,67 +1272,57 @@ class ChangePointPatternDetector:
         best_score: float = 0.0
 
         for appliance_id, data in self.signature_profiles.items():
-            appliance_name = data['name']
+            appliance_name = data["name"]
             logger.info(
                 f"Comparaison pattern ({pattern_duration}s, "
                 f"{pattern_power:.0f}W) avec {len(data['profiles'])} "
                 f"profils de {appliance_name}"
             )
 
-            for i, profile in enumerate(data['profiles']):
+            for i, profile in enumerate(data["profiles"]):
                 # Vérifier cohérence durée (±50%)
-                duration_ratio = pattern_duration / profile['duration']
+                duration_ratio = pattern_duration / profile["duration"]
                 if duration_ratio < 0.5 or duration_ratio > 2.0:
                     continue
 
                 # Vérifier cohérence puissance (±30%)
-                power_ratio = pattern_power / profile['avg_power']
+                power_ratio = pattern_power / profile["avg_power"]
                 if power_ratio < 0.7 or power_ratio > 1.3:
                     continue
 
                 # Comparer formes avec corrélation
-                target_len = min(
-                    len(pattern_normalized),
-                    len(profile['pattern'])
-                )
+                target_len = min(len(pattern_normalized), len(profile["pattern"]))
 
                 if target_len < 10:
                     continue
 
                 # Sous-échantillonner
                 pattern_resampled = np.interp(
-                    np.linspace(0, len(pattern_normalized)-1, target_len),
+                    np.linspace(0, len(pattern_normalized) - 1, target_len),
                     np.arange(len(pattern_normalized)),
-                    pattern_normalized
+                    pattern_normalized,
                 )
                 profile_resampled = np.interp(
-                    np.linspace(0, len(profile['pattern'])-1, target_len),
-                    np.arange(len(profile['pattern'])),
-                    profile['pattern']
+                    np.linspace(0, len(profile["pattern"]) - 1, target_len),
+                    np.arange(len(profile["pattern"])),
+                    profile["pattern"],
                 )
 
                 # Corrélation de forme
-                correlation = np.corrcoef(
-                    pattern_resampled,
-                    profile_resampled
-                )[0, 1]
+                correlation = np.corrcoef(pattern_resampled, profile_resampled)[0, 1]
                 abs_correlation = abs(correlation)
 
                 # Scores de base
                 duration_score = 1.0 - abs(1.0 - duration_ratio)
                 power_score = 1.0 - abs(1.0 - power_ratio)
-                
+
                 # Score morphologique si disponible
                 morphology_score = 0.0
-                has_morphology = (
-                    pattern_morphology and 
-                    'morphology' in profile
-                )
-                
+                has_morphology = pattern_morphology and "morphology" in profile
+
                 if has_morphology:
                     morphology_score = self._compute_morphology_similarity(
-                        pattern_morphology,
-                        profile['morphology']
+                        pattern_morphology, profile["morphology"]
                     )
                     logger.info(
                         f"  Profil#{i}: morphology_score={morphology_score:.3f}"
@@ -1378,17 +1332,15 @@ class ChangePointPatternDetector:
                 if has_morphology:
                     # Avec morphologie: plus de poids sur features avancées
                     combined_score = (
-                        abs_correlation * 0.15 +
-                        duration_score * 0.25 +
-                        power_score * 0.25 +
-                        morphology_score * 0.35
+                        abs_correlation * 0.15
+                        + duration_score * 0.25
+                        + power_score * 0.25
+                        + morphology_score * 0.35
                     )
                 else:
                     # Sans morphologie: méthode classique
                     combined_score = (
-                        abs_correlation * 0.2 +
-                        duration_score * 0.4 +
-                        power_score * 0.4
+                        abs_correlation * 0.2 + duration_score * 0.4 + power_score * 0.4
                     )
 
                 logger.info(
@@ -1403,7 +1355,7 @@ class ChangePointPatternDetector:
                     best_match = (
                         appliance_id,
                         appliance_name,
-                        profile.get('signature_id'),
+                        profile.get("signature_id"),
                         combined_score,
                     )
                     logger.info(
@@ -1413,12 +1365,9 @@ class ChangePointPatternDetector:
 
         # Seuil adaptatif selon disponibilité morphologie
         threshold = 0.4 if pattern_morphology else 0.35
-        
-        logger.info(
-            f"Fin matching: best_score={best_score:.3f}, "
-            f"seuil={threshold}"
-        )
-        
+
+        logger.info(f"Fin matching: best_score={best_score:.3f}, " f"seuil={threshold}")
+
         if best_match and best_match[3] > threshold:
             logger.info(
                 f"✓ Match trouvé: {best_match[1]} "
@@ -1427,111 +1376,108 @@ class ChangePointPatternDetector:
             return best_match
         else:
             logger.info(
-                f"✗ Aucun match suffisant "
-                f"(best={best_score:.3f} < {threshold})"
+                f"✗ Aucun match suffisant " f"(best={best_score:.3f} < {threshold})"
             )
             return None
-    
+
     def _compute_morphology_similarity(
-        self,
-        morpho1: Dict[str, Any],
-        morpho2: Dict[str, Any]
+        self, morpho1: Dict[str, Any], morpho2: Dict[str, Any]
     ) -> float:
         """
         Calcule similarité entre deux analyses morphologiques.
-        
+
         Args:
             morpho1: Première analyse morphologique
             morpho2: Deuxième analyse morphologique
-            
+
         Returns:
             Score de similarité [0-1]
         """
         score = 0.0
         weight_sum = 0.0
-        
+
         # 1. Pattern type match (poids: 0.3)
-        if 'shape_features' in morpho1 and 'shape_features' in morpho2:
-            type1 = morpho1['shape_features'].get('pattern_type', '')
-            type2 = morpho2['shape_features'].get('pattern_type', '')
+        if "shape_features" in morpho1 and "shape_features" in morpho2:
+            type1 = morpho1["shape_features"].get("pattern_type", "")
+            type2 = morpho2["shape_features"].get("pattern_type", "")
             if type1 == type2:
                 score += 0.3
             weight_sum += 0.3
-        
+
         # 2. Oscillation features (poids: 0.25)
-        if 'oscillation_features' in morpho1 and 'oscillation_features' in morpho2:
-            osc1 = morpho1['oscillation_features']
-            osc2 = morpho2['oscillation_features']
-            
+        if "oscillation_features" in morpho1 and "oscillation_features" in morpho2:
+            osc1 = morpho1["oscillation_features"]
+            osc2 = morpho2["oscillation_features"]
+
             # Les deux oscillent ou les deux n'oscillent pas
-            if osc1.get('is_oscillating') == osc2.get('is_oscillating'):
+            if osc1.get("is_oscillating") == osc2.get("is_oscillating"):
                 osc_score = 0.25
-                
+
                 # Si les deux oscillent, comparer fréquence
-                if osc1.get('is_oscillating'):
-                    freq1 = osc1.get('oscillation_frequency_hz', 0)
-                    freq2 = osc2.get('oscillation_frequency_hz', 0)
+                if osc1.get("is_oscillating"):
+                    freq1 = osc1.get("oscillation_frequency_hz", 0)
+                    freq2 = osc2.get("oscillation_frequency_hz", 0)
                     if freq2 > 0:
                         freq_ratio = min(freq1, freq2) / max(freq1, freq2)
                         osc_score *= freq_ratio
-                
+
                 score += osc_score
             weight_sum += 0.25
-        
+
         # 3. Gradient features (poids: 0.2)
-        if 'gradient' in morpho1 and 'gradient' in morpho2:
-            grad1 = morpho1['gradient']
-            grad2 = morpho2['gradient']
-            
+        if "gradient" in morpho1 and "gradient" in morpho2:
+            grad1 = morpho1["gradient"]
+            grad2 = morpho2["gradient"]
+
             # Comparer max rise rate
-            rise1 = grad1.get('max_rise_rate', 0)
-            rise2 = grad2.get('max_rise_rate', 0)
+            rise1 = grad1.get("max_rise_rate", 0)
+            rise2 = grad2.get("max_rise_rate", 0)
             if max(rise1, rise2) > 0:
                 rise_sim = min(rise1, rise2) / max(rise1, rise2)
                 score += rise_sim * 0.1
-            
+
             # Comparer max fall rate
-            fall1 = abs(grad1.get('max_fall_rate', 0))
-            fall2 = abs(grad2.get('max_fall_rate', 0))
+            fall1 = abs(grad1.get("max_fall_rate", 0))
+            fall2 = abs(grad2.get("max_fall_rate", 0))
             if max(fall1, fall2) > 0:
                 fall_sim = min(fall1, fall2) / max(fall1, fall2)
                 score += fall_sim * 0.1
-            
+
             weight_sum += 0.2
-        
+
         # 4. Plateaus similarity (poids: 0.15)
-        if 'plateaus' in morpho1 and 'plateaus' in morpho2:
-            plat1 = morpho1['plateaus']
-            plat2 = morpho2['plateaus']
-            
+        if "plateaus" in morpho1 and "plateaus" in morpho2:
+            plat1 = morpho1["plateaus"]
+            plat2 = morpho2["plateaus"]
+
             # Comparer nombre de plateaux
             num1 = len(plat1) if plat1 else 0
             num2 = len(plat2) if plat2 else 0
-            
+
             if max(num1, num2) > 0:
                 num_sim = min(num1, num2) / max(num1, num2)
                 score += num_sim * 0.15
             else:
                 # Les deux n'ont pas de plateaux = similarité
                 score += 0.15
-            
+
             weight_sum += 0.15
-        
+
         # 5. Statistical moments (poids: 0.1)
-        if 'statistical_moments' in morpho1 and 'statistical_moments' in morpho2:
-            stat1 = morpho1['statistical_moments']
-            stat2 = morpho2['statistical_moments']
-            
+        if "statistical_moments" in morpho1 and "statistical_moments" in morpho2:
+            stat1 = morpho1["statistical_moments"]
+            stat2 = morpho2["statistical_moments"]
+
             # Comparer skewness (signe de l'asymétrie)
-            skew1 = stat1.get('skewness', 0)
-            skew2 = stat2.get('skewness', 0)
-            
+            skew1 = stat1.get("skewness", 0)
+            skew2 = stat2.get("skewness", 0)
+
             # Même signe d'asymétrie = bon
             if (skew1 * skew2) >= 0:
                 score += 0.1
-            
+
             weight_sum += 0.1
-        
+
         # Normaliser par le poids total
         if weight_sum > 0:
             return score / weight_sum
@@ -1541,7 +1487,7 @@ class ChangePointPatternDetector:
 
 class ApplianceStateDetector:
     """Détecteur d'états/cycles pour un appareil"""
-    
+
     def __init__(self, n_states: int = 5):
         """
         Args:
@@ -1550,215 +1496,238 @@ class ApplianceStateDetector:
         self.n_states = n_states
         self.kmeans = None
         self.state_thresholds = None
-    
-    def fit(self, power_values: np.ndarray) -> 'ApplianceStateDetector':
+
+    def fit(self, power_values: np.ndarray) -> "ApplianceStateDetector":
         """
         Entraîne le détecteur d'états sur des données de consommation
-        
+
         Args:
             power_values: Array de valeurs de puissance
-            
+
         Returns:
             Self pour chaînage
         """
         if len(power_values) < self.n_states:
-            logger.warning(f"Pas assez de données pour {self.n_states} états, réduction automatique")
+            logger.warning(
+                f"Pas assez de données pour {self.n_states} états, réduction automatique"
+            )
             self.n_states = max(2, len(power_values) // 10)
-        
+
         # Reshape pour KMeans
         power_reshaped = power_values.reshape(-1, 1)
-        
+
         # Clustering pour identifier les états
         self.kmeans = KMeans(n_clusters=self.n_states, random_state=42, n_init=10)
         self.kmeans.fit(power_reshaped)
-        
+
         # Calculer les seuils entre états (centres triés)
         centers = sorted(self.kmeans.cluster_centers_.flatten())
         self.state_thresholds = centers
-        
-        logger.info(f"États détectés: {len(centers)} niveaux = {[f'{c:.1f}W' for c in centers]}")
+
+        logger.info(
+            f"États détectés: {len(centers)} niveaux = {[f'{c:.1f}W' for c in centers]}"
+        )
         return self
-    
-    def predict_states(self, power_values: np.ndarray) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
+
+    def predict_states(
+        self, power_values: np.ndarray
+    ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
         """
         Prédit les états pour une séquence de consommation
-        
+
         Args:
             power_values: Array de valeurs de puissance
-            
+
         Returns:
             Tuple (états prédits, cycles détectés)
         """
         if self.kmeans is None:
             raise ValueError("Le détecteur doit être entraîné avant prédiction (fit)")
-        
+
         # Prédire les états
         power_reshaped = power_values.reshape(-1, 1)
         states = self.kmeans.predict(power_reshaped)
-        
+
         # Détecter les cycles (transitions d'états)
         cycles = self._detect_cycles(states, power_values)
-        
+
         return states, cycles
-    
-    def _detect_cycles(self, states: np.ndarray, power_values: np.ndarray) -> List[Dict[str, Any]]:
+
+    def _detect_cycles(
+        self, states: np.ndarray, power_values: np.ndarray
+    ) -> List[Dict[str, Any]]:
         """
         Détecte les cycles/phases dans les transitions d'états
-        
+
         Args:
             states: Array d'états prédits
             power_values: Valeurs de puissance correspondantes
-            
+
         Returns:
             Liste de cycles détectés avec métadonnées
         """
         cycles = []
         current_state = states[0]
         start_idx = 0
-        
+
         for i in range(1, len(states)):
             # Transition d'état détectée
             if states[i] != current_state:
                 # Enregistrer le cycle précédent
                 if i - start_idx >= 10:  # Minimum 10 points (10 secondes)
                     cycle_power = power_values[start_idx:i]
-                    cycles.append({
-                        'state': int(current_state),
-                        'start_idx': int(start_idx),
-                        'end_idx': int(i),
-                        'duration_seconds': int(i - start_idx),
-                        'avg_power': float(np.mean(cycle_power)),
-                        'max_power': float(np.max(cycle_power)),
-                        'energy_wh': float(np.sum(cycle_power) / 3600)  # Wh (1Hz = 1s)
-                    })
-                
+                    cycles.append(
+                        {
+                            "state": int(current_state),
+                            "start_idx": int(start_idx),
+                            "end_idx": int(i),
+                            "duration_seconds": int(i - start_idx),
+                            "avg_power": float(np.mean(cycle_power)),
+                            "max_power": float(np.max(cycle_power)),
+                            "energy_wh": float(
+                                np.sum(cycle_power) / 3600
+                            ),  # Wh (1Hz = 1s)
+                        }
+                    )
+
                 # Nouveau cycle
                 current_state = states[i]
                 start_idx = i
-        
+
         # Dernier cycle
         if len(states) - start_idx >= 10:
             cycle_power = power_values[start_idx:]
-            cycles.append({
-                'state': int(current_state),
-                'start_idx': int(start_idx),
-                'end_idx': int(len(states)),
-                'duration_seconds': int(len(states) - start_idx),
-                'avg_power': float(np.mean(cycle_power)),
-                'max_power': float(np.max(cycle_power)),
-                'energy_wh': float(np.sum(cycle_power) / 3600)
-            })
-        
+            cycles.append(
+                {
+                    "state": int(current_state),
+                    "start_idx": int(start_idx),
+                    "end_idx": int(len(states)),
+                    "duration_seconds": int(len(states) - start_idx),
+                    "avg_power": float(np.mean(cycle_power)),
+                    "max_power": float(np.max(cycle_power)),
+                    "energy_wh": float(np.sum(cycle_power) / 3600),
+                }
+            )
+
         return cycles
 
 
 class Seq2PointPreprocessor:
     """Preprocessing pour modèle Sequence-to-Point"""
-    
+
     def __init__(self, sequence_length: int = 599):
         """
         Args:
             sequence_length: Longueur de la fenêtre d'entrée (impair pour point central)
         """
         # Forcer impair pour avoir un point central
-        self.sequence_length = sequence_length if sequence_length % 2 == 1 else sequence_length - 1
+        self.sequence_length = (
+            sequence_length if sequence_length % 2 == 1 else sequence_length - 1
+        )
         self.input_scaler = StandardScaler()
         self.target_scaler = MinMaxScaler(feature_range=(0, 1))
         self.fitted = False
-    
+
     def create_sequences(
-        self,
-        aggregate_power: np.ndarray,
-        appliance_power: np.ndarray,
-        stride: int = 1
+        self, aggregate_power: np.ndarray, appliance_power: np.ndarray, stride: int = 1
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Crée des séquences pour l'entraînement Sequence-to-Point
-        
+
         Args:
             aggregate_power: Consommation totale (agrégée)
             appliance_power: Consommation de l'appareil cible
             stride: Pas de déplacement de la fenêtre
-            
+
         Returns:
             Tuple (X: séquences d'entrée, y: valeurs cibles au point central)
         """
         if len(aggregate_power) != len(appliance_power):
-            raise ValueError("aggregate_power et appliance_power doivent avoir la même longueur")
-        
+            raise ValueError(
+                "aggregate_power et appliance_power doivent avoir la même longueur"
+            )
+
         if len(aggregate_power) < self.sequence_length:
-            logger.warning(f"Séquence trop courte ({len(aggregate_power)} < {self.sequence_length})")
+            logger.warning(
+                f"Séquence trop courte ({len(aggregate_power)} < {self.sequence_length})"
+            )
             return np.array([]), np.array([])
-        
+
         X, y = [], []
         half_window = self.sequence_length // 2
-        
+
         for i in range(half_window, len(aggregate_power) - half_window, stride):
             # Fenêtre d'entrée centrée sur i
             window = aggregate_power[i - half_window : i + half_window + 1]
-            
+
             # Cible : consommation de l'appareil au point central
             target = appliance_power[i]
-            
+
             X.append(window)
             y.append(target)
-        
+
         X = np.array(X, dtype=np.float32)
         y = np.array(y, dtype=np.float32)
-        
+
         return X, y
-    
+
     def fit(self, aggregate_power: np.ndarray, appliance_power: np.ndarray):
         """
         Ajuste les scalers sur les données d'entraînement
-        
+
         Args:
             aggregate_power: Consommation totale
             appliance_power: Consommation de l'appareil
         """
         # Fit scaler pour l'entrée (agrégat)
         self.input_scaler.fit(aggregate_power.reshape(-1, 1))
-        
+
         # Fit scaler pour la cible (appareil)
         self.target_scaler.fit(appliance_power.reshape(-1, 1))
-        
+
         self.fitted = True
-        logger.info(f"Scalers ajustés: input=[{aggregate_power.min():.1f}, {aggregate_power.max():.1f}], "
-                   f"target=[{appliance_power.min():.1f}, {appliance_power.max():.1f}]")
-    
-    def transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        logger.info(
+            f"Scalers ajustés: input=[{aggregate_power.min():.1f}, {aggregate_power.max():.1f}], "
+            f"target=[{appliance_power.min():.1f}, {appliance_power.max():.1f}]"
+        )
+
+    def transform(
+        self, X: np.ndarray, y: Optional[np.ndarray] = None
+    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
         Transforme les données avec les scalers
-        
+
         Args:
             X: Séquences d'entrée
             y: Valeurs cibles (optionnel)
-            
+
         Returns:
             Tuple (X transformé, y transformé ou None)
         """
         if not self.fitted:
-            raise ValueError("Le preprocessor doit être ajusté avant transformation (fit)")
-        
+            raise ValueError(
+                "Le preprocessor doit être ajusté avant transformation (fit)"
+            )
+
         # Normaliser X (chaque séquence indépendamment)
         X_scaled = np.zeros_like(X)
         for i in range(len(X)):
             X_scaled[i] = self.input_scaler.transform(X[i].reshape(-1, 1)).flatten()
-        
+
         # Normaliser y si fourni
         y_scaled = None
         if y is not None:
             y_scaled = self.target_scaler.transform(y.reshape(-1, 1)).flatten()
-        
+
         return X_scaled, y_scaled
-    
+
     def inverse_transform_target(self, y_scaled: np.ndarray) -> np.ndarray:
         """
         Inverse la transformation pour les prédictions
-        
+
         Args:
             y_scaled: Valeurs normalisées
-            
+
         Returns:
             Valeurs originales
         """
@@ -1767,11 +1736,11 @@ class Seq2PointPreprocessor:
 
 class Seq2PointNILMManager:
     """Gestionnaire de modèles S2P NILM avec architecture Multi-Output"""
-    
+
     def __init__(self):
-        self.model_type = os.getenv('NILM_MODEL_TYPE', 'gru').lower()
+        self.model_type = os.getenv("NILM_MODEL_TYPE", "gru").lower()
         # Architecture: 'multioutput'
-        self.architecture = os.getenv('NILM_ARCHITECTURE', 'multioutput').lower()
+        self.architecture = os.getenv("NILM_ARCHITECTURE", "multioutput").lower()
 
         # Créer le répertoire des modèles
         Path(settings.nilm_model_path).mkdir(parents=True, exist_ok=True)
@@ -1779,13 +1748,13 @@ class Seq2PointNILMManager:
         # Détecteur hybride change point + pattern matching
         self.change_point_detector = ChangePointPatternDetector(
             min_power_change=settings.nilm_min_power_threshold,
-            min_duration=settings.nilm_min_duration_seconds
+            min_duration=settings.nilm_min_duration_seconds,
         )
         logger.info("Change Point Pattern Detector initialisé")
 
         # Modèle Multi-Output
         self.multioutput_model: Optional[Seq2PointMultiOutputModel] = None
-        
+
         logger.info(
             f"🎯 Architecture: {self.architecture.upper()}, "
             f"Type: {self.model_type.upper()}"
@@ -1800,38 +1769,37 @@ class Seq2PointNILMManager:
         """
         try:
             # Charger les métadonnées
-            metadata_path = Path(model_path).with_suffix('.metadata.json')
+            metadata_path = Path(model_path).with_suffix(".metadata.json")
             if not metadata_path.exists():
                 raise ValueError(f"Métadonnées introuvables: {metadata_path}")
 
-            with open(metadata_path, 'r') as f:
+            with open(metadata_path, "r") as f:
                 metadata = json.load(f)
 
-            appliance_ids = metadata.get('appliance_ids', [])
-            appliance_names = metadata.get('appliance_names', [])
+            appliance_ids = metadata.get("appliance_ids", [])
+            appliance_names = metadata.get("appliance_names", [])
             sequence_length = metadata.get(
-                'sequence_length',
-                settings.effective_sequence_length
+                "sequence_length", settings.effective_sequence_length
             )
-            architecture = metadata.get('architecture', 'MultiOutput')
+            architecture = metadata.get("architecture", "MultiOutput")
 
             logger.info(f"📂 Chargement modèle {architecture}...")
-            
-            if architecture.lower() == 'multioutput':
+
+            if architecture.lower() == "multioutput":
                 self.multioutput_model = Seq2PointMultiOutputModel(
                     appliance_ids=appliance_ids,
                     appliance_names=appliance_names,
                     sequence_length=sequence_length,
-                    model_type=self.model_type
+                    model_type=self.model_type,
                 )
                 self.multioutput_model.load(model_path)
-                self.architecture = 'multioutput'
+                self.architecture = "multioutput"
             else:
                 raise ValueError(
                     f"Architecture {architecture} non supportée. "
                     f"Seule 'MultiOutput' est disponible."
                 )
-            
+
             logger.info(f"✅ Modèle {architecture} chargé: {model_path}")
 
         except Exception as e:
@@ -1839,9 +1807,7 @@ class Seq2PointNILMManager:
             raise
 
     def train_all_appliances(
-        self,
-        model_name: str,
-        fine_tune: bool = False
+        self, model_name: str, fine_tune: bool = False
     ) -> Dict[str, Any]:
         """
         Entraîne le modèle sur tous les appareils (Multi-Output).
@@ -1864,16 +1830,14 @@ class Seq2PointNILMManager:
                     ORDER BY a.name
                 """
                 appliances = session.execute(text(query)).fetchall()
-            
+
             if len(appliances) < 1:
-                logger.error(
-                    "Aucun appareil avec assez de signatures (minimum 2)"
-                )
-                return {'error': 'insufficient_data', 'min_appliances': 1}
-            
+                logger.error("Aucun appareil avec assez de signatures (minimum 2)")
+                return {"error": "insufficient_data", "min_appliances": 1}
+
             appliance_ids = [row[0] for row in appliances]
             appliance_names = [row[1] for row in appliances]
-            
+
             # Charger les signatures
             all_signatures: Dict[int, List[Dict[str, Any]]] = {}
             with db_manager.get_session() as session:
@@ -1885,8 +1849,7 @@ class Seq2PointNILMManager:
                         ORDER BY created_at
                     """
                     result = session.execute(
-                        text(query),
-                        {'appliance_id': appliance_id}
+                        text(query), {"appliance_id": appliance_id}
                     )
                     all_signatures[appliance_id] = [
                         dict(row._mapping) for row in result
@@ -1900,14 +1863,13 @@ class Seq2PointNILMManager:
                 for sig in signatures:
                     # Charger les données de signature
                     agg, app_pwr = (
-                        Seq2PointMultiOutputModel
-                        ._load_signature_data_static(sig)
+                        Seq2PointMultiOutputModel._load_signature_data_static(sig)
                     )
                     if app_pwr is None or len(app_pwr) == 0:
                         continue
 
                     duration = int(
-                        (sig['end_time'] - sig['start_time']).total_seconds()
+                        (sig["end_time"] - sig["start_time"]).total_seconds()
                     )
 
                     self.change_point_detector.add_signature_profile(
@@ -1915,14 +1877,12 @@ class Seq2PointNILMManager:
                         appliance_name=appliance_name,
                         power_sequence=app_pwr,
                         duration=duration,
-                        signature_id=sig['id']
+                        signature_id=sig["id"],
                     )
 
             total_profiles = sum(
-                len(data['profiles'])
-                for data in (
-                    self.change_point_detector.signature_profiles.values()
-                )
+                len(data["profiles"])
+                for data in (self.change_point_detector.signature_profiles.values())
             )
             logger.info(
                 f"✅ {len(self.change_point_detector.signature_profiles)} "
@@ -1930,24 +1890,22 @@ class Seq2PointNILMManager:
             )
 
             # Entraîner avec l'architecture choisie
-            if self.architecture == 'multioutput':
+            if self.architecture == "multioutput":
                 logger.info(
-                    "🎬 Entraînement Multi-Output "
-                    "(outputs parallèles + attention)"
+                    "🎬 Entraînement Multi-Output " "(outputs parallèles + attention)"
                 )
-                
+
                 # Créer ou réutiliser modèle Multi-Output
                 if fine_tune and self.multioutput_model is not None:
                     logger.info(
-                        "♻️  Réutilisation modèle Multi-Output "
-                        "pour fine-tuning"
+                        "♻️  Réutilisation modèle Multi-Output " "pour fine-tuning"
                     )
                 else:
                     self.multioutput_model = Seq2PointMultiOutputModel(
                         appliance_ids,
                         appliance_names,
                         sequence_length=settings.effective_sequence_length,
-                        model_type=self.model_type
+                        model_type=self.model_type,
                     )
 
                 metrics = self.multioutput_model.train(
@@ -1956,82 +1914,75 @@ class Seq2PointNILMManager:
                     epochs=30,
                     batch_size=32,
                     use_feedback=True,
-                    fine_tune=fine_tune
+                    fine_tune=fine_tune,
                 )
-                
+
                 if not metrics:
                     logger.error(
                         "Entraînement Multi-Output impossible "
                         "(données insuffisantes)"
                     )
-                    return {'error': 'insufficient_training_data'}
-                
-                model_path = Path(settings.nilm_model_path) / (
-                    f'{model_name}.keras'
-                )
+                    return {"error": "insufficient_training_data"}
+
+                model_path = Path(settings.nilm_model_path) / (f"{model_name}.keras")
                 self.multioutput_model.save(str(model_path), metadata=metrics)
-                architecture_name = 'MultiOutput'
-            
+                architecture_name = "MultiOutput"
+
             # Formater la réponse pour compatibilité frontend
             return {
-                'model_name': model_name,
-                'model_type': f'{architecture_name}-{self.model_type}',
-                'architecture': architecture_name,
-                'num_appliances': len(appliance_ids),
-                'model_path': str(model_path),
-                'appliances': [
+                "model_name": model_name,
+                "model_type": f"{architecture_name}-{self.model_type}",
+                "architecture": architecture_name,
+                "num_appliances": len(appliance_ids),
+                "model_path": str(model_path),
+                "appliances": [
                     {
-                        'id': appliance_ids[i],
-                        'name': appliance_names[i],
-                        'num_signatures': len(
-                            all_signatures[appliance_ids[i]]
-                        ),
-                        'metrics': {
-                            'train_mae': metrics.get('train_mae'),
-                            'val_mae': metrics.get('val_mae'),
-                            'train_mse': metrics.get('train_mae', 0) ** 2,
-                            'val_mse': metrics.get('val_mae', 0) ** 2,
-                            'train_loss': metrics.get('train_loss'),
-                            'val_loss': metrics.get('val_loss'),
-                            'epochs_trained': metrics.get('epochs_trained'),
-                        }
+                        "id": appliance_ids[i],
+                        "name": appliance_names[i],
+                        "num_signatures": len(all_signatures[appliance_ids[i]]),
+                        "metrics": {
+                            "train_mae": metrics.get("train_mae"),
+                            "val_mae": metrics.get("val_mae"),
+                            "train_mse": metrics.get("train_mae", 0) ** 2,
+                            "val_mse": metrics.get("val_mae", 0) ** 2,
+                            "train_loss": metrics.get("train_loss"),
+                            "val_loss": metrics.get("val_loss"),
+                            "epochs_trained": metrics.get("epochs_trained"),
+                        },
                     }
                     for i in range(len(appliance_ids))
-                ]
+                ],
             }
-        
+
         except Exception as e:
             logger.error(f"Erreur entraînement global: {e}", exc_info=True)
-            return {'error': str(e)}
-
-
-
+            return {"error": str(e)}
 
     def _filter_against_negative_signatures(
-        self,
-        detections: List[Dict[str, Any]]
+        self, detections: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Filtre les détections qui ressemblent aux signatures négatives.
-        
+
         Une signature négative est créée quand l'utilisateur invalide
         une détection. On compare durée, puissance moyenne et énergie
         pour rejeter les faux positifs similaires.
-        
+
         Args:
             detections: Liste de détections à filtrer
-            
+
         Returns:
             Liste de détections filtrées (sans les faux positifs)
         """
         if not detections:
             return []
-        
+
         # Charger les signatures négatives depuis la base
         negative_sigs = {}
         try:
             with db_manager.engine.connect() as conn:
-                query = text("""
+                query = text(
+                    """
                     SELECT
                         cs.id,
                         cs.appliance_id,
@@ -2040,73 +1991,75 @@ class Seq2PointNILMManager:
                         (
                             SELECT AVG(papp)
                             FROM linky_realtime
-                            WHERE time >= cs.start_time 
+                            WHERE time >= cs.start_time
                               AND time <= cs.end_time
                         ) as avg_power,
                         (
                             SELECT SUM(papp) / 3600.0
                             FROM linky_realtime
-                            WHERE time >= cs.start_time 
+                            WHERE time >= cs.start_time
                               AND time <= cs.end_time
                         ) as energy_wh
                     FROM nilm_signatures cs
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
-                """)
-                
+                """
+                )
+
                 result = conn.execute(query)
-                
+
                 for row in result:
                     sig_id, app_id, start_t, end_t, avg_pwr, energy = row
                     duration = int((end_t - start_t).total_seconds())
-                    
+
                     if app_id not in negative_sigs:
                         negative_sigs[app_id] = []
-                    
-                    negative_sigs[app_id].append({
-                        'id': sig_id,
-                        'duration_seconds': duration,
-                        'avg_power': float(avg_pwr) if avg_pwr else 0.0,
-                        'energy_wh': float(energy) if energy else 0.0
-                    })
-                
+
+                    negative_sigs[app_id].append(
+                        {
+                            "id": sig_id,
+                            "duration_seconds": duration,
+                            "avg_power": float(avg_pwr) if avg_pwr else 0.0,
+                            "energy_wh": float(energy) if energy else 0.0,
+                        }
+                    )
+
                 total_negs = sum(len(s) for s in negative_sigs.values())
                 if total_negs > 0:
-                    logger.info(
-                        f"Filtrage contre {total_negs} signatures négatives"
-                    )
+                    logger.info(f"Filtrage contre {total_negs} signatures négatives")
         except Exception as e:
             logger.error(f"Erreur chargement signatures négatives: {e}")
             return detections  # Retourner sans filtrer si erreur
-        
+
         # Filtrer les détections
         filtered = []
         rejected_count = 0
-        
+
         for det in detections:
-            app_id = det['appliance_id']
+            app_id = det["appliance_id"]
             negs = negative_sigs.get(app_id, [])
-            
+
             if not negs:
                 # Pas de signatures négatives pour cet appareil
                 filtered.append(det)
                 continue
-            
+
             is_false_positive = False
-            
+
             # DEBUG: Log de la détection à analyser
             logger.info(
                 f"🔍 Analyse détection: {det['duration_seconds']}s, "
                 f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh"
             )
-            
+
             for neg in negs:
                 # Critère 1: Durée similaire (±50% car change points)
                 duration_ratio = (
-                    det['duration_seconds'] / neg['duration_seconds']
-                    if neg['duration_seconds'] > 0 else 0
+                    det["duration_seconds"] / neg["duration_seconds"]
+                    if neg["duration_seconds"] > 0
+                    else 0
                 )
-                
+
                 # DEBUG: Log détaillé de la comparaison
                 logger.debug(
                     f"  vs signature négative #{neg['id']}: "
@@ -2114,10 +2067,9 @@ class Seq2PointNILMManager:
                     f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
                 )
                 logger.debug(
-                    f"    Ratios: durée={duration_ratio:.2f}, "
-                    f"seuils=[0.50, 1.50]"
+                    f"    Ratios: durée={duration_ratio:.2f}, " f"seuils=[0.50, 1.50]"
                 )
-                
+
                 if not (0.50 <= duration_ratio <= 1.50):
                     logger.debug(f"    ✗ Durée hors limite")
                     continue
@@ -2125,8 +2077,8 @@ class Seq2PointNILMManager:
                 logger.debug(f"    ✓ Durée OK")
 
                 # Critère 2: Puissance moyenne similaire (±15% assoupli)
-                if neg['avg_power'] > 0:
-                    power_ratio = det['avg_power'] / neg['avg_power']
+                if neg["avg_power"] > 0:
+                    power_ratio = det["avg_power"] / neg["avg_power"]
                     logger.debug(
                         f"    Puissance: ratio={power_ratio:.2f}, "
                         f"seuils=[0.85, 1.15]"
@@ -2135,11 +2087,11 @@ class Seq2PointNILMManager:
                         logger.debug(f"    ✗ Puissance hors limite")
                         continue
                     logger.debug(f"    ✓ Puissance OK")
-                
+
                 # Critère 3: Énergie similaire (±20% assoupli)
-                det_energy = det.get('energy_wh', 0)
-                if neg['energy_wh'] > 0 and det_energy > 0:
-                    energy_ratio = det_energy / neg['energy_wh']
+                det_energy = det.get("energy_wh", 0)
+                if neg["energy_wh"] > 0 and det_energy > 0:
+                    energy_ratio = det_energy / neg["energy_wh"]
                     logger.debug(
                         f"    Énergie: ratio={energy_ratio:.2f}, "
                         f"seuils=[0.80, 1.20]"
@@ -2148,7 +2100,7 @@ class Seq2PointNILMManager:
                         logger.debug(f"    ✗ Énergie hors limite")
                         continue
                     logger.debug(f"    ✓ Énergie OK")
-                
+
                 # Tous les critères correspondent → faux positif
                 is_false_positive = True
                 logger.debug(
@@ -2158,29 +2110,29 @@ class Seq2PointNILMManager:
                     f"{det['avg_power']:.1f}W"
                 )
                 break
-            
+
             if not is_false_positive:
                 filtered.append(det)
             else:
                 rejected_count += 1
-        
+
         if rejected_count > 0:
             logger.info(
                 f"✅ Filtrage terminé: {rejected_count} faux positifs "
                 f"rejetés, {len(filtered)} détections conservées"
             )
-        
+
         return filtered
 
     def _load_signature_profiles(self):
         """
         Charge les profils de signatures depuis la base de données.
         Inclut les données morphologiques si disponibles.
-        
+
         Utilisé pour le pattern matching dans la détection.
         """
         import json as json_module
-        
+
         with db_manager.get_session() as session:
             # Récupérer les appareils actifs avec leurs signatures
             appliances_query = """
@@ -2205,8 +2157,7 @@ class Seq2PointNILMManager:
                     ORDER BY created_at
                 """
                 signatures = session.execute(
-                    text(sig_query),
-                    {'appliance_id': appliance_id}
+                    text(sig_query), {"appliance_id": appliance_id}
                 ).fetchall()
 
                 for row in signatures:
@@ -2215,41 +2166,39 @@ class Seq2PointNILMManager:
                     end_time = row[2]
                     power_data_json = row[3]
                     morphology_json = row[4]
-                    
+
                     # Charger power_data depuis JSON ou linky_realtime
                     appliance_power = None
-                    
+
                     if power_data_json:
                         # Utiliser power_data stocké
                         try:
                             power_data = json_module.loads(power_data_json)
-                            appliance_power = np.array(
-                                power_data.get('values', [])
-                            )
+                            appliance_power = np.array(power_data.get("values", []))
                         except Exception as e:
                             logger.warning(
-                                f"Erreur lecture power_data "
-                                f"sig {sig_id}: {e}"
+                                f"Erreur lecture power_data " f"sig {sig_id}: {e}"
                             )
-                    
+
                     # Fallback: charger depuis linky_realtime
                     if appliance_power is None or len(appliance_power) == 0:
                         signature = {
-                            'id': sig_id,
-                            'appliance_id': appliance_id,
-                            'start_time': start_time,
-                            'end_time': end_time
+                            "id": sig_id,
+                            "appliance_id": appliance_id,
+                            "start_time": start_time,
+                            "end_time": end_time,
                         }
                         aggregate_power, appliance_power = (
-                            Seq2PointMultiOutputModel
-                            ._load_signature_data_static(signature)
+                            Seq2PointMultiOutputModel._load_signature_data_static(
+                                signature
+                            )
                         )
-                    
+
                     if appliance_power is None or len(appliance_power) == 0:
                         continue
 
                     duration = int((end_time - start_time).total_seconds())
-                    
+
                     # Parser morphology_analysis
                     morphology = None
                     if morphology_json:
@@ -2257,8 +2206,7 @@ class Seq2PointNILMManager:
                             morphology = json_module.loads(morphology_json)
                         except Exception as e:
                             logger.warning(
-                                f"Erreur lecture morphology "
-                                f"sig {sig_id}: {e}"
+                                f"Erreur lecture morphology " f"sig {sig_id}: {e}"
                             )
 
                     # Ajouter le profil avec morphologie
@@ -2268,11 +2216,11 @@ class Seq2PointNILMManager:
                         power_sequence=appliance_power,
                         duration=duration,
                         signature_id=sig_id,
-                        morphology=morphology
+                        morphology=morphology,
                     )
 
         total_profiles = sum(
-            len(data['profiles'])
+            len(data["profiles"])
             for data in self.change_point_detector.signature_profiles.values()
         )
         logger.info(
@@ -2282,18 +2230,16 @@ class Seq2PointNILMManager:
         )
 
     def disaggregate(
-        self,
-        start_time: datetime,
-        end_time: datetime
+        self, start_time: datetime, end_time: datetime
     ) -> List[Dict[str, Any]]:
         """
         Désagrège la consommation totale pour tous les appareils.
         Utilise l'architecture Multi-Output avec détection hybride.
-        
+
         Args:
             start_time: Début de la période
             end_time: Fin de la période
-            
+
         Returns:
             Liste de détections par appareil
         """
@@ -2303,9 +2249,7 @@ class Seq2PointNILMManager:
 
         # Charger les profils de signatures si nécessaire
         if not self.change_point_detector.signature_profiles:
-            logger.info(
-                "Chargement des profils de signatures pour détection..."
-            )
+            logger.info("Chargement des profils de signatures pour détection...")
             self._load_signature_profiles()
 
         try:
@@ -2318,17 +2262,14 @@ class Seq2PointNILMManager:
                     ORDER BY time
                 """
                 result = session.execute(
-                    text(query),
-                    {'start_time': start_time, 'end_time': end_time}
+                    text(query), {"start_time": start_time, "end_time": end_time}
                 )
                 data = result.fetchall()
                 if not data:
                     logger.warning("Aucune donnée pour désagrégation")
                     return []
                 timestamps = [row[0] for row in data]
-                aggregate_power = np.array(
-                    [row[1] for row in data], dtype=np.float32
-                )
+                aggregate_power = np.array([row[1] for row in data], dtype=np.float32)
             logger.info(f"Désagrégation sur {len(aggregate_power)} points")
 
             ##########################################################
@@ -2336,13 +2277,12 @@ class Seq2PointNILMManager:
             ##########################################################
 
             logger.info(
-                "=== Détection Hybride "
-                "(Change Point + Pattern Matching) ==="
+                "=== Détection Hybride " "(Change Point + Pattern Matching) ==="
             )
 
             # Étape 1 : Détecter les change points dans l'agrégé
-            change_points = (
-                self.change_point_detector.detect_change_points(aggregate_power)
+            change_points = self.change_point_detector.detect_change_points(
+                aggregate_power
             )
 
             if not change_points:
@@ -2362,47 +2302,42 @@ class Seq2PointNILMManager:
             detections = []
             for pattern_data in patterns:
                 match_result = self.change_point_detector.match_pattern(
-                    pattern_data,
-                    pattern_morphology=pattern_data.get('morphology')
+                    pattern_data, pattern_morphology=pattern_data.get("morphology")
                 )
 
                 if match_result:
-                    (appliance_id, appliance_name,
-                     matched_signature_id, confidence) = match_result
+                    (appliance_id, appliance_name, matched_signature_id, confidence) = (
+                        match_result
+                    )
 
                     # Mapper les indices vers les timestamps
-                    start_idx = pattern_data['start_idx']
-                    end_idx = pattern_data['end_idx']
+                    start_idx = pattern_data["start_idx"]
+                    end_idx = pattern_data["end_idx"]
 
-                    if (start_idx < len(timestamps) and
-                            end_idx <= len(timestamps)):
+                    if start_idx < len(timestamps) and end_idx <= len(timestamps):
                         detection = {
-                            'appliance_id': appliance_id,
-                            'appliance_name': appliance_name,
-                            'signature_id': matched_signature_id,
-                            'start_time': timestamps[start_idx],
-                            'end_time': timestamps[
-                                min(end_idx, len(timestamps)-1)
-                            ],
-                            'duration_seconds': pattern_data['duration'],
-                            'avg_power': pattern_data['avg_power'],
-                            'max_power': pattern_data['max_power'],
-                            'energy_wh': pattern_data['energy_wh'],
-                            'confidence_score': float(confidence),
-                            'features': {
-                                'detection_method': (
-                                    'change_point_pattern_matching'
-                                ),
-                                'change_point_based': True
-                            }
+                            "appliance_id": appliance_id,
+                            "appliance_name": appliance_name,
+                            "signature_id": matched_signature_id,
+                            "start_time": timestamps[start_idx],
+                            "end_time": timestamps[min(end_idx, len(timestamps) - 1)],
+                            "duration_seconds": pattern_data["duration"],
+                            "avg_power": pattern_data["avg_power"],
+                            "max_power": pattern_data["max_power"],
+                            "energy_wh": pattern_data["energy_wh"],
+                            "confidence_score": float(confidence),
+                            "features": {
+                                "detection_method": ("change_point_pattern_matching"),
+                                "change_point_based": True,
+                            },
                         }
                         if matched_signature_id is not None:
-                            detection['features']['matched_signature_id'] = (
-                                int(matched_signature_id)
+                            detection["features"]["matched_signature_id"] = int(
+                                matched_signature_id
                             )
-                            detection['features']['matching'] = {
-                                'score': float(confidence),
-                                'method': 'duration_power_shape_combined'
+                            detection["features"]["matching"] = {
+                                "score": float(confidence),
+                                "method": "duration_power_shape_combined",
                             }
                         detections.append(detection)
 
@@ -2414,16 +2349,15 @@ class Seq2PointNILMManager:
                         )
 
             logger.info(f"Total détections avant filtrage: {len(detections)}")
-            
+
             # ✨ NOUVEAU: Filtrer contre les signatures négatives
             detections = self._filter_against_negative_signatures(detections)
-            
+
             # ✨ NOUVEAU: Filtrer par seuil de confiance minimum
             min_confidence = 0.40  # 40% de confiance minimum (assoupli)
             before_conf_filter = len(detections)
             detections = [
-                d for d in detections
-                if d.get('confidence_score', 0) >= min_confidence
+                d for d in detections if d.get("confidence_score", 0) >= min_confidence
             ]
             if before_conf_filter > len(detections):
                 logger.info(
@@ -2431,18 +2365,16 @@ class Seq2PointNILMManager:
                     f"{before_conf_filter - len(detections)} "
                     f"détections rejetées (confiance < {min_confidence:.0%})"
                 )
-            
+
             logger.info(f"Total détections après filtrage: {len(detections)}")
             return detections
-            
+
         except Exception as e:
             logger.error(f"Erreur désagrégation: {e}", exc_info=True)
             return []
-    
+
     def _merge_consecutive_cycles(
-        self,
-        cycles: List[Dict[str, Any]],
-        max_gap_seconds: int = 120
+        self, cycles: List[Dict[str, Any]], max_gap_seconds: int = 120
     ) -> List[Dict[str, Any]]:
         """
         Fusionne les cycles consécutifs séparés par moins de max_gap_seconds.
@@ -2459,7 +2391,7 @@ class Seq2PointNILMManager:
             return []
 
         # Trier les cycles par start_idx
-        sorted_cycles = sorted(cycles, key=lambda c: c['start_idx'])
+        sorted_cycles = sorted(cycles, key=lambda c: c["start_idx"])
 
         merged = []
         current_merged = sorted_cycles[0].copy()
@@ -2468,19 +2400,27 @@ class Seq2PointNILMManager:
             cycle = sorted_cycles[i]
 
             # Calculer le gap entre la fin du cycle fusionné actuel et le début du prochain
-            gap = cycle['start_idx'] - current_merged['end_idx']
+            gap = cycle["start_idx"] - current_merged["end_idx"]
 
             if gap <= max_gap_seconds:
                 # Fusionner : étendre le cycle actuel
-                current_merged['end_idx'] = cycle['end_idx']
-                current_merged['duration_seconds'] = current_merged['end_idx'] - current_merged['start_idx']
+                current_merged["end_idx"] = cycle["end_idx"]
+                current_merged["duration_seconds"] = (
+                    current_merged["end_idx"] - current_merged["start_idx"]
+                )
                 # Recalculer avg_power et max_power (moyenne pondérée)
                 # Note: on garde la max_power la plus élevée
-                current_merged['max_power'] = max(current_merged['max_power'], cycle['max_power'])
+                current_merged["max_power"] = max(
+                    current_merged["max_power"], cycle["max_power"]
+                )
                 # Pour avg_power, on fait une moyenne simple (approximation)
-                current_merged['avg_power'] = (current_merged['avg_power'] + cycle['avg_power']) / 2
+                current_merged["avg_power"] = (
+                    current_merged["avg_power"] + cycle["avg_power"]
+                ) / 2
                 # Sommer l'énergie
-                current_merged['energy_wh'] = current_merged['energy_wh'] + cycle['energy_wh']
+                current_merged["energy_wh"] = (
+                    current_merged["energy_wh"] + cycle["energy_wh"]
+                )
             else:
                 # Gap trop grand : sauvegarder le cycle fusionné actuel et commencer un nouveau
                 merged.append(current_merged)
@@ -2496,7 +2436,7 @@ class Seq2PointNILMManager:
         active_mask: np.ndarray,
         timestamps: List[datetime],
         predictions: np.ndarray,
-        min_duration: int
+        min_duration: int,
     ) -> List[Dict[str, Any]]:
         """
         Trouve les segments actifs dans les prédictions, en détectant les gaps
@@ -2519,8 +2459,12 @@ class Seq2PointNILMManager:
         # Paramètres de détection de gaps (périodes inactives entre deux cycles)
         # Un gap est détecté si la puissance reste < 20% du threshold pendant min_gap_duration
         # Pour un ballon d'eau chaude (3500W), un gap = puissance < 100W
-        gap_threshold = settings.nilm_min_power_threshold * 0.2  # 20% du seuil (= 100W avec threshold=500W)
-        min_gap_duration = 120  # 2 minutes minimum pour considérer un vrai gap (fin de chauffe)
+        gap_threshold = (
+            settings.nilm_min_power_threshold * 0.2
+        )  # 20% du seuil (= 100W avec threshold=500W)
+        min_gap_duration = (
+            120  # 2 minutes minimum pour considérer un vrai gap (fin de chauffe)
+        )
 
         in_segment = False
         start_idx = 0
@@ -2550,17 +2494,30 @@ class Seq2PointNILMManager:
                             orig_start = start_idx + half_window
                             orig_end = gap_start + half_window
 
-                            if orig_start < len(timestamps) and orig_end <= len(timestamps):
+                            if orig_start < len(timestamps) and orig_end <= len(
+                                timestamps
+                            ):
                                 segment_predictions = predictions[start_idx:gap_start]
 
                                 segment = {
-                                    'start_time': timestamps[orig_start],
-                                    'end_time': timestamps[min(orig_end, len(timestamps)-1)],
-                                    'duration_seconds': duration,
-                                    'avg_power': float(np.mean(segment_predictions)),
-                                    'max_power': float(np.max(segment_predictions)),
-                                    'energy_wh': float(np.sum(segment_predictions) / 3600),
-                                    'confidence_score': float(np.mean(segment_predictions) / np.max(predictions)) if np.max(predictions) > 0 else 0.0
+                                    "start_time": timestamps[orig_start],
+                                    "end_time": timestamps[
+                                        min(orig_end, len(timestamps) - 1)
+                                    ],
+                                    "duration_seconds": duration,
+                                    "avg_power": float(np.mean(segment_predictions)),
+                                    "max_power": float(np.max(segment_predictions)),
+                                    "energy_wh": float(
+                                        np.sum(segment_predictions) / 3600
+                                    ),
+                                    "confidence_score": (
+                                        float(
+                                            np.mean(segment_predictions)
+                                            / np.max(predictions)
+                                        )
+                                        if np.max(predictions) > 0
+                                        else 0.0
+                                    ),
                                 }
                                 segments.append(segment)
 
@@ -2584,13 +2541,22 @@ class Seq2PointNILMManager:
                             segment_predictions = predictions[start_idx:i]
 
                             segment = {
-                                'start_time': timestamps[orig_start],
-                                'end_time': timestamps[min(orig_end, len(timestamps)-1)],
-                                'duration_seconds': duration,
-                                'avg_power': float(np.mean(segment_predictions)),
-                                'max_power': float(np.max(segment_predictions)),
-                                'energy_wh': float(np.sum(segment_predictions) / 3600),
-                                'confidence_score': float(np.mean(segment_predictions) / np.max(predictions)) if np.max(predictions) > 0 else 0.0
+                                "start_time": timestamps[orig_start],
+                                "end_time": timestamps[
+                                    min(orig_end, len(timestamps) - 1)
+                                ],
+                                "duration_seconds": duration,
+                                "avg_power": float(np.mean(segment_predictions)),
+                                "max_power": float(np.max(segment_predictions)),
+                                "energy_wh": float(np.sum(segment_predictions) / 3600),
+                                "confidence_score": (
+                                    float(
+                                        np.mean(segment_predictions)
+                                        / np.max(predictions)
+                                    )
+                                    if np.max(predictions) > 0
+                                    else 0.0
+                                ),
                             }
                             segments.append(segment)
 
@@ -2608,13 +2574,17 @@ class Seq2PointNILMManager:
                     segment_predictions = predictions[start_idx:]
 
                     segment = {
-                        'start_time': timestamps[orig_start],
-                        'end_time': timestamps[min(orig_end, len(timestamps)-1)],
-                        'duration_seconds': duration,
-                        'avg_power': float(np.mean(segment_predictions)),
-                        'max_power': float(np.max(segment_predictions)),
-                        'energy_wh': float(np.sum(segment_predictions) / 3600),
-                        'confidence_score': float(np.mean(segment_predictions) / np.max(predictions)) if np.max(predictions) > 0 else 0.0
+                        "start_time": timestamps[orig_start],
+                        "end_time": timestamps[min(orig_end, len(timestamps) - 1)],
+                        "duration_seconds": duration,
+                        "avg_power": float(np.mean(segment_predictions)),
+                        "max_power": float(np.max(segment_predictions)),
+                        "energy_wh": float(np.sum(segment_predictions) / 3600),
+                        "confidence_score": (
+                            float(np.mean(segment_predictions) / np.max(predictions))
+                            if np.max(predictions) > 0
+                            else 0.0
+                        ),
                     }
                     segments.append(segment)
 

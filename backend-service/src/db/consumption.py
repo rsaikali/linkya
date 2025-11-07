@@ -13,12 +13,14 @@ class ConsumptionRepository(DatabaseBase):
 
     def get_latest_consumption(self) -> dict[str, Any] | None:
         """Retrieves the latest consumption value."""
-        query = text("""
+        query = text(
+            """
             SELECT time, papp, hchp, hchc, temperature, libelle_tarif
             FROM linky_realtime
             ORDER BY time DESC
             LIMIT 1
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(query).fetchone()
@@ -40,10 +42,12 @@ class ConsumptionRepository(DatabaseBase):
         Returns:
             Dictionary with min_time and max_time, or None if no data
         """
-        query = text("""
+        query = text(
+            """
             SELECT MIN(time) as min_time, MAX(time) as max_time
             FROM linky_realtime
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(query).fetchone()
@@ -70,7 +74,8 @@ class ConsumptionRepository(DatabaseBase):
         """
         # If interval is "raw" or "none", return raw data without aggregation
         if interval in ("raw", "none"):
-            query = text("""
+            query = text(
+                """
                 SELECT
                     time,
                     papp as avg_papp,
@@ -80,9 +85,11 @@ class ConsumptionRepository(DatabaseBase):
                 FROM linky_realtime
                 WHERE time >= :start_time AND time <= :end_time
                 ORDER BY time ASC
-            """)
+            """
+            )
         else:
-            query = text("""
+            query = text(
+                """
                 SELECT
                     time_bucket(:interval, time) AS bucket,
                     AVG(papp) as avg_papp,
@@ -93,7 +100,8 @@ class ConsumptionRepository(DatabaseBase):
                 WHERE time >= :start_time AND time <= :end_time
                 GROUP BY bucket
                 ORDER BY bucket ASC
-            """)
+            """
+            )
 
         with self.engine.connect() as conn:
             if interval in ("raw", "none"):
@@ -119,9 +127,7 @@ class ConsumptionRepository(DatabaseBase):
                     "avg_papp": float(row[1]) if row[1] is not None else None,
                     "max_papp": float(row[2]) if row[2] is not None else None,
                     "min_papp": float(row[3]) if row[3] is not None else None,
-                    "avg_temperature": (
-                        float(row[4]) if row[4] is not None else None
-                    ),
+                    "avg_temperature": (float(row[4]) if row[4] is not None else None),
                 }
                 for row in result
             ]

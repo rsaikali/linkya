@@ -10,9 +10,7 @@ from .base import DatabaseBase, format_datetime
 class SignatureRepository(DatabaseBase):
     """Repository for signature operations."""
 
-    def get_appliance_signatures(
-        self, appliance_id: int
-    ) -> list[dict[str, Any]]:
+    def get_appliance_signatures(self, appliance_id: int) -> list[dict[str, Any]]:
         """
         Retrieves all signatures for a specific appliance.
 
@@ -22,7 +20,8 @@ class SignatureRepository(DatabaseBase):
         Returns:
             List of signatures with their details
         """
-        query = text("""
+        query = text(
+            """
             SELECT
                 cs.id,
                 cs.appliance_id,
@@ -49,7 +48,8 @@ class SignatureRepository(DatabaseBase):
             FROM nilm_signatures cs
             WHERE cs.appliance_id = :appliance_id
             ORDER BY cs.start_time DESC
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(query, {"appliance_id": appliance_id})
@@ -60,22 +60,14 @@ class SignatureRepository(DatabaseBase):
                     "appliance_id": row[1],
                     "start_time": format_datetime(row[2]),
                     "end_time": format_datetime(row[3]),
-                    "avg_power": (
-                        float(row[4]) if row[4] is not None else None
-                    ),
-                    "power_std": (
-                        float(row[5]) if row[5] is not None else None
-                    ),
-                    "energy_consumed": (
-                        float(row[6]) if row[6] is not None else None
-                    ),
+                    "avg_power": (float(row[4]) if row[4] is not None else None),
+                    "power_std": (float(row[5]) if row[5] is not None else None),
+                    "energy_consumed": (float(row[6]) if row[6] is not None else None),
                     "created_at": format_datetime(row[7]),
-                    "duration_seconds": (
-                        float(row[8]) if row[8] is not None else None
-                    ),
+                    "duration_seconds": (float(row[8]) if row[8] is not None else None),
                 }
                 signatures_list.append(signature)
-            
+
             return signatures_list
 
     def delete_all_signatures(self) -> dict[str, int]:
@@ -85,13 +77,17 @@ class SignatureRepository(DatabaseBase):
         Returns:
             Dictionary with the number of deleted signatures
         """
-        count_query = text("""
+        count_query = text(
+            """
             SELECT COUNT(*) FROM nilm_signatures
-        """)
+        """
+        )
 
-        delete_query = text("""
+        delete_query = text(
+            """
             DELETE FROM nilm_signatures
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             # Compter les signatures à supprimer
@@ -101,9 +97,7 @@ class SignatureRepository(DatabaseBase):
             conn.execute(delete_query)
             conn.commit()
 
-            return {
-                "signatures_deleted": signatures_count
-            }
+            return {"signatures_deleted": signatures_count}
 
     def delete_signature(self, signature_id: int) -> dict[str, Any] | None:
         """
@@ -116,7 +110,8 @@ class SignatureRepository(DatabaseBase):
             Deleted signature information or None if not found
         """
         # Retrieve information before deletion
-        get_query = text("""
+        get_query = text(
+            """
             SELECT
                 s.id,
                 s.appliance_id,
@@ -128,19 +123,19 @@ class SignatureRepository(DatabaseBase):
             FROM nilm_signatures s
             JOIN nilm_appliances a ON s.appliance_id = a.id
             WHERE s.id = :signature_id
-        """)
+        """
+        )
 
-        delete_query = text("""
+        delete_query = text(
+            """
             DELETE FROM nilm_signatures
             WHERE id = :signature_id
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             # Récupérer les infos de la signature
-            result = conn.execute(
-                get_query,
-                {"signature_id": signature_id}
-            ).fetchone()
+            result = conn.execute(get_query, {"signature_id": signature_id}).fetchone()
 
             if not result:
                 return None
@@ -170,7 +165,8 @@ class SignatureRepository(DatabaseBase):
             List of signatures with appliance_name,
             start_time, end_time, is_negative
         """
-        query = text("""
+        query = text(
+            """
             SELECT
                 cs.id,
                 ca.id as appliance_id,
@@ -193,7 +189,8 @@ class SignatureRepository(DatabaseBase):
             FROM nilm_signatures cs
             JOIN nilm_appliances ca ON cs.appliance_id = ca.id
             ORDER BY cs.start_time DESC
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(query)
@@ -205,12 +202,8 @@ class SignatureRepository(DatabaseBase):
                     "start_time": format_datetime(row[3]),
                     "end_time": format_datetime(row[4]),
                     "avg_power": float(row[5]) if row[5] is not None else None,
-                    "energy_consumed": (
-                        float(row[6]) if row[6] is not None else None
-                    ),
-                    "duration_seconds": (
-                        float(row[7]) if row[7] is not None else None
-                    ),
+                    "energy_consumed": (float(row[6]) if row[6] is not None else None),
+                    "duration_seconds": (float(row[7]) if row[7] is not None else None),
                     "is_negative": row[8] if row[8] is not None else False,
                 }
                 for row in result

@@ -1,7 +1,8 @@
 """Base database utilities and connection management."""
 
-from datetime import datetime
 import logging
+from datetime import datetime
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 

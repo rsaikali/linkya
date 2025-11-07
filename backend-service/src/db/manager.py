@@ -1,16 +1,16 @@
 """Main database manager aggregating all repositories."""
 
-from .consumption import ConsumptionRepository
 from .appliances import ApplianceRepository
-from .signatures import SignatureRepository
+from .consumption import ConsumptionRepository
 from .detections import DetectionRepository
 from .models import ModelRepository
+from .signatures import SignatureRepository
 
 
 class DatabaseManager:
     """
     Main database manager that aggregates all repositories.
-    
+
     This class delegates database operations to specialized repositories
     for better code organization and maintainability.
     """
@@ -22,7 +22,7 @@ class DatabaseManager:
         self.signatures = SignatureRepository()
         self.detections = DetectionRepository()
         self.models = ModelRepository()
-        
+
         # For backward compatibility, expose engine from one of the repos
         self.engine = self.consumption.engine
         self.SessionLocal = self.consumption.SessionLocal
@@ -38,9 +38,7 @@ class DatabaseManager:
 
     def get_consumption_history(self, start_time, end_time, interval="5 minutes"):
         """Get consumption history."""
-        return self.consumption.get_consumption_history(
-            start_time, end_time, interval
-        )
+        return self.consumption.get_consumption_history(start_time, end_time, interval)
 
     # Appliance methods
     def get_all_appliances(self):
@@ -95,9 +93,7 @@ class DatabaseManager:
 
     def reassign_detection(self, detection_id, correct_appliance_name):
         """Reassign detection to correct appliance."""
-        return self.detections.reassign_detection(
-            detection_id, correct_appliance_name
-        )
+        return self.detections.reassign_detection(detection_id, correct_appliance_name)
 
     # Model methods
     def get_latest_nilm_model(self):

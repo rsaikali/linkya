@@ -1,43 +1,45 @@
 """
 Tâches Celery pour nilm-service
 """
+
 import json
 import logging
-import warnings
 import os
-import redis
+import warnings
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
+import redis
+
 # Filtrer les warnings Celery root avant les imports
-os.environ['C_FORCE_ROOT'] = 'true'
-warnings.filterwarnings('ignore', message='.*superuser privileges.*')
+os.environ["C_FORCE_ROOT"] = "true"
+warnings.filterwarnings("ignore", message=".*superuser privileges.*")
 
 from celery import Celery
 from celery.schedules import crontab
 
 # Configuration du logger (doit être avant les imports locaux)
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-LOCAL_TIMEZONE = ZoneInfo(os.environ.get('TZ', 'Europe/Paris'))
+LOCAL_TIMEZONE = ZoneInfo(os.environ.get("TZ", "Europe/Paris"))
 
 from .config import settings
 from .database import db_manager
-
 from .seq2point_nilm import Seq2PointNILMManager
+
 logger.info("🚀 Mode Sequence-to-Point (S2P) activé")
 nilm_manager = Seq2PointNILMManager()
 
 # Vérifier la disponibilité du GPU (sauf si CUDA_VISIBLE_DEVICES est vide)
-if os.environ.get('CUDA_VISIBLE_DEVICES', '0') != '':
+if os.environ.get("CUDA_VISIBLE_DEVICES", "0") != "":
     try:
         import tensorflow as tf
-        gpus = tf.config.list_physical_devices('GPU')
+
+        gpus = tf.config.list_physical_devices("GPU")
         if gpus:
             logger.info(f"🎮 GPU disponibles: {len(gpus)}")
             for gpu in gpus:
@@ -56,42 +58,41 @@ else:
 
 # Initialisation de Celery
 celery_app = Celery(
-    'nilm_tasks',
+    "nilm_tasks",
     broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend
+    backend=settings.celery_result_backend,
 )
 
 # Configuration Celery
 celery_app.conf.update(
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
     enable_utc=True,
     task_track_started=True,
     task_time_limit=3600,  # 1 heure max par tâche
-    worker_pool='solo',  # Pour éviter les conflits avec TensorFlow
+    worker_pool="solo",  # Pour éviter les conflits avec TensorFlow
     task_routes={
-        'train_nilm_model': {'queue': 'nilm'},
-        'detect_nilm_appliances': {'queue': 'nilm'},
-        'add_nilm_signature': {'queue': 'nilm'},
+        "train_nilm_model": {"queue": "nilm"},
+        "detect_nilm_appliances": {"queue": "nilm"},
+        "add_nilm_signature": {"queue": "nilm"},
     },
 )
 
 # Redis client pour WebSocket real-time updates
 try:
-    redis_client = redis.from_url(
-        settings.celery_broker_url,
-        decode_responses=True
-    )
+    redis_client = redis.from_url(settings.celery_broker_url, decode_responses=True)
     logger.info("✅ Redis client initialized for detection updates")
 except Exception as e:
     logger.warning(f"⚠️ Redis client init failed: {e}")
     redis_client = None
 
 
-@celery_app.task(name='train_nilm_model', bind=True)
-def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict[str, Any]:
+@celery_app.task(name="train_nilm_model", bind=True)
+def train_nilm_model(
+    self, min_signatures: int = 2, generation: int = 0
+) -> Dict[str, Any]:
     """
     Entraîne un nouveau modèle NILM (S2P) - remplace l'ancien modèle
 
@@ -104,17 +105,16 @@ def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict
         Statut et métriques de l'entraînement
     """
     try:
-        import time
-        from sqlalchemy import text
         import json
+        import time
         from pathlib import Path
+
+        from sqlalchemy import text
 
         # Vérification préventive : cette génération est-elle obsolète ?
         if redis_client and generation > 0:
             try:
-                current_generation = redis_client.get(
-                    "nilm:training:generation"
-                )
+                current_generation = redis_client.get("nilm:training:generation")
                 if current_generation:
                     current_gen = int(current_generation)
                     if generation < current_gen:
@@ -123,18 +123,17 @@ def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict
                             f"génération actuelle = {current_gen}"
                         )
                         return {
-                            'status': 'cancelled',
-                            'message': f'Training obsolète (gen {generation} < {current_gen})',
-                            'task_id': self.request.id,
-                            'generation': generation,
-                            'current_generation': current_gen
+                            "status": "cancelled",
+                            "message": f"Training obsolète (gen {generation} < {current_gen})",
+                            "task_id": self.request.id,
+                            "generation": generation,
+                            "current_generation": current_gen,
                         }
             except Exception as e:
                 logger.warning(f"Impossible de vérifier génération: {e}")
 
         logger.info(
-            f"🎯 Training génération {generation} commence "
-            f"(task {self.request.id})"
+            f"🎯 Training génération {generation} commence " f"(task {self.request.id})"
         )
 
         start_time = time.time()
@@ -142,33 +141,32 @@ def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict
         # Générer le nom du modèle avec timestamp
         timestamp = datetime.now(LOCAL_TIMEZONE).strftime("%Y%m%d_%H%M%S")
         model_name = f"linkya_model_{timestamp}"
-        
+
         logger.info(f"� Début de l'entraînement du modèle {model_name}...")
 
         # Entraîner le modèle from-scratch (pas de fine-tuning)
         metrics = nilm_manager.train_all_appliances(model_name, fine_tune=False)
-        if 'error' in metrics:
+        if "error" in metrics:
             return {
-                'status': 'error',
-                'message': metrics.get('error'),
-                'details': metrics
+                "status": "error",
+                "message": metrics.get("error"),
+                "details": metrics,
             }
-        
+
         # Préparer les infos pour la base
-        num_appliances = metrics.get('num_appliances', 0)
+        num_appliances = metrics.get("num_appliances", 0)
         total_signatures = sum(
-            app['num_signatures'] 
-            for app in metrics.get('appliances', [])
+            app["num_signatures"] for app in metrics.get("appliances", [])
         )
         architecture = {
-            'type': f'S2P-MULTI-{nilm_manager.model_type.upper()}',
-            'sequence_length': settings.effective_sequence_length,
-            'num_appliances': num_appliances,
-            'model_type': nilm_manager.model_type,
-            'appliances': metrics.get('appliances', [])
+            "type": f"S2P-MULTI-{nilm_manager.model_type.upper()}",
+            "sequence_length": settings.effective_sequence_length,
+            "num_appliances": num_appliances,
+            "model_type": nilm_manager.model_type,
+            "appliances": metrics.get("appliances", []),
         }
-        model_type_str = f'S2P-MULTI-{nilm_manager.model_type.upper()}'
-        
+        model_type_str = f"S2P-MULTI-{nilm_manager.model_type.upper()}"
+
         # Calculer la durée
         training_duration = int(time.time() - start_time)
         completed_at = datetime.now(LOCAL_TIMEZONE)
@@ -178,7 +176,7 @@ def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict
             old_models = session.execute(
                 text("SELECT id, model_path FROM nilm_models")
             ).fetchall()
-            
+
             for old_model in old_models:
                 old_id, old_path = old_model
                 # Supprimer le fichier modèle
@@ -188,24 +186,25 @@ def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict
                         logger.info(f"🗑️  Fichier modèle supprimé: {old_path}")
                     except Exception as e:
                         logger.warning(f"⚠️  Impossible de supprimer {old_path}: {e}")
-                
+
                 # Supprimer metadata
-                metadata_path = Path(str(old_path).replace('.keras', '.metadata.json'))
+                metadata_path = Path(str(old_path).replace(".keras", ".metadata.json"))
                 if metadata_path.exists():
                     try:
                         metadata_path.unlink()
                     except Exception as e:
                         logger.warning(f"⚠️  Impossible de supprimer metadata: {e}")
-            
+
             # Supprimer toutes les entrées de la table
             session.execute(text("DELETE FROM nilm_models"))
             session.commit()
-            
+
             logger.info("✅ Ancien modèle supprimé")
 
         # Sauvegarder le nouveau modèle en base
         with db_manager.get_session() as session:
-            query = text("""
+            query = text(
+                """
                 INSERT INTO nilm_models
                 (model_name, model_type, architecture, training_date,
                  num_signatures, num_classes, metrics, model_path,
@@ -216,87 +215,89 @@ def train_nilm_model(self, min_signatures: int = 2, generation: int = 0) -> Dict
                  cast(:metrics as jsonb), :model_path,
                  :training_duration_seconds)
                 RETURNING id
-            """)
+            """
+            )
 
             result = session.execute(
                 query,
                 {
-                    'model_name': model_name,
-                    'model_type': model_type_str,
-                    'architecture': json.dumps(architecture),
-                    'training_date': completed_at,
-                    'num_signatures': total_signatures,
-                    'num_classes': num_appliances,
-                    'metrics': json.dumps(metrics, default=str),
-                    'model_path': metrics.get('model_path', f"{settings.nilm_model_path}/{model_name}.keras"),
-                    'training_duration_seconds': training_duration
-                }
+                    "model_name": model_name,
+                    "model_type": model_type_str,
+                    "architecture": json.dumps(architecture),
+                    "training_date": completed_at,
+                    "num_signatures": total_signatures,
+                    "num_classes": num_appliances,
+                    "metrics": json.dumps(metrics, default=str),
+                    "model_path": metrics.get(
+                        "model_path", f"{settings.nilm_model_path}/{model_name}.keras"
+                    ),
+                    "training_duration_seconds": training_duration,
+                },
             )
 
             model_id = result.scalar()
             session.commit()
-        
+
         logger.info(
             f"✅ Modèle {model_name} entraîné en {training_duration}s - "
             f"{num_appliances} appareils, {total_signatures} signatures"
         )
 
         return {
-            'status': 'success',
-            'model_name': model_name,
-            'model_type': model_type_str,
-            'num_signatures': total_signatures,
-            'num_appliances': num_appliances,
-            'metrics': metrics,
-            'training_duration_seconds': training_duration,
-            'timestamp': completed_at.isoformat()
+            "status": "success",
+            "model_name": model_name,
+            "model_type": model_type_str,
+            "num_signatures": total_signatures,
+            "num_appliances": num_appliances,
+            "metrics": metrics,
+            "training_duration_seconds": training_duration,
+            "timestamp": completed_at.isoformat(),
         }
-        
+
     except Exception as e:
         logger.error(f"Erreur entraînement: {e}", exc_info=True)
-        return {'status': 'error', 'message': str(e)}
+        return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(name='detect_nilm_appliances')
+@celery_app.task(name="detect_nilm_appliances")
 def detect_nilm_appliances(
-    hours: int = None,
-    min_confidence: float = 0.3
+    hours: int = None, min_confidence: float = 0.3
 ) -> Dict[str, Any]:
     """
     Détecte et désagrège les appareils (S2P)
-    
+
     Args:
         hours: Nombre d'heures à analyser (défaut: depuis config)
         min_confidence: Seuil de confiance minimal
-        
+
     Returns:
         Statut et nombre de détections
     """
     try:
-        from sqlalchemy import text
         import json
-        
+
+        from sqlalchemy import text
+
         # Vérifier qu'un modèle est disponible
         with db_manager.engine.connect() as conn:
             result = conn.execute(
-                text("SELECT model_name, model_type FROM nilm_models "
-                     "ORDER BY training_date DESC LIMIT 1")
+                text(
+                    "SELECT model_name, model_type FROM nilm_models "
+                    "ORDER BY training_date DESC LIMIT 1"
+                )
             )
             row = result.first()
-            
+
             if not row:
                 message = "Aucun modèle disponible"
                 logger.warning(message)
-                return {'status': 'skipped', 'message': message}
-            
+                return {"status": "skipped", "message": message}
+
             active_model = row.model_name
             model_type = row.model_type
-        
+
         # Charger le modèle Multi-Output si pas déjà chargé
-        model_path = os.path.join(
-            settings.nilm_model_path,
-            f"{active_model}.keras"
-        )
+        model_path = os.path.join(settings.nilm_model_path, f"{active_model}.keras")
         if nilm_manager.multioutput_model is None:
             if os.path.exists(model_path):
                 logger.info(f"📂 Chargement du modèle: {active_model}")
@@ -304,25 +305,23 @@ def detect_nilm_appliances(
             else:
                 message = f"Fichier modèle introuvable: {model_path}"
                 logger.error(message)
-                return {'status': 'error', 'message': message}
-        
+                return {"status": "error", "message": message}
+
         # Définir la période d'analyse
         from datetime import timezone
+
         end_time = datetime.now(timezone.utc)
-        
+
         # Si hours est None, analyser toute la période disponible
         if hours is None:
             with db_manager.engine.connect() as conn:
                 result = conn.execute(
-                    text("SELECT MIN(time) as min_date "
-                         "FROM linky_realtime")
+                    text("SELECT MIN(time) as min_date " "FROM linky_realtime")
                 )
                 row = result.first()
                 if row and row.min_date:
                     start_time = row.min_date
-                    total_hours = int(
-                        (end_time - start_time).total_seconds() / 3600
-                    )
+                    total_hours = int((end_time - start_time).total_seconds() / 3600)
                     logger.info(
                         f"Détection sur TOUTE la période disponible "
                         f"({total_hours}h - depuis {start_time})..."
@@ -331,86 +330,87 @@ def detect_nilm_appliances(
                     # Fallback sur la config par défaut si pas de données
                     hours = settings.nilm_detection_period_hours or 240
                     start_time = end_time - timedelta(hours=hours)
-                    logger.info(
-                        f"Détection sur les {hours} dernières heures..."
-                    )
+                    logger.info(f"Détection sur les {hours} dernières heures...")
         else:
             start_time = end_time - timedelta(hours=hours)
             logger.info(f"Détection sur les {hours} dernières heures...")
-        
+
         # Désagrégation Multi-Output
         logger.info(f"🔍 Désagrégation Multi-Output: {start_time} -> {end_time}")
-        
+
         # Publish detection_start event to Redis
         if redis_client:
             try:
-                message = json.dumps({
-                    "event": "detection_start",
-                    "data": {
-                        "model_name": active_model,
-                        "start_time": start_time.isoformat(),
-                        "end_time": end_time.isoformat()
-                    },
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                message = json.dumps(
+                    {
+                        "event": "detection_start",
+                        "data": {
+                            "model_name": active_model,
+                            "start_time": start_time.isoformat(),
+                            "end_time": end_time.isoformat(),
+                        },
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("detections:updates", message)
                 logger.info("📢 Published detection_start to Redis")
             except Exception as e:
                 logger.error(f"Failed to publish detection_start to Redis: {e}")
-        
+
         # Vérifier qu'un modèle Multi-Output est chargé
         if nilm_manager.multioutput_model is None:
             logger.error("Aucun modèle Multi-Output chargé")
             return {
-                'status': 'error',
-                'message': 'Aucun modèle Multi-Output disponible. Veuillez entraîner un modèle.'
+                "status": "error",
+                "message": "Aucun modèle Multi-Output disponible. Veuillez entraîner un modèle.",
             }
-        
+
         # Désagrégation
         events = nilm_manager.disaggregate(start_time, end_time)
-        
+
         if not events:
             logger.info("Aucun événement détecté")
             return {
-                'status': 'success',
-                'num_detections': 0,
-                'period': {
-                    'start': start_time.isoformat(),
-                    'end': end_time.isoformat()
-                }
+                "status": "success",
+                "num_detections": 0,
+                "period": {
+                    "start": start_time.isoformat(),
+                    "end": end_time.isoformat(),
+                },
             }
-        
+
         logger.info(f"📊 {len(events)} événements à traiter")
-        
+
         # Sauvegarder les détections en base
         num_saved = 0
         num_updated = 0
         num_skipped = 0
-        
+
         with db_manager.get_session() as session:
             for event in events:
                 # Récupérer l'appliance_id (déjà présent en S2P)
-                appliance_id = event.get('appliance_id')
-                
+                appliance_id = event.get("appliance_id")
+
                 # Si pas d'appliance_id, chercher par nom (mode legacy)
                 if not appliance_id:
                     result = session.execute(
-                        text("SELECT id FROM nilm_appliances "
-                             "WHERE name = :name LIMIT 1"),
-                        {'name': event['appliance_name']}
+                        text(
+                            "SELECT id FROM nilm_appliances "
+                            "WHERE name = :name LIMIT 1"
+                        ),
+                        {"name": event["appliance_name"]},
                     )
                     row = result.first()
                     appliance_id = row.id if row else None
-                
+
                 if not appliance_id:
-                    logger.warning(
-                        f"Appareil inconnu: {event['appliance_name']}"
-                    )
+                    logger.warning(f"Appareil inconnu: {event['appliance_name']}")
                     num_skipped += 1
                     continue
-                
+
                 # Vérifier chevauchements pour cet appareil
-                check_overlap_query = text("""
+                check_overlap_query = text(
+                    """
                     SELECT id, confidence_score, start_time, end_time
                     FROM nilm_detections
                     WHERE appliance_id = :appliance_id
@@ -419,27 +419,29 @@ def detect_nilm_appliances(
                     )
                     ORDER BY confidence_score DESC
                     LIMIT 1
-                """)
-                
+                """
+                )
+
                 overlap_result = session.execute(
                     check_overlap_query,
                     {
-                        'appliance_id': appliance_id,
-                        'start_time': event['start_time'],
-                        'end_time': event['end_time']
-                    }
+                        "appliance_id": appliance_id,
+                        "start_time": event["start_time"],
+                        "end_time": event["end_time"],
+                    },
                 )
                 existing = overlap_result.first()
-                
+
                 if existing:
                     # Une détection superposée existe
                     existing_id = existing.id
                     existing_confidence = float(existing.confidence_score)
-                    new_confidence = float(event['confidence_score'])
-                    
+                    new_confidence = float(event["confidence_score"])
+
                     if new_confidence > existing_confidence:
                         # Mettre à jour la détection existante avec de meilleures données
-                        update_query = text("""
+                        update_query = text(
+                            """
                             UPDATE nilm_detections
                             SET start_time = :start_time,
                                 end_time = :end_time,
@@ -450,28 +452,28 @@ def detect_nilm_appliances(
                                 features = :features,
                                 created_at = NOW()
                             WHERE id = :detection_id
-                        """)
-                        
+                        """
+                        )
+
                         # Préparer features selon le mode
-                        features_data = event.get('features', {})
-                        if 'probabilities' in event:
-                            features_data['probabilities'] = event['probabilities']
-                        
+                        features_data = event.get("features", {})
+                        if "probabilities" in event:
+                            features_data["probabilities"] = event["probabilities"]
+
                         session.execute(
                             update_query,
                             {
-                                'detection_id': existing_id,
-                                'start_time': event['start_time'],
-                                'end_time': event['end_time'],
-                                'avg_power': event['avg_power'],
-                                'energy_consumed': event.get(
-                                    'energy_consumed',
-                                    event.get('energy_wh', 0)
+                                "detection_id": existing_id,
+                                "start_time": event["start_time"],
+                                "end_time": event["end_time"],
+                                "avg_power": event["avg_power"],
+                                "energy_consumed": event.get(
+                                    "energy_consumed", event.get("energy_wh", 0)
                                 ),
-                                'confidence_score': event['confidence_score'],
-                                'prediction_class': event.get('prediction_class'),
-                                'features': json.dumps(features_data)
-                            }
+                                "confidence_score": event["confidence_score"],
+                                "prediction_class": event.get("prediction_class"),
+                                "features": json.dumps(features_data),
+                            },
                         )
                         num_updated += 1
                         logger.info(
@@ -488,32 +490,34 @@ def detect_nilm_appliances(
                 else:
                     # Aucune détection superposée, insérer une nouvelle
                     # Préparer features
-                    features_data = event.get('features', {})
-                    if 'probabilities' in event:
-                        features_data['probabilities'] = event['probabilities']
-                    
-                    insert_query = text("""
+                    features_data = event.get("features", {})
+                    if "probabilities" in event:
+                        features_data["probabilities"] = event["probabilities"]
+
+                    insert_query = text(
+                        """
                         INSERT INTO nilm_detections
                         (appliance_id, start_time, end_time,
-                         confidence_score, prediction_class, 
+                         confidence_score, prediction_class,
                          features, created_at)
                         VALUES
                         (:appliance_id, :start_time, :end_time,
                          :confidence_score, :prediction_class,
                          :features, NOW())
                         RETURNING id
-                    """)
-                    
+                    """
+                    )
+
                     result = session.execute(
                         insert_query,
                         {
-                            'appliance_id': appliance_id,
-                            'start_time': event['start_time'],
-                            'end_time': event['end_time'],
-                            'confidence_score': event['confidence_score'],
-                            'prediction_class': event.get('prediction_class'),
-                            'features': json.dumps(features_data)
-                        }
+                            "appliance_id": appliance_id,
+                            "start_time": event["start_time"],
+                            "end_time": event["end_time"],
+                            "confidence_score": event["confidence_score"],
+                            "prediction_class": event.get("prediction_class"),
+                            "features": json.dumps(features_data),
+                        },
                     )
                     detection_id = result.scalar()
                     num_saved += 1
@@ -522,86 +526,87 @@ def detect_nilm_appliances(
                         f"- {event.get('duration_seconds', 0)}s "
                         f"- {event['avg_power']:.1f}W"
                     )
-                    
+
                     # Publish detection to Redis for WebSocket streaming
                     if redis_client:
                         try:
-                            message = json.dumps({
-                                "event": "new_detection",
-                                "data": {
-                                    "id": detection_id,
-                                    "appliance_id": appliance_id,
-                                    "name": event['appliance_name'],
-                                    "start_time": event['start_time'].isoformat(),
-                                    "end_time": event['end_time'].isoformat(),
-                                    "avg_power": event['avg_power'],
-                                    "energy_consumed": event.get(
-                                        'energy_consumed',
-                                        event.get('energy_wh', 0)
-                                    ),
-                                    "confidence_score": event['confidence_score'],
-                                    "prediction_class": event.get('prediction_class')
-                                },
-                                "timestamp": datetime.utcnow().isoformat()
-                            })
+                            message = json.dumps(
+                                {
+                                    "event": "new_detection",
+                                    "data": {
+                                        "id": detection_id,
+                                        "appliance_id": appliance_id,
+                                        "name": event["appliance_name"],
+                                        "start_time": event["start_time"].isoformat(),
+                                        "end_time": event["end_time"].isoformat(),
+                                        "avg_power": event["avg_power"],
+                                        "energy_consumed": event.get(
+                                            "energy_consumed", event.get("energy_wh", 0)
+                                        ),
+                                        "confidence_score": event["confidence_score"],
+                                        "prediction_class": event.get(
+                                            "prediction_class"
+                                        ),
+                                    },
+                                    "timestamp": datetime.utcnow().isoformat(),
+                                }
+                            )
                             redis_client.publish("detections:updates", message)
                             logger.debug(
                                 f"Published detection #{detection_id} to Redis"
                             )
                         except Exception as e:
-                            logger.error(
-                                f"Failed to publish detection to Redis: {e}"
-                            )
-        
+                            logger.error(f"Failed to publish detection to Redis: {e}")
+
         total_processed = num_saved + num_updated + num_skipped
         logger.info(
             f"Détections traitées: {total_processed} "
             f"(nouvelles: {num_saved}, mises à jour: {num_updated}, "
             f"ignorées: {num_skipped})"
         )
-        
+
         result = {
-            'status': 'success',
-            'num_detections': num_saved,
-            'num_updated': num_updated,
-            'num_skipped': num_skipped,
-            'total_processed': total_processed,
-            'model_name': active_model,
-            'period': {'start': start_time.isoformat(), 'end': end_time.isoformat()},
-            'timestamp': datetime.utcnow().isoformat()
+            "status": "success",
+            "num_detections": num_saved,
+            "num_updated": num_updated,
+            "num_skipped": num_skipped,
+            "total_processed": total_processed,
+            "model_name": active_model,
+            "period": {"start": start_time.isoformat(), "end": end_time.isoformat()},
+            "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
         # Publish detection_complete event to Redis
         if redis_client:
             try:
-                message = json.dumps({
-                    "event": "detection_complete",
-                    "data": result,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                message = json.dumps(
+                    {
+                        "event": "detection_complete",
+                        "data": result,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("detections:updates", message)
                 logger.info(
                     f"📢 Published detection_complete to Redis "
                     f"({num_saved} nouvelles, {num_updated} mises à jour)"
                 )
             except Exception as e:
-                logger.error(
-                    f"Failed to publish detection_complete: {e}"
-                )
-        
+                logger.error(f"Failed to publish detection_complete: {e}")
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Erreur lors de la détection: {e}", exc_info=True)
-        return {'status': 'error', 'message': str(e)}
+        return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(name='add_nilm_signature')
+@celery_app.task(name="add_nilm_signature")
 def add_nilm_signature(
     appliance_name: str,
     start_time_str: str,
     end_time_str: str,
-    is_negative: bool = False
+    is_negative: bool = False,
 ) -> Dict[str, Any]:
     """
     Ajoute une signature manuelle soumise par l'utilisateur
@@ -617,103 +622,98 @@ def add_nilm_signature(
     """
     try:
         logger.info(f"Ajout de signature pour {appliance_name}...")
-        
+
         # Parser les dates
-        start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-        end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
-        
+        start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+
         # Vérifier la durée
         duration = (end_time - start_time).total_seconds()
         if duration < settings.nilm_min_duration_seconds:
             return {
-                'status': 'error',
-                'message': f'Durée trop courte (minimum {settings.nilm_min_duration_seconds}s)'
+                "status": "error",
+                "message": f"Durée trop courte (minimum {settings.nilm_min_duration_seconds}s)",
             }
-        
+
         from sqlalchemy import text
-        
+
         # Trouver ou créer l'appareil
         with db_manager.get_session() as session:
             result = session.execute(
                 text("SELECT id FROM nilm_appliances WHERE name = :name LIMIT 1"),
-                {'name': appliance_name}
+                {"name": appliance_name},
             )
             row = result.first()
-            
+
             if row:
                 appliance_id = row.id
             else:
                 # Créer un nouvel appareil
                 result = session.execute(
-                    text("""
+                    text(
+                        """
                         INSERT INTO nilm_appliances
                         (name, created_at, updated_at)
                         VALUES (:name, NOW(), NOW())
                         RETURNING id
-                    """),
-                    {'name': appliance_name}
+                    """
+                    ),
+                    {"name": appliance_name},
                 )
                 appliance_id = result.scalar()
-                logger.info(
-                    f"Appareil créé: {appliance_name} (ID: {appliance_id})"
-                )
-        
+                logger.info(f"Appareil créé: {appliance_name} (ID: {appliance_id})")
+
         # Ajouter la signature
         try:
             signature_id = db_manager.add_signature(
                 appliance_id=appliance_id,
                 start_time=start_time,
                 end_time=end_time,
-                is_negative=is_negative
+                is_negative=is_negative,
             )
         except ValueError as ve:
             # Erreur de validation (chevauchement, etc.)
             logger.warning(f"Validation échouée: {ve}")
-            return {
-                'status': 'error',
-                'error_type': 'validation',
-                'message': str(ve)
-            }
-        
+            return {"status": "error", "error_type": "validation", "message": str(ve)}
+
         if not signature_id:
-            return {
-                'status': 'error',
-                'message': 'Échec de l\'ajout de la signature'
-            }
-        
+            return {"status": "error", "message": "Échec de l'ajout de la signature"}
+
         logger.info(f"Signature {signature_id} ajoutée avec succès")
-        
+
         # Déclencher un réentraînement si assez de signatures
         signatures = db_manager.get_all_signatures()
         if len(signatures) >= 10 and len(signatures) % 5 == 0:
             train_nilm_model.delay()
             logger.info("Réentraînement du modèle déclenché")
-        
+
         return {
-            'status': 'success',
-            'signature_id': signature_id,
-            'appliance_id': appliance_id,
-            'appliance_name': appliance_name,
-            'timestamp': datetime.utcnow().isoformat()
+            "status": "success",
+            "signature_id": signature_id,
+            "appliance_id": appliance_id,
+            "appliance_name": appliance_name,
+            "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
     except Exception as e:
-        logger.error(
-            f"Erreur lors de l'ajout de signature: {e}",
-            exc_info=True
-        )
-        return {'status': 'error', 'message': str(e)}
+        logger.error(f"Erreur lors de l'ajout de signature: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 
 # Configuration des tâches périodiques
 celery_app.conf.beat_schedule = {
-    'train-nilm-model': {
-        'task': 'train_nilm_model',
-        'schedule': crontab(hour=f'*/{settings.nilm_training_interval_hours}', minute=0),
+    "train-nilm-model": {
+        "task": "train_nilm_model",
+        "schedule": crontab(
+            hour=f"*/{settings.nilm_training_interval_hours}", minute=0
+        ),
     },
-    'detect-nilm-appliances': {
-        'task': 'detect_nilm_appliances',
-        'schedule': settings.nilm_detection_interval_minutes * 60.0,
-        'kwargs': {'hours': 2, 'min_confidence': 0.6}  # Analyse 2h pour couvrir les cycles HC/HP
+    "detect-nilm-appliances": {
+        "task": "detect_nilm_appliances",
+        "schedule": settings.nilm_detection_interval_minutes * 60.0,
+        "kwargs": {
+            "hours": 2,
+            "min_confidence": 0.6,
+        },  # Analyse 2h pour couvrir les cycles HC/HP
     },
 }

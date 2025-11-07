@@ -1,8 +1,8 @@
 """Detections repository."""
 
-from datetime import datetime
 import json
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -28,7 +28,8 @@ class DetectionRepository(DatabaseBase):
         Returns:
             List of detections with appliance information
         """
-        query = text("""
+        query = text(
+            """
             SELECT
                 cd.id AS detection_id,
                 cd.appliance_id,
@@ -56,11 +57,12 @@ class DetectionRepository(DatabaseBase):
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
               AND (:end_time IS NULL OR cd.end_time <= :end_time)
-              AND (cd.user_validated IS NULL 
-                   OR cd.user_validated = FALSE 
+              AND (cd.user_validated IS NULL
+                   OR cd.user_validated = FALSE
                    OR cd.is_correct = TRUE)
             ORDER BY cd.start_time DESC
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(
@@ -123,7 +125,8 @@ class DetectionRepository(DatabaseBase):
             or None if the detection doesn't exist
         """
         # Check that the detection exists and retrieve its information
-        check_query = text("""
+        check_query = text(
+            """
             SELECT
                 cd.id,
                 cd.appliance_id,
@@ -133,12 +136,12 @@ class DetectionRepository(DatabaseBase):
             FROM nilm_detections cd
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(
-                check_query,
-                {"detection_id": detection_id}
+                check_query, {"detection_id": detection_id}
             ).fetchone()
 
             if not result:
@@ -153,10 +156,12 @@ class DetectionRepository(DatabaseBase):
             }
 
             # Supprimer la détection
-            delete_query = text("""
+            delete_query = text(
+                """
                 DELETE FROM nilm_detections
                 WHERE id = :detection_id
-            """)
+            """
+            )
 
             conn.execute(delete_query, {"detection_id": detection_id})
             conn.commit()
@@ -172,15 +177,19 @@ class DetectionRepository(DatabaseBase):
         """
         with self.engine.connect() as conn:
             # Compter d'abord le nombre de détections
-            count_query = text("""
+            count_query = text(
+                """
                 SELECT COUNT(*) FROM nilm_detections
-            """)
+            """
+            )
             count = conn.execute(count_query).scalar() or 0
 
             # Supprimer toutes les détections
-            delete_query = text("""
+            delete_query = text(
+                """
                 DELETE FROM nilm_detections
-            """)
+            """
+            )
             conn.execute(delete_query)
             conn.commit()
 
@@ -206,7 +215,8 @@ class DetectionRepository(DatabaseBase):
             or None if the detection doesn't exist
         """
         # Check that the detection exists and retrieve its information
-        check_query = text("""
+        check_query = text(
+            """
             SELECT
                 cd.id,
                 cd.appliance_id,
@@ -217,12 +227,12 @@ class DetectionRepository(DatabaseBase):
             FROM nilm_detections cd
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(
-                check_query,
-                {"detection_id": detection_id}
+                check_query, {"detection_id": detection_id}
             ).fetchone()
 
             if not result:
@@ -244,40 +254,44 @@ class DetectionRepository(DatabaseBase):
             # Si la détection est correcte, la marquer comme validée
             if is_correct:
                 # Créer une signature positive
-                check_signature_query = text("""
+                check_signature_query = text(
+                    """
                     SELECT COUNT(*) FROM nilm_signatures
                     WHERE appliance_id = :appliance_id
                       AND start_time = :start_time
                       AND end_time = :end_time
                       AND is_negative = FALSE
-                """)
+                """
+                )
 
                 existing = conn.execute(
                     check_signature_query,
                     {
                         "appliance_id": result[1],
                         "start_time": result[3],
-                        "end_time": result[4]
-                    }
+                        "end_time": result[4],
+                    },
                 ).scalar()
 
                 if existing == 0:
                     # Create positive signature from validated detection
-                    create_signature_query = text("""
+                    create_signature_query = text(
+                        """
                         INSERT INTO nilm_signatures
                         (appliance_id, start_time, end_time, is_negative,
                          created_at)
                         VALUES
                         (:appliance_id, :start_time, :end_time, FALSE, NOW())
-                    """)
+                    """
+                    )
 
                     conn.execute(
                         create_signature_query,
                         {
                             "appliance_id": result[1],
                             "start_time": result[3],
-                            "end_time": result[4]
-                        }
+                            "end_time": result[4],
+                        },
                     )
                     logger.info(
                         f"Positive signature created for {result[2]} "
@@ -285,13 +299,15 @@ class DetectionRepository(DatabaseBase):
                     )
 
                 # Mettre à jour la détection
-                update_query = text("""
+                update_query = text(
+                    """
                     UPDATE nilm_detections
                     SET user_validated = :user_validated,
                         is_correct = :is_correct,
                         validated_at = NOW()
                     WHERE id = :detection_id
-                """)
+                """
+                )
 
                 conn.execute(
                     update_query,
@@ -299,45 +315,49 @@ class DetectionRepository(DatabaseBase):
                         "detection_id": detection_id,
                         "user_validated": True,
                         "is_correct": True,
-                    }
+                    },
                 )
             else:
                 # Create negative signature if detection is incorrect
                 if result[5] is not None and result[5] >= 0.6:
-                    check_negative_query = text("""
+                    check_negative_query = text(
+                        """
                         SELECT COUNT(*) FROM nilm_signatures
                         WHERE appliance_id = :appliance_id
                           AND is_negative = TRUE
                           AND start_time = :start_time
                           AND end_time = :end_time
-                    """)
+                    """
+                    )
 
                     existing = conn.execute(
                         check_negative_query,
                         {
                             "appliance_id": result[1],
                             "start_time": result[3],
-                            "end_time": result[4]
-                        }
+                            "end_time": result[4],
+                        },
                     ).scalar()
 
                     if existing == 0:
-                        create_negative_query = text("""
+                        create_negative_query = text(
+                            """
                             INSERT INTO nilm_signatures
                             (appliance_id, start_time, end_time,
                              is_negative, created_at)
                             VALUES
                             (:appliance_id, :start_time, :end_time,
                              TRUE, NOW())
-                        """)
+                        """
+                        )
 
                         conn.execute(
                             create_negative_query,
                             {
                                 "appliance_id": result[1],
                                 "start_time": result[3],
-                                "end_time": result[4]
-                            }
+                                "end_time": result[4],
+                            },
                         )
                         logger.info(
                             f"Negative signature created for {result[2]} "
@@ -345,13 +365,15 @@ class DetectionRepository(DatabaseBase):
                         )
 
                 # Mark detection as incorrect
-                update_query = text("""
+                update_query = text(
+                    """
                     UPDATE nilm_detections
                     SET user_validated = :user_validated,
                         is_correct = :is_correct,
                         validated_at = NOW()
                     WHERE id = :detection_id
-                """)
+                """
+                )
 
                 conn.execute(
                     update_query,
@@ -359,11 +381,9 @@ class DetectionRepository(DatabaseBase):
                         "detection_id": detection_id,
                         "user_validated": True,
                         "is_correct": False,
-                    }
+                    },
                 )
-                logger.info(
-                    f"Detection marked as incorrect: {detection_id}"
-                )
+                logger.info(f"Detection marked as incorrect: {detection_id}")
 
             conn.commit()
 
@@ -386,9 +406,10 @@ class DetectionRepository(DatabaseBase):
             or None if the detection doesn't exist
         """
         from .appliances import ApplianceRepository
-        
+
         # Check that the detection exists and retrieve its information
-        check_query = text("""
+        check_query = text(
+            """
             SELECT
                 cd.id,
                 cd.appliance_id,
@@ -398,12 +419,12 @@ class DetectionRepository(DatabaseBase):
             FROM nilm_detections cd
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(
-                check_query,
-                {"detection_id": detection_id}
+                check_query, {"detection_id": detection_id}
             ).fetchone()
 
             if not result:
@@ -420,39 +441,43 @@ class DetectionRepository(DatabaseBase):
             )
 
             # Create positive signature for the correct appliance
-            check_positive_query = text("""
+            check_positive_query = text(
+                """
                 SELECT COUNT(*) FROM nilm_signatures
                 WHERE appliance_id = :appliance_id
                   AND start_time = :start_time
                   AND end_time = :end_time
                   AND is_negative = FALSE
-            """)
+            """
+            )
 
             existing_positive = conn.execute(
                 check_positive_query,
                 {
                     "appliance_id": correct_appliance_id,
                     "start_time": start_time,
-                    "end_time": end_time
-                }
+                    "end_time": end_time,
+                },
             ).scalar()
 
             if existing_positive == 0:
-                create_positive_query = text("""
+                create_positive_query = text(
+                    """
                     INSERT INTO nilm_signatures
                     (appliance_id, start_time, end_time, is_negative,
                      created_at)
                     VALUES
                     (:appliance_id, :start_time, :end_time, FALSE, NOW())
-                """)
+                """
+                )
 
                 conn.execute(
                     create_positive_query,
                     {
                         "appliance_id": correct_appliance_id,
                         "start_time": start_time,
-                        "end_time": end_time
-                    }
+                        "end_time": end_time,
+                    },
                 )
                 logger.info(
                     f"Positive signature created for "
@@ -460,13 +485,15 @@ class DetectionRepository(DatabaseBase):
                 )
 
             # Mark detection as incorrect to hide it from the list
-            update_query = text("""
+            update_query = text(
+                """
                 UPDATE nilm_detections
                 SET user_validated = :user_validated,
                     is_correct = :is_correct,
                     validated_at = NOW()
                 WHERE id = :detection_id
-            """)
+            """
+            )
 
             conn.execute(
                 update_query,
@@ -474,7 +501,7 @@ class DetectionRepository(DatabaseBase):
                     "detection_id": detection_id,
                     "user_validated": True,
                     "is_correct": False,
-                }
+                },
             )
             logger.info(
                 f"Detection {detection_id} reassigned from "

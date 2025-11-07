@@ -1,12 +1,12 @@
 """Database management modules."""
 
+from .appliances import ApplianceRepository
 from .base import DatabaseBase, format_datetime
 from .consumption import ConsumptionRepository
-from .appliances import ApplianceRepository
-from .signatures import SignatureRepository
 from .detections import DetectionRepository
-from .models import ModelRepository
 from .manager import DatabaseManager, db_manager
+from .models import ModelRepository
+from .signatures import SignatureRepository
 
 __all__ = [
     "DatabaseBase",

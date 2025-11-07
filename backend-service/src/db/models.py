@@ -20,7 +20,8 @@ class ModelRepository(DatabaseBase):
         Returns:
             Dictionary with model information or None if no model exists
         """
-        query = text("""
+        query = text(
+            """
             SELECT
                 id,
                 model_name,
@@ -35,14 +36,15 @@ class ModelRepository(DatabaseBase):
             FROM nilm_models
             ORDER BY training_date DESC
             LIMIT 1
-        """)
+        """
+        )
 
         with self.engine.connect() as conn:
             result = conn.execute(query).fetchone()
-            
+
             if not result:
                 return None
-            
+
             return {
                 "id": result[0],
                 "model_name": result[1],
@@ -64,11 +66,11 @@ class ModelRepository(DatabaseBase):
             Number of deleted models
         """
         delete_query = text("DELETE FROM nilm_models")
-        
+
         with self.engine.connect() as conn:
             result = conn.execute(delete_query)
             count = result.rowcount
             conn.commit()
-            
+
             logger.info(f"Deleted {count} NILM model(s) from database")
             return count
