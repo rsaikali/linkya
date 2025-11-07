@@ -1,21 +1,10 @@
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 import redis
-from sqlalchemy import (
-    Column,
-    DateTime,
-    Float,
-    Integer,
-    MetaData,
-    String,
-    Table,
-    create_engine,
-    text,
-)
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 from .config import settings
 
@@ -197,7 +186,7 @@ class DatabaseManager:
                         }
                     )
                     self.redis_client.publish("consumption:updates", message)
-                    logger.debug(f"📢 Published consumption update to Redis")
+                    logger.debug("Published consumption update to Redis")
                 except Exception as e:
                     logger.error(f"Failed to publish to Redis: {e}")
 

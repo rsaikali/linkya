@@ -15,7 +15,6 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import redis
@@ -354,11 +353,7 @@ class Seq2PointMultiOutputModel:
     """
 
     def __init__(
-        self,
-        appliance_ids,
-        appliance_names,
-        sequence_length=599,
-        model_type="gru",
+        self, appliance_ids, appliance_names, sequence_length=599, model_type="gru"
     ):
         self.appliance_ids = appliance_ids
         self.appliance_names = appliance_names
@@ -805,9 +800,7 @@ class Seq2PointMultiOutputModel:
         return result
 
     @staticmethod
-    def _load_signature_data_static(
-        signature,
-    ):
+    def _load_signature_data_static(signature):
         """Charge les données d'une signature (méthode statique)."""
         try:
             with db_manager.engine.connect() as conn:
@@ -846,11 +839,7 @@ class Seq2PointMultiOutputModel:
             return None, None
 
     def _add_negative_examples_multioutput(
-        self,
-        X_aggregate,
-        y_outputs,
-        timestamps,
-        class_counts,
+        self, X_aggregate, y_outputs, timestamps, class_counts
     ):
         """Ajoute exemples négatifs pour Multi-Output."""
         negative_count = 0
@@ -1141,11 +1130,11 @@ class ChangePointPatternDetector:
                     # Change point détecté
                     change_points.append(
                         {
-                            "index": i + window_size // 2,  # Ajuster pour le lissage
+                            "index": i + window_size // 2,
                             "amplitude": float(cumsum),
                             "direction": "up" if cumsum > 0 else "down",
                         }
-                    )
+                    )  # Ajuster pour le lissage
                     # Sauter la fenêtre pour éviter les doublons
                     i = window_end
                     continue
@@ -1235,11 +1224,7 @@ class ChangePointPatternDetector:
         logger.info(f"Patterns extraits: {len(patterns)}")
         return patterns
 
-    def match_pattern(
-        self,
-        pattern_data,
-        pattern_morphology=None,
-    ):
+    def match_pattern(self, pattern_data, pattern_morphology=None):
         """
         Compare un pattern avec les profils de signatures connus.
         Utilise features morphologiques si disponibles pour meilleur matching.
@@ -2409,13 +2394,7 @@ class Seq2PointNILMManager:
 
         return merged
 
-    def _find_active_segments(
-        self,
-        active_mask,
-        timestamps,
-        predictions,
-        min_duration,
-    ):
+    def _find_active_segments(self, active_mask, timestamps, predictions, min_duration):
         """
         Trouve les segments actifs dans les prédictions, en détectant les gaps
         pour fragmenter les longues périodes en cycles individuels.
