@@ -615,30 +615,26 @@ async def trigger_nilm_detection():
 
 
 @app.get("/api/nilm/models", tags=["NILM"])
-async def get_nilm_models(
-    page: int = Query(default=1, ge=1, description="Numéro de page"),
-    per_page: int = Query(default=10, ge=1, le=100, description="Nombre d'éléments par page"),
-):
+async def get_nilm_models():
     """
-    Récupère l'historique des modèles NILM entraînés avec pagination.
-    
-    Args:
-        page: Numéro de page (commence à 1)
-        per_page: Nombre de modèles par page (1-100)
+    Récupère le dernier modèle NILM entraîné.
     
     Returns:
-        Liste paginée des modèles avec leurs métriques
+        Le dernier modèle avec ses métriques, ou None si aucun modèle
     """
     try:
-        models = db_manager.get_nilm_models_paginated(page=page, per_page=per_page)
+        model = db_manager.get_latest_nilm_model()
         
-        return {
-            "page": page,
-            "per_page": per_page,
-            "total": models["total"],
-            "total_pages": models["total_pages"],
-            "models": models["models"],
-        }
+        if model:
+            return {
+                "models": [model],
+                "total": 1,
+            }
+        else:
+            return {
+                "models": [],
+                "total": 0,
+            }
         
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True)
@@ -651,8 +647,7 @@ async def get_nilm_models(
 @app.delete("/api/nilm/models", tags=["NILM"])
 async def delete_all_nilm_models():
     """
-    Supprime TOUS les modèles NILM de la base de données et
-    du filesystem.
+    Supprime tous les modèles NILM de la base de données et du filesystem.
 
     Returns:
         Confirmation de suppression avec statistiques
@@ -664,70 +659,28 @@ async def delete_all_nilm_models():
     import glob
 
     try:
-        # Récupérer tous les modèles avant de les supprimer
-        models_data = db_manager.get_nilm_models_paginated(
-            page=1, per_page=1000
-        )
-        all_models = models_data.get("models", [])
+        # Supprimer tous les modèles de la base de données
+        deleted_count = db_manager.delete_all_models()
         
-        deleted_count = 0
         deleted_files = []
         errors = []
         
-        # Supprimer chaque modèle de la base de données
-        for model in all_models:
-            try:
-                model_id = model.get("id")
-                model_path = model.get("model_path")
-                
-                # Supprimer de la base de données
-                db_manager.delete_nilm_model(model_id)
-                deleted_count += 1
-                
-                # Supprimer les fichiers du filesystem
-                if model_path and os.path.exists(model_path):
-                    try:
-                        # Supprimer le fichier .keras
-                        os.remove(model_path)
-                        deleted_files.append(model_path)
-                        
-                        # Supprimer le fichier metadata JSON
-                        metadata_path = model_path.replace(
-                            ".keras", ".metadata.json"
-                        )
-                        if os.path.exists(metadata_path):
-                            os.remove(metadata_path)
-                            deleted_files.append(metadata_path)
-                    except OSError as e:
-                        errors.append(
-                            f"Fichier {model_path}: {str(e)}"
-                        )
-            except Exception as e:
-                errors.append(f"Modèle {model_id}: {str(e)}")
-        
-        # Nettoyer les fichiers orphelins dans /models
-        try:
-            models_dir = "/models"
-            if os.path.exists(models_dir):
-                orphan_files = glob.glob(
-                    os.path.join(models_dir, "*.keras")
-                )
-                orphan_files += glob.glob(
-                    os.path.join(models_dir, "*.metadata.json")
-                )
-                
-                for file_path in orphan_files:
-                    try:
-                        os.remove(file_path)
-                        deleted_files.append(file_path)
-                        logger.info(f"Fichier orphelin supprimé: {file_path}")
-                    except OSError as e:
-                        errors.append(f"Fichier orphelin {file_path}: {str(e)}")
-        except Exception as e:
-            logger.warning(f"Erreur lors du nettoyage des fichiers orphelins: {e}")
+        # Nettoyer tous les fichiers dans /models
+        models_dir = "/models"
+        if os.path.exists(models_dir):
+            all_files = glob.glob(os.path.join(models_dir, "*.keras"))
+            all_files += glob.glob(os.path.join(models_dir, "*.metadata.json"))
+            
+            for file_path in all_files:
+                try:
+                    os.remove(file_path)
+                    deleted_files.append(file_path)
+                    logger.info(f"Fichier supprimé: {file_path}")
+                except OSError as e:
+                    errors.append(f"Fichier {file_path}: {str(e)}")
         
         logger.info(
-            f"Suppression de tous les modèles terminée: "
+            f"Suppression terminée: "
             f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)"
         )
         

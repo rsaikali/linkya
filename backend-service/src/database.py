@@ -519,28 +519,13 @@ class DatabaseManager:
                 "detections_deleted": detections_count or 0,
             }
 
-    def get_nilm_models_paginated(
-        self, page: int = 1, per_page: int = 10
-    ) -> dict[str, Any]:
+    def get_latest_nilm_model(self) -> dict[str, Any] | None:
         """
-        Retrieves NILM models with pagination.
-
-        Args:
-            page: Page number (starts at 1)
-            per_page: Number of models per page
+        Retrieves the latest trained NILM model.
 
         Returns:
-            Dictionary with total, total_pages and list of models
+            Dictionary with model information or None if no model exists
         """
-        # Calculate the offset
-        offset = (page - 1) * per_page
-
-        # Requête pour le total
-        count_query = text("""
-            SELECT COUNT(*) FROM nilm_models
-        """)
-
-        # Requête pour les modèles paginés
         query = text("""
             SELECT
                 id,
@@ -555,43 +540,26 @@ class DatabaseManager:
                 training_duration_seconds
             FROM nilm_models
             ORDER BY training_date DESC
-            LIMIT :limit OFFSET :offset
+            LIMIT 1
         """)
 
         with self.engine.connect() as conn:
-            # Récupérer le total
-            total = conn.execute(count_query).scalar() or 0
+            result = conn.execute(query).fetchone()
             
-            # Calculer le nombre total de pages
-            total_pages = (
-                (total + per_page - 1) // per_page if total > 0 else 0
-            )
-
-            # Récupérer les modèles
-            result = conn.execute(
-                query,
-                {"limit": per_page, "offset": offset}
-            ).fetchall()
-
-            models = []
-            for row in result:
-                models.append({
-                    "id": row[0],
-                    "model_name": row[1],
-                    "model_type": row[2],
-                    "architecture": row[3],
-                    "training_date": format_datetime(row[4]),
-                    "num_signatures": row[5],
-                    "num_classes": row[6],
-                    "metrics": row[7],
-                    "model_path": row[8],
-                    "training_duration_seconds": row[9],
-                })
-
+            if not result:
+                return None
+            
             return {
-                "total": total,
-                "total_pages": total_pages,
-                "models": models,
+                "id": result[0],
+                "model_name": result[1],
+                "model_type": result[2],
+                "architecture": result[3],
+                "training_date": format_datetime(result[4]),
+                "num_signatures": result[5],
+                "num_classes": result[6],
+                "metrics": result[7],
+                "model_path": result[8],
+                "training_duration_seconds": result[9],
             }
 
     def delete_detection(self, detection_id: int) -> dict[str, Any] | None:
@@ -1105,6 +1073,23 @@ class DatabaseManager:
             conn.commit()
 
             return signature_info
+
+    def delete_all_models(self) -> int:
+        """
+        Deletes all NILM models from the database.
+
+        Returns:
+            Number of deleted models
+        """
+        delete_query = text("DELETE FROM nilm_models")
+        
+        with self.engine.connect() as conn:
+            result = conn.execute(delete_query)
+            count = result.rowcount
+            conn.commit()
+            
+            logger.info(f"Deleted {count} NILM model(s) from database")
+            return count
 
     def get_all_signatures_with_appliance(self) -> list[dict[str, Any]]:
         """
