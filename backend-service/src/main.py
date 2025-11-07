@@ -5,8 +5,8 @@ import json
 import logging
 import redis
 import redis.asyncio as aioredis
-from datetime import datetime, timedelta
-from typing import Optional, Set
+from datetime import datetime
+from typing import Set
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
