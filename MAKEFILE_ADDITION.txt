@@ -1,0 +1,26 @@
+# Instructions pour ajouter au Makefile
+
+Ajoutez cette section à la fin du Makefile existant :
+
+```makefile
+##@ VS Code Development
+
+.PHONY: vscode-setup
+vscode-setup: ## Configure VS Code Python environments for local development
+	@echo "Setting up VS Code Python environments..."
+	@./setup-vscode-env.sh
+
+.PHONY: vscode-clean
+vscode-clean: ## Remove all Python virtual environments
+	@echo "Cleaning VS Code Python environments..."
+	@rm -rf backend-service/.venv
+	@rm -rf sync-service/.venv
+	@rm -rf nilm-service/.venv
+	@echo "✓ Virtual environments removed"
+
+.PHONY: vscode-reinstall
+vscode-reinstall: vscode-clean vscode-setup ## Clean and reinstall VS Code environments
+	@echo "✓ VS Code environments reinstalled"
+```
+
+Ensuite, dans la section `help`, les nouvelles commandes apparaîtront automatiquement.
