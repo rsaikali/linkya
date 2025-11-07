@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import db_manager
+from .db import db_manager
 
 # Logging configuration
 logging.basicConfig(
