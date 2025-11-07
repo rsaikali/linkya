@@ -1,13 +1,21 @@
-# Stage 1: React dev server
+# Stage 1: React dev server with optimizations
 FROM node:20-alpine as react-dev
 
+# Set working directory
 WORKDIR /app
 
+# Copy package files for better cache usage
 COPY package*.json ./
-RUN npm install
 
+# Install dependencies and clean npm cache
+RUN npm install \
+    && npm cache clean --force
+
+# Copy application files
 COPY . .
 
+# Expose port
 EXPOSE 3000
 
+# Start development server
 CMD ["npm", "start"]
