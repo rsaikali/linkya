@@ -125,7 +125,7 @@ const Header = () => {
                 sx={{
                   bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: "white",
-                  fontWeight: "bold",
+                  fontWeight: "normal",
                   fontSize: "1rem",
                   fontFamily: '"Space Mono", monospace',
                   "& .MuiChip-icon": { color: "white" },
@@ -142,7 +142,7 @@ const Header = () => {
                 sx={{
                   bgcolor: (theme) => theme.palette.overlay.white[15],
                   color: "white",
-                  fontWeight: "bold",
+                  fontWeight: "normal",
                   fontSize: "1rem",
                   fontFamily: '"Space Mono", monospace',
                   "& .MuiChip-icon": { color: "white" },
@@ -160,7 +160,7 @@ const Header = () => {
                   sx={{
                     bgcolor: (theme) => theme.palette.overlay.white[15],
                     color: "white",
-                    fontWeight: "bold",
+                    fontWeight: "normal",
                     fontSize: "1rem",
                     fontFamily: '"Space Mono", monospace',
                     "& .MuiChip-icon": { color: "white" },
