@@ -72,7 +72,7 @@ const QualityIcon = ({ confidence }) => {
 function DetectionsList() {
   const { visibleDetections, loading, errors, refreshDetections } = useData();
   const { ensureApplianceColors } = useApplianceColors();
-  const showNotification = useNotification();
+  const { showNotification } = useNotification();
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
@@ -384,7 +384,7 @@ function DetectionsList() {
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
-  const showNotification = useNotification();
+  const { showNotification } = useNotification();
   const [anchorEl, setAnchorEl] = useState(null);
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [applianceName, setApplianceName] = useState('');
