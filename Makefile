@@ -3,6 +3,9 @@
 help: ## Affiche l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
+###############################################
+## Docker Compose Management
+###############################################
 build: ## Construit les images Docker
 	@DOCKER_BUILDKIT=1 docker-compose build
 
@@ -24,6 +27,9 @@ restart: ## Redémarre tous les services
 clean: ## Supprime tous les containers et volumes
 	docker-compose down -v
 
+###############################################
+## NILM Service Management via API
+###############################################
 train: ## Lance l'entraînement NILM via l'API (utilise automatiquement les feedbacks utilisateur)
 	@echo "Lancement de l'entraînement via l'API (avec apprentissage par feedback)..."
 	@curl -X POST http://localhost:8000/api/nilm/train | python3 -m json.tool
@@ -32,7 +38,9 @@ detect: ## Lance la détection NILM via l'API
 	@echo "Lancement de la détection via l'API..."
 	@curl -X POST http://localhost:8000/api/nilm/detect | python3 -m json.tool
 
+###############################################
 ## VSCode Python Environment Management
+###############################################
 vscode-setup: ## Configure VS Code Python environments for local development
 	@echo "Setting up VS Code Python environments..."
 	@./.dev/setup-vscode-env.sh
@@ -47,60 +55,34 @@ vscode-clean: ## Remove all Python virtual environments
 vscode-reinstall: vscode-clean vscode-setup ## Clean and reinstall VS Code environments
 	@echo "✓ VS Code environments reinstalled"
 
+###############################################
 ## Code Quality
+###############################################
 code-quality-check: ## Check Python code quality (Flake8 + isort)
-	@echo "Checking Python code quality..."
-	@echo ""
 	@echo "Checking with Flake8..."
 	@backend-service/.venv/bin/flake8 backend-service/src/ || true
 	@sync-service/.venv/bin/flake8 sync-service/src/ || true
 	@nilm-service/.venv/bin/flake8 nilm-service/src/ || true
-	@echo ""
+	@echo "--------------------------------"
 	@echo "Checking import order with isort..."
 	@backend-service/.venv/bin/isort --check-only --diff backend-service/src/ || true
 	@sync-service/.venv/bin/isort --check-only --diff sync-service/src/ || true
 	@nilm-service/.venv/bin/isort --check-only --diff nilm-service/src/ || true
-	@echo ""
+	@echo "--------------------------------"
 	@echo "✓ Code quality check completed!"
 
 code-quality-fix: ## Fix Python code quality issues (Black + isort + trailing whitespace)
-	@echo "🔧 Fixing Python code quality issues..."
-	@echo ""
-	@echo "📝 Sorting imports with isort..."
+	@echo "Sorting imports with isort..."
 	@backend-service/.venv/bin/isort backend-service/src/
 	@sync-service/.venv/bin/isort sync-service/src/
 	@nilm-service/.venv/bin/isort nilm-service/src/
-	@echo ""
-	@echo "📝 Formatting code with Black..."
+	@echo "--------------------------------"
+	@echo "Formatting code with Black..."
 	@backend-service/.venv/bin/black backend-service/src/
 	@sync-service/.venv/bin/black sync-service/src/
 	@nilm-service/.venv/bin/black nilm-service/src/
-	@echo ""
-	@echo "🧹 Removing trailing whitespace..."
+	@echo "--------------------------------"
+	@echo "Removing trailing whitespace..."
 	@find backend-service/src sync-service/src nilm-service/src -name "*.py" -type f -exec sed -i 's/[[:space:]]*$$//' {} +
-	@echo ""
-	@echo "✅ Code quality fixes applied!"
-	@echo ""
-	@echo "💡 Run 'make code-quality-check' to verify"
-	@echo "⚠️  Some issues require manual fixes (unused imports, unused variables)"
-
-code-quality-manual: ## Show issues that require manual intervention
-	@echo "⚠️  Issues requiring manual fixes:"
-	@echo ""
-	@echo "🔍 Unused imports (F401):"
-	@backend-service/.venv/bin/flake8 backend-service/src/ 2>/dev/null | grep F401 || echo "  ✓ No unused imports in backend-service"
-	@sync-service/.venv/bin/flake8 sync-service/src/ 2>/dev/null | grep F401 || echo "  ✓ No unused imports in sync-service"
-	@nilm-service/.venv/bin/flake8 nilm-service/src/ 2>/dev/null | grep F401 || echo "  ✓ No unused imports in nilm-service"
-	@echo ""
-	@echo "🔍 Unused variables (F841):"
-	@backend-service/.venv/bin/flake8 backend-service/src/ 2>/dev/null | grep F841 || echo "  ✓ No unused variables in backend-service"
-	@sync-service/.venv/bin/flake8 sync-service/src/ 2>/dev/null | grep F841 || echo "  ✓ No unused variables in sync-service"
-	@nilm-service/.venv/bin/flake8 nilm-service/src/ 2>/dev/null | grep F841 || echo "  ✓ No unused variables in nilm-service"
-	@echo ""
-	@echo "🔍 f-strings without placeholders (F541):"
-	@backend-service/.venv/bin/flake8 backend-service/src/ 2>/dev/null | grep F541 || echo "  ✓ No f-string issues in backend-service"
-	@sync-service/.venv/bin/flake8 sync-service/src/ 2>/dev/null | grep F541 || echo "  ✓ No f-string issues in sync-service"
-	@nilm-service/.venv/bin/flake8 nilm-service/src/ 2>/dev/null | grep F541 || echo "  ✓ No f-string issues in nilm-service"
-	@echo ""
-	@echo "💡 Fix these manually and run 'make code-quality-check' again"
-
+	@echo "--------------------------------"
+	@echo "✓ Code quality fix completed!"
