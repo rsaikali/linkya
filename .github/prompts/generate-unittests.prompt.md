@@ -48,6 +48,5 @@ Testing framework: ${input:framework:Which framework? (jest/vitest/mocha/pytest/
 - Add comments for complex test setup or assertions
 - Ensure tests are independent and can run in any order
 - Focus on testing behavior, not implementation details
-- If you can generate HTML reports for tests and coverage, please do so in '.docs/tests/.
 
 Create tests that give confidence the function works correctly and help catch regressions.
