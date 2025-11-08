@@ -11,6 +11,7 @@ nilm/
 ├── callbacks.py                  # Callbacks Keras (RedisTrainingCallback)
 ├── layers.py                     # Couches personnalisées (MultiHeadAttentionLayer)
 ├── preprocessing.py              # Préprocessing des données (Seq2PointPreprocessor)
+├── morphology.py                 # Analyse morphologique des signatures (MorphologyAnalyzer)
 ├── utils.py                      # Utilitaires (normalize_name_for_tensorflow)
 ├── models/                       # Modèles de deep learning
 │   ├── __init__.py
@@ -36,6 +37,9 @@ nilm/
 ### Preprocessing (`preprocessing.py`)
 - **Seq2PointPreprocessor**: Préprocessing pour modèle Sequence-to-Point (création de séquences, normalisation)
 
+### Morphology (`morphology.py`)
+- **MorphologyAnalyzer**: Analyse morphologique avancée des signatures de puissance (forme, oscillations, gradients, plateaux, features fréquentielles)
+
 ### Models (`models/`)
 - **Seq2PointMultiOutputModel**: Modèle principal avec architecture Multi-Output (N sorties, une par appareil)
 
@@ -52,6 +56,7 @@ nilm/
 from nilm.models import Seq2PointMultiOutputModel
 from nilm.detectors import ChangePointPatternDetector
 from nilm.preprocessing import Seq2PointPreprocessor
+from nilm.morphology import MorphologyAnalyzer
 
 # Créer un modèle
 model = Seq2PointMultiOutputModel(
@@ -69,6 +74,10 @@ detector = ChangePointPatternDetector(
     min_power_change=500,
     min_duration=300
 )
+
+# Analyser la morphologie d'une signature
+analyzer = MorphologyAnalyzer(sampling_rate_hz=1.0)
+morphology = analyzer.analyze(power_values, start_time)
 ```
 
 ## Principes de conception

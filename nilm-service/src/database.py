@@ -317,7 +317,7 @@ class DatabaseManager:
 
             import numpy as np
 
-            from .morphology import MorphologyAnalyzer
+            from .nilm.morphology import MorphologyAnalyzer
 
             power_values = np.array([d["papp"] for d in consumption_data])
 
