@@ -50,11 +50,15 @@ class RedisTrainingCallback(callbacks.Callback):
             redis_host = os.environ.get("REDIS_HOST", "redis")
             redis_port = int(os.environ.get("REDIS_PORT", 6379))
             print(f"[RedisCallback] Connecting to Redis at {redis_host}:{redis_port}")
-            self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=0, decode_responses=True)
+            self.redis_client = redis.Redis(
+                host=redis_host, port=redis_port, db=0, decode_responses=True
+            )
             # Test connection
             self.redis_client.ping()
             print("[RedisCallback] ✅ Connected to Redis")
-            logger.info(f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}")
+            logger.info(
+                f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}"
+            )
         except Exception as e:
             print(f"[RedisCallback] ❌ Failed to connect to Redis: {e}")
             logger.warning(f"⚠️  RedisTrainingCallback: Could not connect to Redis: {e}")
@@ -67,7 +71,12 @@ class RedisTrainingCallback(callbacks.Callback):
             return
 
         try:
-            message = {"event": event_type, "model_name": self.model_name, "timestamp": datetime.utcnow().isoformat(), "data": data}
+            message = {
+                "event": event_type,
+                "model_name": self.model_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "data": data,
+            }
             result = self.redis_client.publish(self.channel, json.dumps(message))
             print(f"[RedisCallback] Published {event_type} to {result} subscribers")
         except Exception as e:
@@ -78,13 +87,28 @@ class RedisTrainingCallback(callbacks.Callback):
         """Called at the beginning of training"""
         print("[RedisCallback] on_train_begin called")
         self.training_start_time = datetime.utcnow()
-        self._publish("training_start", {"total_epochs": self.total_epochs, "message": f"Starting training for model {self.model_name}"})
+        self._publish(
+            "training_start",
+            {
+                "total_epochs": self.total_epochs,
+                "message": f"Starting training for model {self.model_name}",
+            },
+        )
 
     def on_epoch_begin(self, epoch, logs=None):
         """Called at the beginning of each epoch"""
         self.current_epoch = epoch + 1
-        print(f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}")
-        self._publish("epoch_start", {"epoch": self.current_epoch, "total_epochs": self.total_epochs, "progress": round((self.current_epoch / self.total_epochs) * 100, 1)})
+        print(
+            f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}"
+        )
+        self._publish(
+            "epoch_start",
+            {
+                "epoch": self.current_epoch,
+                "total_epochs": self.total_epochs,
+                "progress": round((self.current_epoch / self.total_epochs) * 100, 1),
+            },
+        )
 
     def on_epoch_end(self, epoch, logs=None):
         """Called at the end of each epoch"""
@@ -92,7 +116,9 @@ class RedisTrainingCallback(callbacks.Callback):
 
         # Calculate ETA
         elapsed = (datetime.utcnow() - self.training_start_time).total_seconds()
-        eta_seconds = (elapsed / self.current_epoch) * (self.total_epochs - self.current_epoch)
+        eta_seconds = (elapsed / self.current_epoch) * (
+            self.total_epochs - self.current_epoch
+        )
 
         self._publish(
             "epoch_end",
@@ -111,7 +137,14 @@ class RedisTrainingCallback(callbacks.Callback):
         # Only publish every N batches to avoid flooding
         if batch % self.batch_update_freq == 0:
             logs = logs or {}
-            self._publish("batch_update", {"epoch": self.current_epoch, "batch": batch, "metrics": {k: float(v) for k, v in logs.items()}})
+            self._publish(
+                "batch_update",
+                {
+                    "epoch": self.current_epoch,
+                    "batch": batch,
+                    "metrics": {k: float(v) for k, v in logs.items()},
+                },
+            )
 
     def on_train_end(self, logs=None):
         """Called at the end of training"""

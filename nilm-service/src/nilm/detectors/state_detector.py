@@ -34,7 +34,9 @@ class ApplianceStateDetector:
             Self pour chaînage
         """
         if len(power_values) < self.n_states:
-            logger.warning(f"Pas assez de données pour {self.n_states} états, réduction automatique")
+            logger.warning(
+                f"Pas assez de données pour {self.n_states} états, réduction automatique"
+            )
             self.n_states = max(2, len(power_values) // 10)
 
         # Reshape pour KMeans
@@ -48,7 +50,9 @@ class ApplianceStateDetector:
         centers = sorted(self.kmeans.cluster_centers_.flatten())
         self.state_thresholds = centers
 
-        logger.info(f"États détectés: {len(centers)} niveaux = {[f'{c:.1f}W' for c in centers]}")
+        logger.info(
+            f"États détectés: {len(centers)} niveaux = {[f'{c:.1f}W' for c in centers]}"
+        )
         return self
 
     def predict_states(self, power_values):
@@ -102,7 +106,9 @@ class ApplianceStateDetector:
                             "duration_seconds": int(i - start_idx),
                             "avg_power": float(np.mean(cycle_power)),
                             "max_power": float(np.max(cycle_power)),
-                            "energy_wh": float(np.sum(cycle_power) / 3600),  # Wh (1Hz = 1s)
+                            "energy_wh": float(
+                                np.sum(cycle_power) / 3600
+                            ),  # Wh (1Hz = 1s)
                         }
                     )
 

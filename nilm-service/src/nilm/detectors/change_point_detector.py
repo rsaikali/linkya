@@ -31,7 +31,15 @@ class ChangePointPatternDetector:
         self.min_duration = min_duration
         self.signature_profiles = {}  # {appliance_id: [profils]}
 
-    def add_signature_profile(self, appliance_id, appliance_name, power_sequence, duration, signature_id=None, morphology=None):
+    def add_signature_profile(
+        self,
+        appliance_id,
+        appliance_name,
+        power_sequence,
+        duration,
+        signature_id=None,
+        morphology=None,
+    ):
         """
         Ajoute un profil de signature avec analyse morphologique.
 
@@ -44,7 +52,10 @@ class ChangePointPatternDetector:
             morphology: Analyse morphologique (optional)
         """
         if appliance_id not in self.signature_profiles:
-            self.signature_profiles[appliance_id] = {"name": appliance_name, "profiles": []}
+            self.signature_profiles[appliance_id] = {
+                "name": appliance_name,
+                "profiles": [],
+            }
 
         # Normaliser le profil (0-1)
         if len(power_sequence) > 0:
@@ -52,7 +63,13 @@ class ChangePointPatternDetector:
             if profile_max > 0:
                 normalized = power_sequence / profile_max
 
-                profile = {"signature_id": signature_id, "pattern": normalized, "duration": duration, "avg_power": float(np.mean(power_sequence)), "max_power": float(profile_max)}
+                profile = {
+                    "signature_id": signature_id,
+                    "pattern": normalized,
+                    "duration": duration,
+                    "avg_power": float(np.mean(power_sequence)),
+                    "max_power": float(profile_max),
+                }
 
                 # Ajouter features morphologiques si disponibles
                 if morphology:
@@ -81,7 +98,9 @@ class ChangePointPatternDetector:
         # Lisser pour éviter le bruit (moyenne mobile sur 5 points)
         window_size = 5
         if len(gradient) >= window_size:
-            gradient_smooth = np.convolve(gradient, np.ones(window_size) / window_size, mode="valid")
+            gradient_smooth = np.convolve(
+                gradient, np.ones(window_size) / window_size, mode="valid"
+            )
         else:
             gradient_smooth = gradient
 
@@ -99,7 +118,13 @@ class ChangePointPatternDetector:
 
                 if abs(cumsum) > threshold:
                     # Change point détecté
-                    change_points.append({"index": i + window_size // 2, "amplitude": float(cumsum), "direction": "up" if cumsum > 0 else "down"})  # Ajuster pour le lissage
+                    change_points.append(
+                        {
+                            "index": i + window_size // 2,
+                            "amplitude": float(cumsum),
+                            "direction": "up" if cumsum > 0 else "down",
+                        }
+                    )  # Ajuster pour le lissage
                     # Sauter la fenêtre pour éviter les doublons
                     i = window_end
                     continue
@@ -158,9 +183,13 @@ class ChangePointPatternDetector:
                         if len(pattern) > 0 and np.max(pattern) > self.min_power_change:
                             # Calculer morphologie du pattern détecté
                             try:
-                                morphology = analyzer.analyze(pattern.tolist(), start_time=None)
+                                morphology = analyzer.analyze(
+                                    pattern.tolist(), start_time=None
+                                )
                             except Exception as e:
-                                logger.warning(f"Erreur calcul morphologie pattern: {e}")
+                                logger.warning(
+                                    f"Erreur calcul morphologie pattern: {e}"
+                                )
                                 morphology = None
 
                             patterns.append(
@@ -215,7 +244,11 @@ class ChangePointPatternDetector:
 
         for appliance_id, data in self.signature_profiles.items():
             appliance_name = data["name"]
-            logger.info(f"Comparaison pattern ({pattern_duration}s, " f"{pattern_power:.0f}W) avec {len(data['profiles'])} " f"profils de {appliance_name}")
+            logger.info(
+                f"Comparaison pattern ({pattern_duration}s, "
+                f"{pattern_power:.0f}W) avec {len(data['profiles'])} "
+                f"profils de {appliance_name}"
+            )
 
             for i, profile in enumerate(data["profiles"]):
                 # Vérifier cohérence durée (±50%)
@@ -235,8 +268,16 @@ class ChangePointPatternDetector:
                     continue
 
                 # Sous-échantillonner
-                pattern_resampled = np.interp(np.linspace(0, len(pattern_normalized) - 1, target_len), np.arange(len(pattern_normalized)), pattern_normalized)
-                profile_resampled = np.interp(np.linspace(0, len(profile["pattern"]) - 1, target_len), np.arange(len(profile["pattern"])), profile["pattern"])
+                pattern_resampled = np.interp(
+                    np.linspace(0, len(pattern_normalized) - 1, target_len),
+                    np.arange(len(pattern_normalized)),
+                    pattern_normalized,
+                )
+                profile_resampled = np.interp(
+                    np.linspace(0, len(profile["pattern"]) - 1, target_len),
+                    np.arange(len(profile["pattern"])),
+                    profile["pattern"],
+                )
 
                 # Corrélation de forme
                 correlation = np.corrcoef(pattern_resampled, profile_resampled)[0, 1]
@@ -251,23 +292,47 @@ class ChangePointPatternDetector:
                 has_morphology = pattern_morphology and "morphology" in profile
 
                 if has_morphology:
-                    morphology_score = self._compute_morphology_similarity(pattern_morphology, profile["morphology"])
-                    logger.info(f"  Profil#{i}: morphology_score={morphology_score:.3f}")
+                    morphology_score = self._compute_morphology_similarity(
+                        pattern_morphology, profile["morphology"]
+                    )
+                    logger.info(
+                        f"  Profil#{i}: morphology_score={morphology_score:.3f}"
+                    )
 
                 # Score combiné avec pondération adaptative
                 if has_morphology:
                     # Avec morphologie: plus de poids sur features avancées
-                    combined_score = abs_correlation * 0.15 + duration_score * 0.25 + power_score * 0.25 + morphology_score * 0.35
+                    combined_score = (
+                        abs_correlation * 0.15
+                        + duration_score * 0.25
+                        + power_score * 0.25
+                        + morphology_score * 0.35
+                    )
                 else:
                     # Sans morphologie: méthode classique
-                    combined_score = abs_correlation * 0.2 + duration_score * 0.4 + power_score * 0.4
+                    combined_score = (
+                        abs_correlation * 0.2 + duration_score * 0.4 + power_score * 0.4
+                    )
 
-                logger.info(f"  Profil#{i}: corr={abs_correlation:.3f}, " f"dur={duration_score:.3f}, pow={power_score:.3f}, " f"morpho={morphology_score:.3f}, " f"combined={combined_score:.3f}")
+                logger.info(
+                    f"  Profil#{i}: corr={abs_correlation:.3f}, "
+                    f"dur={duration_score:.3f}, pow={power_score:.3f}, "
+                    f"morpho={morphology_score:.3f}, "
+                    f"combined={combined_score:.3f}"
+                )
 
                 if combined_score > best_score:
                     best_score = combined_score
-                    best_match = (appliance_id, appliance_name, profile.get("signature_id"), combined_score)
-                    logger.info(f"  Profil#{i}: ✓ nouveau meilleur score! " f"({combined_score:.3f})")
+                    best_match = (
+                        appliance_id,
+                        appliance_name,
+                        profile.get("signature_id"),
+                        combined_score,
+                    )
+                    logger.info(
+                        f"  Profil#{i}: ✓ nouveau meilleur score! "
+                        f"({combined_score:.3f})"
+                    )
 
         # Seuil adaptatif selon disponibilité morphologie
         threshold = 0.4 if pattern_morphology else 0.35
@@ -275,10 +340,15 @@ class ChangePointPatternDetector:
         logger.info(f"Fin matching: best_score={best_score:.3f}, " f"seuil={threshold}")
 
         if best_match and best_match[3] > threshold:
-            logger.info(f"✓ Match trouvé: {best_match[1]} " f"(sig_id={best_match[2]}, confiance={best_match[3]:.3f})")
+            logger.info(
+                f"✓ Match trouvé: {best_match[1]} "
+                f"(sig_id={best_match[2]}, confiance={best_match[3]:.3f})"
+            )
             return best_match
         else:
-            logger.info(f"✗ Aucun match suffisant " f"(best={best_score:.3f} < {threshold})")
+            logger.info(
+                f"✗ Aucun match suffisant " f"(best={best_score:.3f} < {threshold})"
+            )
             return None
 
     def _compute_morphology_similarity(self, morpho1, morpho2):
