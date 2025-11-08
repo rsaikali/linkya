@@ -26,6 +26,7 @@ from .nilm.models import Seq2PointMultiOutputModel
 
 logger = logging.getLogger(__name__)
 
+
 class Seq2PointNILMManager:
     """Gestionnaire de modèles S2P NILM avec architecture Multi-Output"""
 
