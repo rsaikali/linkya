@@ -5,27 +5,13 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import (
-    appliances_router,
-    consumption_router,
-    detections_router,
-    nilm_router,
-    signatures_router,
-    system_router,
-)
+from .api import appliances_router, consumption_router, detections_router, nilm_router, signatures_router, system_router
 from .config import settings
-from .websockets.routes import (
-    websocket_consumption_updates,
-    websocket_detection_updates,
-    websocket_import_progress,
-    websocket_training_logs,
-)
+from .websockets.routes import websocket_consumption_updates, websocket_detection_updates, websocket_import_progress, websocket_training_logs
 
 
 # Logging configuration
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 

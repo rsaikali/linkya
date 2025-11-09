@@ -50,5 +50,6 @@
   },
   "eslint.workingDirectories": [
     "./frontend-service"
-  ]
+  ],
+  "isort.importStrategy": "fromEnvironment"
 }

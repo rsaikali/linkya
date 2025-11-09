@@ -125,7 +125,13 @@ class DetectionRepository(DatabaseBase):
             if not result:
                 return None
 
-            detection_info = {"id": result[0], "appliance_id": result[1], "appliance_name": result[2], "start_time": format_datetime(result[3]), "end_time": format_datetime(result[4])}
+            detection_info = {
+                "id": result[0],
+                "appliance_id": result[1],
+                "appliance_name": result[2],
+                "start_time": format_datetime(result[3]),
+                "end_time": format_datetime(result[4]),
+            }
 
             # Supprimer la détection
             delete_query = text(
@@ -230,7 +236,15 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            existing = conn.execute(check_signature_query, {"appliance_id": result[1], "start_time": start_time, "end_time": end_time, "is_negative": not is_correct}).scalar()
+            existing = conn.execute(
+                check_signature_query,
+                {
+                    "appliance_id": result[1],
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "is_negative": not is_correct,
+                },
+            ).scalar()
 
             if existing == 0:
                 # Send Celery task to create signature via nilm-service
@@ -243,7 +257,15 @@ class DetectionRepository(DatabaseBase):
 
                 try:
                     task = celery_app.send_task(
-                        "add_nilm_signature", args=[appliance_name, start_time.isoformat(), end_time.isoformat(), not is_correct], queue="nilm", routing_key="nilm.add_nilm_signature"  # is_negative
+                        "add_nilm_signature",
+                        args=[
+                            appliance_name,
+                            start_time.isoformat(),
+                            end_time.isoformat(),
+                            not is_correct,
+                        ],
+                        queue="nilm",
+                        routing_key="nilm.add_nilm_signature",  # is_negative
                     )
                     logger.info(f"Signature creation task sent: {task.id} " f"({signature_type} for {appliance_name})")
                 except Exception as e:
@@ -263,7 +285,14 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": is_correct})
+            conn.execute(
+                update_query,
+                {
+                    "detection_id": detection_id,
+                    "user_validated": True,
+                    "is_correct": is_correct,
+                },
+            )
 
             logger.info(f"Detection {detection_id} marked as " f"{'correct' if is_correct else 'incorrect'}")
 
@@ -327,7 +356,14 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            existing_positive = conn.execute(check_positive_query, {"appliance_id": correct_appliance_id, "start_time": start_time, "end_time": end_time}).scalar()
+            existing_positive = conn.execute(
+                check_positive_query,
+                {
+                    "appliance_id": correct_appliance_id,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                },
+            ).scalar()
 
             if existing_positive == 0:
                 # Send Celery task to create positive signature via nilm-service
@@ -340,7 +376,12 @@ class DetectionRepository(DatabaseBase):
                 try:
                     task = celery_app.send_task(
                         "add_nilm_signature",
-                        args=[correct_appliance_name, start_time.isoformat(), end_time.isoformat(), False],  # is_negative = False for positive signature
+                        args=[
+                            correct_appliance_name,
+                            start_time.isoformat(),
+                            end_time.isoformat(),
+                            False,
+                        ],  # is_negative = False for positive signature
                         queue="nilm",
                         routing_key="nilm.add_nilm_signature",
                     )
@@ -361,7 +402,14 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": False})
+            conn.execute(
+                update_query,
+                {
+                    "detection_id": detection_id,
+                    "user_validated": True,
+                    "is_correct": False,
+                },
+            )
             logger.info(f"Detection {detection_id} reassigned from " f"{incorrect_appliance_name} to {correct_appliance_name}")
 
             conn.commit()

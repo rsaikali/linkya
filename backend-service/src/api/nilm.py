@@ -42,11 +42,20 @@ async def trigger_nilm_training():
                 logger.warning(f"Impossible d'incrémenter génération: {e}")
 
         # Envoyer la nouvelle tâche avec la génération en argument
-        task = celery_app.send_task("train_nilm_model", args=[2, training_generation], queue="nilm", routing_key="nilm.train_nilm_model")  # min_signatures, generation
+        task = celery_app.send_task(
+            "train_nilm_model",
+            args=[2, training_generation],
+            queue="nilm",
+            routing_key="nilm.train_nilm_model",
+        )  # min_signatures, generation
 
         logger.info(f"Tâche d'entraînement créée: {task.id}")
 
-        return {"status": "pending", "message": "Entraînement du modèle NILM lancé", "task_id": str(task.id)}
+        return {
+            "status": "pending",
+            "message": "Entraînement du modèle NILM lancé",
+            "task_id": str(task.id),
+        }
 
     except Exception as e:
         logger.error(f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True)
@@ -66,11 +75,19 @@ async def trigger_nilm_detection():
         logger.info("Lancement de la détection NILM")
 
         # Envoyer la tâche à la queue NILM
-        task = celery_app.send_task("detect_nilm_appliances", queue="nilm", routing_key="nilm.detect_nilm_appliances")
+        task = celery_app.send_task(
+            "detect_nilm_appliances",
+            queue="nilm",
+            routing_key="nilm.detect_nilm_appliances",
+        )
 
         logger.info(f"Tâche de détection créée: {task.id}")
 
-        return {"status": "pending", "message": "Détection NILM lancée", "task_id": str(task.id)}
+        return {
+            "status": "pending",
+            "message": "Détection NILM lancée",
+            "task_id": str(task.id),
+        }
 
     except Exception as e:
         logger.error(f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True)
@@ -132,8 +149,16 @@ async def delete_all_nilm_models():
 
         logger.info(f"Suppression terminée: " f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)")
 
-        return {"message": f"{deleted_count} modèle(s) supprimé(s) avec succès", "deleted_count": deleted_count, "deleted_files": deleted_files, "errors": errors if errors else None}
+        return {
+            "message": f"{deleted_count} modèle(s) supprimé(s) avec succès",
+            "deleted_count": deleted_count,
+            "deleted_files": deleted_files,
+            "errors": errors if errors else None,
+        }
 
     except Exception as e:
-        logger.error(f"Erreur lors de la suppression de tous les modèles: {str(e)}", exc_info=True)
+        logger.error(
+            f"Erreur lors de la suppression de tous les modèles: {str(e)}",
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")

@@ -56,7 +56,11 @@ else:
     import tensorflow as tf
 
 # Initialisation de Celery
-celery_app = Celery("nilm_tasks", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
+celery_app = Celery(
+    "nilm_tasks",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+)
 
 # Configuration Celery
 celery_app.conf.update(
@@ -68,7 +72,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=3600,  # 1 heure max par tâche
     worker_pool="solo",  # Pour éviter les conflits avec TensorFlow
-    task_routes={"train_nilm_model": {"queue": "nilm"}, "detect_nilm_appliances": {"queue": "nilm"}, "add_nilm_signature": {"queue": "nilm"}},
+    task_routes={
+        "train_nilm_model": {"queue": "nilm"},
+        "detect_nilm_appliances": {"queue": "nilm"},
+        "add_nilm_signature": {"queue": "nilm"},
+    },
 )
 
 # Redis client pour WebSocket real-time updates
@@ -131,7 +139,11 @@ def train_nilm_model(self, min_signatures=2, generation=0):
         # Entraîner le modèle from-scratch (pas de fine-tuning)
         metrics = nilm_manager.train_all_appliances(model_name, fine_tune=False)
         if "error" in metrics:
-            return {"status": "error", "message": metrics.get("error"), "details": metrics}
+            return {
+                "status": "error",
+                "message": metrics.get("error"),
+                "details": metrics,
+            }
 
         # Préparer les infos pour la base
         num_appliances = metrics.get("num_appliances", 0)
@@ -301,7 +313,11 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                 message = json.dumps(
                     {
                         "event": "detection_start",
-                        "data": {"model_name": active_model, "start_time": start_time.isoformat(), "end_time": end_time.isoformat()},
+                        "data": {
+                            "model_name": active_model,
+                            "start_time": start_time.isoformat(),
+                            "end_time": end_time.isoformat(),
+                        },
                         "timestamp": datetime.utcnow().isoformat(),
                     }
                 )
@@ -313,14 +329,24 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
         # Vérifier qu'un modèle Multi-Output est chargé
         if nilm_manager.multioutput_model is None:
             logger.error("Aucun modèle Multi-Output chargé")
-            return {"status": "error", "message": "Aucun modèle Multi-Output disponible. Veuillez entraîner un modèle."}
+            return {
+                "status": "error",
+                "message": "Aucun modèle Multi-Output disponible. Veuillez entraîner un modèle.",
+            }
 
         # Désagrégation
         events = nilm_manager.disaggregate(start_time, end_time)
 
         if not events:
             logger.info("Aucun événement détecté")
-            return {"status": "success", "num_detections": 0, "period": {"start": start_time.isoformat(), "end": end_time.isoformat()}}
+            return {
+                "status": "success",
+                "num_detections": 0,
+                "period": {
+                    "start": start_time.isoformat(),
+                    "end": end_time.isoformat(),
+                },
+            }
 
         logger.info(f"📊 {len(events)} événements à traiter")
 
@@ -336,7 +362,10 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
 
                 # Si pas d'appliance_id, chercher par nom (mode legacy)
                 if not appliance_id:
-                    result = session.execute(text("SELECT id FROM nilm_appliances " "WHERE name = :name LIMIT 1"), {"name": event["appliance_name"]})
+                    result = session.execute(
+                        text("SELECT id FROM nilm_appliances " "WHERE name = :name LIMIT 1"),
+                        {"name": event["appliance_name"]},
+                    )
                     row = result.first()
                     appliance_id = row.id if row else None
 
@@ -359,7 +388,14 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                 """
                 )
 
-                overlap_result = session.execute(check_overlap_query, {"appliance_id": appliance_id, "start_time": event["start_time"], "end_time": event["end_time"]})
+                overlap_result = session.execute(
+                    check_overlap_query,
+                    {
+                        "appliance_id": appliance_id,
+                        "start_time": event["start_time"],
+                        "end_time": event["end_time"],
+                    },
+                )
                 existing = overlap_result.first()
 
                 if existing:
@@ -408,7 +444,9 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                     else:
                         # Ignorer la nouvelle détection (moins bonne confiance)
                         num_skipped += 1
-                        logger.debug(f"Détection ignorée pour {event['appliance_name']} " f"(confiance {new_confidence:.2%} ≤ {existing_confidence:.2%})")
+                        logger.debug(
+                            f"Détection ignorée pour {event['appliance_name']} " f"(confiance {new_confidence:.2%} ≤ {existing_confidence:.2%})"
+                        )
                 else:
                     # Aucune détection superposée, insérer une nouvelle
                     # Préparer features
@@ -443,7 +481,9 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                     )
                     detection_id = result.scalar()
                     num_saved += 1
-                    logger.debug(f"✅ Nouvelle détection: {event['appliance_name']} " f"- {event.get('duration_seconds', 0)}s " f"- {event['avg_power']:.1f}W")
+                    logger.debug(
+                        f"✅ Nouvelle détection: {event['appliance_name']} " f"- {event.get('duration_seconds', 0)}s " f"- {event['avg_power']:.1f}W"
+                    )
 
                     # Publish detection to Redis for WebSocket streaming
                     if redis_client:
@@ -487,7 +527,13 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
         # Publish detection_complete event to Redis
         if redis_client:
             try:
-                message = json.dumps({"event": "detection_complete", "data": result, "timestamp": datetime.utcnow().isoformat()})
+                message = json.dumps(
+                    {
+                        "event": "detection_complete",
+                        "data": result,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                )
                 redis_client.publish("detections:updates", message)
                 logger.info(f"📢 Published detection_complete to Redis " f"({num_saved} nouvelles, {num_updated} mises à jour)")
             except Exception as e:
@@ -524,13 +570,19 @@ def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative
         # Vérifier la durée
         duration = (end_time - start_time).total_seconds()
         if duration < settings.nilm_min_duration_seconds:
-            return {"status": "error", "message": f"Durée trop courte (minimum {settings.nilm_min_duration_seconds}s)"}
+            return {
+                "status": "error",
+                "message": f"Durée trop courte (minimum {settings.nilm_min_duration_seconds}s)",
+            }
 
         from sqlalchemy import text
 
         # Trouver ou créer l'appareil
         with db_manager.get_session() as session:
-            result = session.execute(text("SELECT id FROM nilm_appliances WHERE name = :name LIMIT 1"), {"name": appliance_name})
+            result = session.execute(
+                text("SELECT id FROM nilm_appliances WHERE name = :name LIMIT 1"),
+                {"name": appliance_name},
+            )
             row = result.first()
 
             if row:
@@ -553,7 +605,12 @@ def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative
 
         # Ajouter la signature
         try:
-            signature_id = db_manager.add_signature(appliance_id=appliance_id, start_time=start_time, end_time=end_time, is_negative=is_negative)
+            signature_id = db_manager.add_signature(
+                appliance_id=appliance_id,
+                start_time=start_time,
+                end_time=end_time,
+                is_negative=is_negative,
+            )
         except ValueError as ve:
             # Erreur de validation (chevauchement, etc.)
             logger.warning(f"Validation échouée: {ve}")
@@ -570,7 +627,13 @@ def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative
             train_nilm_model.delay()
             logger.info("Réentraînement du modèle déclenché")
 
-        return {"status": "success", "signature_id": signature_id, "appliance_id": appliance_id, "appliance_name": appliance_name, "timestamp": datetime.utcnow().isoformat()}
+        return {
+            "status": "success",
+            "signature_id": signature_id,
+            "appliance_id": appliance_id,
+            "appliance_name": appliance_name,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
 
     except Exception as e:
         logger.error(f"Erreur lors de l'ajout de signature: {e}", exc_info=True)
@@ -579,10 +642,16 @@ def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative
 
 # Configuration des tâches périodiques
 celery_app.conf.beat_schedule = {
-    "train-nilm-model": {"task": "train_nilm_model", "schedule": crontab(hour=f"*/{settings.nilm_training_interval_hours}", minute=0)},
+    "train-nilm-model": {
+        "task": "train_nilm_model",
+        "schedule": crontab(hour=f"*/{settings.nilm_training_interval_hours}", minute=0),
+    },
     "detect-nilm-appliances": {
         "task": "detect_nilm_appliances",
         "schedule": settings.nilm_detection_interval_minutes * 60.0,
-        "kwargs": {"hours": 2, "min_confidence": 0.6},  # Analyse 2h pour couvrir les cycles HC/HP
+        "kwargs": {
+            "hours": 2,
+            "min_confidence": 0.6,
+        },  # Analyse 2h pour couvrir les cycles HC/HP
     },
 }

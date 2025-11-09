@@ -38,7 +38,12 @@ class DatabaseManager:
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("name", String(255), nullable=False),
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
-            Column("updated_at", DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
+            Column(
+                "updated_at",
+                DateTime(timezone=True),
+                default=datetime.utcnow,
+                onupdate=datetime.utcnow,
+            ),
             Index("idx_nilm_appliances_name", "name"),
         )
 
@@ -47,7 +52,11 @@ class DatabaseManager:
             "nilm_signatures",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("appliance_id", Integer, ForeignKey("nilm_appliances.id", ondelete="CASCADE")),
+            Column(
+                "appliance_id",
+                Integer,
+                ForeignKey("nilm_appliances.id", ondelete="CASCADE"),
+            ),
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             # Power data points (stored as JSON)
@@ -72,8 +81,18 @@ class DatabaseManager:
             "nilm_detections",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("appliance_id", Integer, ForeignKey("nilm_appliances.id", ondelete="SET NULL"), nullable=True),
-            Column("signature_id", Integer, ForeignKey("nilm_signatures.id", ondelete="SET NULL"), nullable=True),
+            Column(
+                "appliance_id",
+                Integer,
+                ForeignKey("nilm_appliances.id", ondelete="SET NULL"),
+                nullable=True,
+            ),
+            Column(
+                "signature_id",
+                Integer,
+                ForeignKey("nilm_signatures.id", ondelete="SET NULL"),
+                nullable=True,
+            ),
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             Column("avg_power", Float),
@@ -142,7 +161,12 @@ class DatabaseManager:
                 logger.info("Tables NILM créées avec succès")
 
                 # Vérifier si les tables existent
-                for table_name in ["nilm_appliances", "nilm_signatures", "nilm_detections", "nilm_models"]:
+                for table_name in [
+                    "nilm_appliances",
+                    "nilm_signatures",
+                    "nilm_detections",
+                    "nilm_models",
+                ]:
                     result = conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}')"))
                     exists = result.scalar()
                     status = "existe" if exists else "n'existe pas"
@@ -180,7 +204,14 @@ class DatabaseManager:
                 """
                 )
 
-                result = conn.execute(query, {"interval": f"{resample_seconds} seconds", "start_time": start_time, "end_time": end_time})
+                result = conn.execute(
+                    query,
+                    {
+                        "interval": f"{resample_seconds} seconds",
+                        "start_time": start_time,
+                        "end_time": end_time,
+                    },
+                )
 
                 data = [{"time": row.bucket_time, "papp": float(row.avg_papp)} for row in result]
 
@@ -223,12 +254,23 @@ class DatabaseManager:
                 """
                 )
 
-                result = conn.execute(overlap_query, {"appliance_id": appliance_id, "start_time": start_time, "end_time": end_time})
+                result = conn.execute(
+                    overlap_query,
+                    {
+                        "appliance_id": appliance_id,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                    },
+                )
 
                 overlap = result.first()
                 if overlap:
                     logger.error(f"Chevauchement détecté avec signature {overlap.id}")
-                    raise ValueError(f"Cette période chevauche une signature existante " f"({overlap.start_time.strftime('%Y-%m-%d %H:%M')} - " f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})")
+                    raise ValueError(
+                        f"Cette période chevauche une signature existante "
+                        f"({overlap.start_time.strftime('%Y-%m-%d %H:%M')} - "
+                        f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})"
+                    )
 
             # Récupérer les données de consommation
             consumption_data = self.get_consumption_data(start_time, end_time)
@@ -247,7 +289,12 @@ class DatabaseManager:
             power_values = np.array([d["papp"] for d in consumption_data])
 
             # Build compact power_data JSON
-            power_data = {"start": start_time.isoformat(), "rate_hz": 1.0, "values": power_values.tolist(), "num_points": len(power_values)}
+            power_data = {
+                "start": start_time.isoformat(),
+                "rate_hz": 1.0,
+                "values": power_values.tolist(),
+                "num_points": len(power_values),
+            }
 
             # Compute basic statistics
             avg_power = float(np.mean(power_values))
@@ -296,7 +343,11 @@ class DatabaseManager:
 
                 signature_id = result.scalar()
 
-                logger.info(f"Signature {signature_id} créée: " f"{num_points} points, {avg_power:.1f}W avg, " f"morphology={'computed' if morphology_analysis else 'skipped'}")
+                logger.info(
+                    f"Signature {signature_id} créée: "
+                    f"{num_points} points, {avg_power:.1f}W avg, "
+                    f"morphology={'computed' if morphology_analysis else 'skipped'}"
+                )
                 return signature_id
 
         except SQLAlchemyError as e:
