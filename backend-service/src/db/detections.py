@@ -1,5 +1,6 @@
 """Detections repository."""
 
+import json
 import logging
 
 from sqlalchemy import text
@@ -237,13 +238,7 @@ class DetectionRepository(DatabaseBase):
             )
 
             existing = conn.execute(
-                check_signature_query,
-                {
-                    "appliance_id": result[1],
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "is_negative": not is_correct,
-                },
+                check_signature_query, {"appliance_id": result[1], "start_time": start_time, "end_time": end_time, "is_negative": not is_correct}
             ).scalar()
 
             if existing == 0:
@@ -258,12 +253,7 @@ class DetectionRepository(DatabaseBase):
                 try:
                     task = celery_app.send_task(
                         "add_nilm_signature",
-                        args=[
-                            appliance_name,
-                            start_time.isoformat(),
-                            end_time.isoformat(),
-                            not is_correct,
-                        ],
+                        args=[appliance_name, start_time.isoformat(), end_time.isoformat(), not is_correct],
                         queue="nilm",
                         routing_key="nilm.add_nilm_signature",  # is_negative
                     )
@@ -285,14 +275,7 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            conn.execute(
-                update_query,
-                {
-                    "detection_id": detection_id,
-                    "user_validated": True,
-                    "is_correct": is_correct,
-                },
-            )
+            conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": is_correct})
 
             logger.info(f"Detection {detection_id} marked as " f"{'correct' if is_correct else 'incorrect'}")
 
@@ -357,12 +340,7 @@ class DetectionRepository(DatabaseBase):
             )
 
             existing_positive = conn.execute(
-                check_positive_query,
-                {
-                    "appliance_id": correct_appliance_id,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                },
+                check_positive_query, {"appliance_id": correct_appliance_id, "start_time": start_time, "end_time": end_time}
             ).scalar()
 
             if existing_positive == 0:
@@ -402,14 +380,7 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            conn.execute(
-                update_query,
-                {
-                    "detection_id": detection_id,
-                    "user_validated": True,
-                    "is_correct": False,
-                },
-            )
+            conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": False})
             logger.info(f"Detection {detection_id} reassigned from " f"{incorrect_appliance_name} to {correct_appliance_name}")
 
             conn.commit()
