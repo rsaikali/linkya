@@ -39,23 +39,6 @@ detect: ## Lance la détection NILM via l'API
 	@curl -X POST http://localhost:8000/api/nilm/detect | python3 -m json.tool
 
 ###############################################
-## VSCode Python Environment Management
-###############################################
-vscode-setup: ## Configure VS Code Python environments for local development
-	@echo "Setting up VS Code Python environments..."
-	@./.dev/setup-vscode-env.sh
-
-vscode-clean: ## Remove all Python virtual environments
-	@echo "Cleaning VS Code Python environments..."
-	@rm -rf backend-service/.venv
-	@rm -rf sync-service/.venv
-	@rm -rf nilm-service/.venv
-	@echo "✓ Virtual environments removed"
-
-vscode-reinstall: vscode-clean vscode-setup ## Clean and reinstall VS Code environments
-	@echo "✓ VS Code environments reinstalled"
-
-###############################################
 ## Code Quality
 ###############################################
 code-quality-check: ## Check Python code quality (Flake8 + isort)
