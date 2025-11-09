@@ -199,9 +199,7 @@ class DetectionRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            result = conn.execute(
-                check_query, {"detection_id": detection_id}
-            ).fetchone()
+            result = conn.execute(check_query, {"detection_id": detection_id}).fetchone()
 
             if not result:
                 return None
@@ -212,9 +210,7 @@ class DetectionRepository(DatabaseBase):
                 "appliance_name": result[2],
                 "start_time": format_datetime(result[3]),
                 "end_time": format_datetime(result[4]),
-                "confidence_score": (
-                    float(result[5]) if result[5] is not None else None
-                ),
+                "confidence_score": (float(result[5]) if result[5] is not None else None),
                 "user_validated": True,
                 "is_correct": is_correct,
             }
@@ -234,15 +230,7 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            existing = conn.execute(
-                check_signature_query,
-                {
-                    "appliance_id": result[1],
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "is_negative": not is_correct,
-                },
-            ).scalar()
+            existing = conn.execute(check_signature_query, {"appliance_id": result[1], "start_time": start_time, "end_time": end_time, "is_negative": not is_correct}).scalar()
 
             if existing == 0:
                 # Send Celery task to create signature via nilm-service
@@ -251,37 +239,18 @@ class DetectionRepository(DatabaseBase):
                 celery_app = get_celery_app()
 
                 signature_type = "positive" if is_correct else "negative"
-                logger.info(
-                    f"Sending task to create {signature_type} signature "
-                    f"for {appliance_name} (detection {detection_id})"
-                )
+                logger.info(f"Sending task to create {signature_type} signature " f"for {appliance_name} (detection {detection_id})")
 
                 try:
                     task = celery_app.send_task(
-                        "add_nilm_signature",
-                        args=[
-                            appliance_name,
-                            start_time.isoformat(),
-                            end_time.isoformat(),
-                            not is_correct,  # is_negative
-                        ],
-                        queue="nilm",
-                        routing_key="nilm.add_nilm_signature",
+                        "add_nilm_signature", args=[appliance_name, start_time.isoformat(), end_time.isoformat(), not is_correct], queue="nilm", routing_key="nilm.add_nilm_signature"  # is_negative
                     )
-                    logger.info(
-                        f"Signature creation task sent: {task.id} "
-                        f"({signature_type} for {appliance_name})"
-                    )
+                    logger.info(f"Signature creation task sent: {task.id} " f"({signature_type} for {appliance_name})")
                 except Exception as e:
-                    logger.error(
-                        f"Failed to send signature creation task: {e}", exc_info=True
-                    )
+                    logger.error(f"Failed to send signature creation task: {e}", exc_info=True)
             else:
                 signature_type = "positive" if is_correct else "negative"
-                logger.info(
-                    f"Signature already exists: {signature_type} "
-                    f"for {appliance_name} at {start_time} - {end_time}"
-                )
+                logger.info(f"Signature already exists: {signature_type} " f"for {appliance_name} at {start_time} - {end_time}")
 
             # Update detection as validated
             update_query = text(
@@ -294,19 +263,9 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            conn.execute(
-                update_query,
-                {
-                    "detection_id": detection_id,
-                    "user_validated": True,
-                    "is_correct": is_correct,
-                },
-            )
+            conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": is_correct})
 
-            logger.info(
-                f"Detection {detection_id} marked as "
-                f"{'correct' if is_correct else 'incorrect'}"
-            )
+            logger.info(f"Detection {detection_id} marked as " f"{'correct' if is_correct else 'incorrect'}")
 
             conn.commit()
 
@@ -355,9 +314,7 @@ class DetectionRepository(DatabaseBase):
 
             # Get or create the correct appliance
             appliance_repo = ApplianceRepository()
-            correct_appliance_id = appliance_repo.get_or_create_appliance(
-                correct_appliance_name
-            )
+            correct_appliance_id = appliance_repo.get_or_create_appliance(correct_appliance_name)
 
             # Check if positive signature already exists
             check_positive_query = text(
@@ -370,14 +327,7 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            existing_positive = conn.execute(
-                check_positive_query,
-                {
-                    "appliance_id": correct_appliance_id,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                },
-            ).scalar()
+            existing_positive = conn.execute(check_positive_query, {"appliance_id": correct_appliance_id, "start_time": start_time, "end_time": end_time}).scalar()
 
             if existing_positive == 0:
                 # Send Celery task to create positive signature via nilm-service
@@ -385,36 +335,20 @@ class DetectionRepository(DatabaseBase):
 
                 celery_app = get_celery_app()
 
-                logger.info(
-                    f"Sending task to create positive signature "
-                    f"for {correct_appliance_name} (detection {detection_id})"
-                )
+                logger.info(f"Sending task to create positive signature " f"for {correct_appliance_name} (detection {detection_id})")
 
                 try:
                     task = celery_app.send_task(
                         "add_nilm_signature",
-                        args=[
-                            correct_appliance_name,
-                            start_time.isoformat(),
-                            end_time.isoformat(),
-                            False,  # is_negative = False for positive signature
-                        ],
+                        args=[correct_appliance_name, start_time.isoformat(), end_time.isoformat(), False],  # is_negative = False for positive signature
                         queue="nilm",
                         routing_key="nilm.add_nilm_signature",
                     )
-                    logger.info(
-                        f"Positive signature creation task sent: {task.id} "
-                        f"for {correct_appliance_name}"
-                    )
+                    logger.info(f"Positive signature creation task sent: {task.id} " f"for {correct_appliance_name}")
                 except Exception as e:
-                    logger.error(
-                        f"Failed to send signature creation task: {e}", exc_info=True
-                    )
+                    logger.error(f"Failed to send signature creation task: {e}", exc_info=True)
             else:
-                logger.info(
-                    f"Positive signature already exists for {correct_appliance_name} "
-                    f"at {start_time} - {end_time}"
-                )
+                logger.info(f"Positive signature already exists for {correct_appliance_name} " f"at {start_time} - {end_time}")
 
             # Mark detection as incorrect to hide it from the list
             update_query = text(

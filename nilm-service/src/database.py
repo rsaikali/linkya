@@ -6,21 +6,7 @@ import logging
 from contextlib import contextmanager
 from datetime import datetime
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Index,
-    Integer,
-    MetaData,
-    String,
-    Table,
-    create_engine,
-    text,
-)
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, MetaData, String, Table, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
@@ -35,9 +21,7 @@ class DatabaseManager:
 
     def __init__(self):
         """Initialise le gestionnaire de base de données"""
-        self.engine = create_engine(
-            settings.database_url, pool_pre_ping=True, pool_size=5, max_overflow=10
-        )
+        self.engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=5, max_overflow=10)
         self.SessionLocal = sessionmaker(bind=self.engine)
         self.metadata = MetaData()
 
@@ -54,12 +38,7 @@ class DatabaseManager:
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("name", String(255), nullable=False),
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
-            Column(
-                "updated_at",
-                DateTime(timezone=True),
-                default=datetime.utcnow,
-                onupdate=datetime.utcnow,
-            ),
+            Column("updated_at", DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index("idx_nilm_appliances_name", "name"),
         )
 
@@ -68,11 +47,7 @@ class DatabaseManager:
             "nilm_signatures",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column(
-                "appliance_id",
-                Integer,
-                ForeignKey("nilm_appliances.id", ondelete="CASCADE"),
-            ),
+            Column("appliance_id", Integer, ForeignKey("nilm_appliances.id", ondelete="CASCADE")),
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             # Power data points (stored as JSON)
@@ -97,18 +72,8 @@ class DatabaseManager:
             "nilm_detections",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column(
-                "appliance_id",
-                Integer,
-                ForeignKey("nilm_appliances.id", ondelete="SET NULL"),
-                nullable=True,
-            ),
-            Column(
-                "signature_id",
-                Integer,
-                ForeignKey("nilm_signatures.id", ondelete="SET NULL"),
-                nullable=True,
-            ),
+            Column("appliance_id", Integer, ForeignKey("nilm_appliances.id", ondelete="SET NULL"), nullable=True),
+            Column("signature_id", Integer, ForeignKey("nilm_signatures.id", ondelete="SET NULL"), nullable=True),
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             Column("avg_power", Float),
@@ -118,15 +83,9 @@ class DatabaseManager:
             Column("features", JSON),  # Features de la détection
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
             # Champs de validation utilisateur pour apprentissage par feedback
-            Column(
-                "user_validated", Boolean, default=None, nullable=True
-            ),  # NULL = pas encore validée
-            Column(
-                "is_correct", Boolean, default=None, nullable=True
-            ),  # True = correcte, False = incorrecte
-            Column(
-                "validated_at", DateTime(timezone=True), nullable=True
-            ),  # Timestamp de validation
+            Column("user_validated", Boolean, default=None, nullable=True),  # NULL = pas encore validée
+            Column("is_correct", Boolean, default=None, nullable=True),  # True = correcte, False = incorrecte
+            Column("validated_at", DateTime(timezone=True), nullable=True),  # Timestamp de validation
             Index("idx_nilm_detections_appliance", "appliance_id"),
             Index("idx_nilm_detections_time", "start_time", "end_time"),
             Index("idx_nilm_detections_validation", "user_validated", "is_correct"),
@@ -137,9 +96,7 @@ class DatabaseManager:
             "nilm_models",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column(
-                "model_name", String(255), unique=True, nullable=False
-            ),  # Format: linkya_model_<timestamp>
+            Column("model_name", String(255), unique=True, nullable=False),  # Format: linkya_model_<timestamp>
             Column("model_type", String(100), default="CNN1D"),
             Column("architecture", JSON),  # Architecture du modèle
             Column("training_date", DateTime(timezone=True), default=datetime.utcnow),
@@ -147,9 +104,7 @@ class DatabaseManager:
             Column("num_classes", Integer),  # Nombre de classes
             Column("metrics", JSON),  # Métriques de performance (accuracy, loss, etc.)
             Column("model_path", String(500)),
-            Column(
-                "training_duration_seconds", Integer
-            ),  # Durée d'entraînement (secondes)
+            Column("training_duration_seconds", Integer),  # Durée d'entraînement (secondes)
             Index("idx_nilm_models_name", "model_name"),
         )
 
@@ -187,17 +142,8 @@ class DatabaseManager:
                 logger.info("Tables NILM créées avec succès")
 
                 # Vérifier si les tables existent
-                for table_name in [
-                    "nilm_appliances",
-                    "nilm_signatures",
-                    "nilm_detections",
-                    "nilm_models",
-                ]:
-                    result = conn.execute(
-                        text(
-                            f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}')"
-                        )
-                    )
+                for table_name in ["nilm_appliances", "nilm_signatures", "nilm_detections", "nilm_models"]:
+                    result = conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}')"))
                     exists = result.scalar()
                     status = "existe" if exists else "n'existe pas"
                     logger.info(f"Table {table_name}: {status}")
@@ -234,19 +180,9 @@ class DatabaseManager:
                 """
                 )
 
-                result = conn.execute(
-                    query,
-                    {
-                        "interval": f"{resample_seconds} seconds",
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                )
+                result = conn.execute(query, {"interval": f"{resample_seconds} seconds", "start_time": start_time, "end_time": end_time})
 
-                data = [
-                    {"time": row.bucket_time, "papp": float(row.avg_papp)}
-                    for row in result
-                ]
+                data = [{"time": row.bucket_time, "papp": float(row.avg_papp)} for row in result]
 
                 logger.info(f"Récupéré {len(data)} points de consommation")
                 return data
@@ -287,23 +223,12 @@ class DatabaseManager:
                 """
                 )
 
-                result = conn.execute(
-                    overlap_query,
-                    {
-                        "appliance_id": appliance_id,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                )
+                result = conn.execute(overlap_query, {"appliance_id": appliance_id, "start_time": start_time, "end_time": end_time})
 
                 overlap = result.first()
                 if overlap:
                     logger.error(f"Chevauchement détecté avec signature {overlap.id}")
-                    raise ValueError(
-                        f"Cette période chevauche une signature existante "
-                        f"({overlap.start_time.strftime('%Y-%m-%d %H:%M')} - "
-                        f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})"
-                    )
+                    raise ValueError(f"Cette période chevauche une signature existante " f"({overlap.start_time.strftime('%Y-%m-%d %H:%M')} - " f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})")
 
             # Récupérer les données de consommation
             consumption_data = self.get_consumption_data(start_time, end_time)
@@ -322,12 +247,7 @@ class DatabaseManager:
             power_values = np.array([d["papp"] for d in consumption_data])
 
             # Build compact power_data JSON
-            power_data = {
-                "start": start_time.isoformat(),
-                "rate_hz": 1.0,
-                "values": power_values.tolist(),
-                "num_points": len(power_values),
-            }
+            power_data = {"start": start_time.isoformat(), "rate_hz": 1.0, "values": power_values.tolist(), "num_points": len(power_values)}
 
             # Compute basic statistics
             avg_power = float(np.mean(power_values))
@@ -369,22 +289,14 @@ class DatabaseManager:
                         "power_std": power_std,
                         "energy_consumed": energy_consumed,
                         "num_points": num_points,
-                        "morphology_analysis": (
-                            json.dumps(morphology_analysis)
-                            if morphology_analysis
-                            else None
-                        ),
+                        "morphology_analysis": (json.dumps(morphology_analysis) if morphology_analysis else None),
                         "is_negative": is_negative,
                     },
                 )
 
                 signature_id = result.scalar()
 
-                logger.info(
-                    f"Signature {signature_id} créée: "
-                    f"{num_points} points, {avg_power:.1f}W avg, "
-                    f"morphology={'computed' if morphology_analysis else 'skipped'}"
-                )
+                logger.info(f"Signature {signature_id} créée: " f"{num_points} points, {avg_power:.1f}W avg, " f"morphology={'computed' if morphology_analysis else 'skipped'}")
                 return signature_id
 
         except SQLAlchemyError as e:
@@ -425,13 +337,8 @@ class DatabaseManager:
                         power_values = [d["papp"] for d in raw_data]
                         if power_values:
                             avg_power = sum(power_values) / len(power_values)
-                            power_std = (
-                                sum((p - avg_power) ** 2 for p in power_values)
-                                / len(power_values)
-                            ) ** 0.5
-                            duration_hours = (
-                                row.end_time - row.start_time
-                            ).total_seconds() / 3600
+                            power_std = (sum((p - avg_power) ** 2 for p in power_values) / len(power_values)) ** 0.5
+                            duration_hours = (row.end_time - row.start_time).total_seconds() / 3600
                             energy_consumed = avg_power * duration_hours
 
                     sig = {
