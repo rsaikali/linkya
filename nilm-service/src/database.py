@@ -335,9 +335,10 @@ class DatabaseManager:
             energy_consumed = float(np.sum(power_values) / 3600.0)
             num_points = len(power_values)
 
-            # Compute morphological analysis (only for positive signatures)
+            # Compute morphological analysis for all signatures
+            # For negative signatures, this helps the model learn what patterns to avoid
             morphology_analysis = None
-            if not is_negative and len(power_values) >= 10:
+            if len(power_values) >= 10:
                 analyzer = MorphologyAnalyzer(sampling_rate_hz=1.0)
                 morphology_analysis = analyzer.analyze(power_values, start_time)
 

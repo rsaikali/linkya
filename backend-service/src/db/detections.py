@@ -1,6 +1,5 @@
 """Detections repository."""
 
-import json
 import logging
 
 from sqlalchemy import text
@@ -62,9 +61,7 @@ class DetectionRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            result = conn.execute(
-                query, {"start_time": start_time, "end_time": end_time}
-            )
+            result = conn.execute(query, {"start_time": start_time, "end_time": end_time})
             detections = []
             for row in result:
                 m = row._mapping
@@ -74,24 +71,10 @@ class DetectionRepository(DatabaseBase):
                     "name": m["appliance_name"],
                     "start_time": format_datetime(m["detection_start"]),
                     "end_time": format_datetime(m["detection_end"]),
-                    "avg_power": (
-                        float(m["avg_power"]) if m["avg_power"] is not None else None
-                    ),
-                    "energy_consumed": (
-                        float(m["energy_consumed"])
-                        if m["energy_consumed"] is not None
-                        else None
-                    ),
-                    "confidence_score": (
-                        float(m["confidence_score"])
-                        if m["confidence_score"] is not None
-                        else None
-                    ),
-                    "prediction_class": (
-                        int(m["prediction_class"])
-                        if m["prediction_class"] is not None
-                        else None
-                    ),
+                    "avg_power": (float(m["avg_power"]) if m["avg_power"] is not None else None),
+                    "energy_consumed": (float(m["energy_consumed"]) if m["energy_consumed"] is not None else None),
+                    "confidence_score": (float(m["confidence_score"]) if m["confidence_score"] is not None else None),
+                    "prediction_class": (int(m["prediction_class"]) if m["prediction_class"] is not None else None),
                     "created_at": format_datetime(m["detection_created_at"]),
                     "user_validated": m["user_validated"],
                     "is_correct": m["is_correct"],
@@ -137,20 +120,12 @@ class DetectionRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            result = conn.execute(
-                check_query, {"detection_id": detection_id}
-            ).fetchone()
+            result = conn.execute(check_query, {"detection_id": detection_id}).fetchone()
 
             if not result:
                 return None
 
-            detection_info = {
-                "id": result[0],
-                "appliance_id": result[1],
-                "appliance_name": result[2],
-                "start_time": format_datetime(result[3]),
-                "end_time": format_datetime(result[4]),
-            }
+            detection_info = {"id": result[0], "appliance_id": result[1], "appliance_name": result[2], "start_time": format_datetime(result[3]), "end_time": format_datetime(result[4])}
 
             # Supprimer la détection
             delete_query = text(
@@ -197,6 +172,7 @@ class DetectionRepository(DatabaseBase):
     def validate_detection(self, detection_id, is_correct):
         """
         Marks a detection as validated by the user.
+        Creates a signature (positive or negative) via Celery task.
 
         Args:
             detection_id: ID of the detection to validate
@@ -243,139 +219,94 @@ class DetectionRepository(DatabaseBase):
                 "is_correct": is_correct,
             }
 
-            # Si la détection est correcte, la marquer comme validée
-            if is_correct:
-                # Créer une signature positive
-                check_signature_query = text(
-                    """
-                    SELECT COUNT(*) FROM nilm_signatures
-                    WHERE appliance_id = :appliance_id
-                      AND start_time = :start_time
-                      AND end_time = :end_time
-                      AND is_negative = FALSE
+            appliance_name = result[2]
+            start_time = result[3]
+            end_time = result[4]
+
+            # Check if signature already exists (to avoid duplicates)
+            check_signature_query = text(
                 """
+                SELECT COUNT(*) FROM nilm_signatures
+                WHERE appliance_id = :appliance_id
+                  AND start_time = :start_time
+                  AND end_time = :end_time
+                  AND is_negative = :is_negative
+            """
+            )
+
+            existing = conn.execute(
+                check_signature_query,
+                {
+                    "appliance_id": result[1],
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "is_negative": not is_correct,
+                },
+            ).scalar()
+
+            if existing == 0:
+                # Send Celery task to create signature via nilm-service
+                from ..config import get_celery_app
+
+                celery_app = get_celery_app()
+
+                signature_type = "positive" if is_correct else "negative"
+                logger.info(
+                    f"Sending task to create {signature_type} signature "
+                    f"for {appliance_name} (detection {detection_id})"
                 )
 
-                existing = conn.execute(
-                    check_signature_query,
-                    {
-                        "appliance_id": result[1],
-                        "start_time": result[3],
-                        "end_time": result[4],
-                    },
-                ).scalar()
-
-                if existing == 0:
-                    # Create positive signature from validated detection
-                    create_signature_query = text(
-                        """
-                        INSERT INTO nilm_signatures
-                        (appliance_id, start_time, end_time, is_negative,
-                         created_at)
-                        VALUES
-                        (:appliance_id, :start_time, :end_time, FALSE, NOW())
-                    """
-                    )
-
-                    conn.execute(
-                        create_signature_query,
-                        {
-                            "appliance_id": result[1],
-                            "start_time": result[3],
-                            "end_time": result[4],
-                        },
+                try:
+                    task = celery_app.send_task(
+                        "add_nilm_signature",
+                        args=[
+                            appliance_name,
+                            start_time.isoformat(),
+                            end_time.isoformat(),
+                            not is_correct,  # is_negative
+                        ],
+                        queue="nilm",
+                        routing_key="nilm.add_nilm_signature",
                     )
                     logger.info(
-                        f"Positive signature created for {result[2]} "
-                        f"(detection {detection_id})"
+                        f"Signature creation task sent: {task.id} "
+                        f"({signature_type} for {appliance_name})"
                     )
-
-                # Mettre à jour la détection
-                update_query = text(
-                    """
-                    UPDATE nilm_detections
-                    SET user_validated = :user_validated,
-                        is_correct = :is_correct,
-                        validated_at = NOW()
-                    WHERE id = :detection_id
-                """
-                )
-
-                conn.execute(
-                    update_query,
-                    {
-                        "detection_id": detection_id,
-                        "user_validated": True,
-                        "is_correct": True,
-                    },
-                )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send signature creation task: {e}", exc_info=True
+                    )
             else:
-                # Create negative signature if detection is incorrect
-                if result[5] is not None and result[5] >= 0.6:
-                    check_negative_query = text(
-                        """
-                        SELECT COUNT(*) FROM nilm_signatures
-                        WHERE appliance_id = :appliance_id
-                          AND is_negative = TRUE
-                          AND start_time = :start_time
-                          AND end_time = :end_time
-                    """
-                    )
+                signature_type = "positive" if is_correct else "negative"
+                logger.info(
+                    f"Signature already exists: {signature_type} "
+                    f"for {appliance_name} at {start_time} - {end_time}"
+                )
 
-                    existing = conn.execute(
-                        check_negative_query,
-                        {
-                            "appliance_id": result[1],
-                            "start_time": result[3],
-                            "end_time": result[4],
-                        },
-                    ).scalar()
-
-                    if existing == 0:
-                        create_negative_query = text(
-                            """
-                            INSERT INTO nilm_signatures
-                            (appliance_id, start_time, end_time,
-                             is_negative, created_at)
-                            VALUES
-                            (:appliance_id, :start_time, :end_time,
-                             TRUE, NOW())
-                        """
-                        )
-
-                        conn.execute(
-                            create_negative_query,
-                            {
-                                "appliance_id": result[1],
-                                "start_time": result[3],
-                                "end_time": result[4],
-                            },
-                        )
-                        logger.info(
-                            f"Negative signature created for {result[2]} "
-                            f"(detection {detection_id})"
-                        )
-
-                # Mark detection as incorrect
-                update_query = text(
-                    """
-                    UPDATE nilm_detections
-                    SET user_validated = :user_validated,
-                        is_correct = :is_correct,
-                        validated_at = NOW()
-                    WHERE id = :detection_id
+            # Update detection as validated
+            update_query = text(
                 """
-                )
+                UPDATE nilm_detections
+                SET user_validated = :user_validated,
+                    is_correct = :is_correct,
+                    validated_at = NOW()
+                WHERE id = :detection_id
+            """
+            )
 
-                conn.execute(
-                    update_query,
-                    {
-                        "detection_id": detection_id,
-                        "user_validated": True,
-                        "is_correct": False,
-                    },
-                )
-                logger.info(f"Detection marked as incorrect: {detection_id}")
+            conn.execute(
+                update_query,
+                {
+                    "detection_id": detection_id,
+                    "user_validated": True,
+                    "is_correct": is_correct,
+                },
+            )
+
+            logger.info(
+                f"Detection {detection_id} marked as "
+                f"{'correct' if is_correct else 'incorrect'}"
+            )
 
             conn.commit()
 
@@ -413,9 +344,7 @@ class DetectionRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            result = conn.execute(
-                check_query, {"detection_id": detection_id}
-            ).fetchone()
+            result = conn.execute(check_query, {"detection_id": detection_id}).fetchone()
 
             if not result:
                 return None
@@ -430,7 +359,7 @@ class DetectionRepository(DatabaseBase):
                 correct_appliance_name
             )
 
-            # Create positive signature for the correct appliance
+            # Check if positive signature already exists
             check_positive_query = text(
                 """
                 SELECT COUNT(*) FROM nilm_signatures
@@ -451,27 +380,40 @@ class DetectionRepository(DatabaseBase):
             ).scalar()
 
             if existing_positive == 0:
-                create_positive_query = text(
-                    """
-                    INSERT INTO nilm_signatures
-                    (appliance_id, start_time, end_time, is_negative,
-                     created_at)
-                    VALUES
-                    (:appliance_id, :start_time, :end_time, FALSE, NOW())
-                """
+                # Send Celery task to create positive signature via nilm-service
+                from ..config import get_celery_app
+
+                celery_app = get_celery_app()
+
+                logger.info(
+                    f"Sending task to create positive signature "
+                    f"for {correct_appliance_name} (detection {detection_id})"
                 )
 
-                conn.execute(
-                    create_positive_query,
-                    {
-                        "appliance_id": correct_appliance_id,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                )
+                try:
+                    task = celery_app.send_task(
+                        "add_nilm_signature",
+                        args=[
+                            correct_appliance_name,
+                            start_time.isoformat(),
+                            end_time.isoformat(),
+                            False,  # is_negative = False for positive signature
+                        ],
+                        queue="nilm",
+                        routing_key="nilm.add_nilm_signature",
+                    )
+                    logger.info(
+                        f"Positive signature creation task sent: {task.id} "
+                        f"for {correct_appliance_name}"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send signature creation task: {e}", exc_info=True
+                    )
+            else:
                 logger.info(
-                    f"Positive signature created for "
-                    f"{correct_appliance_name} (detection {detection_id})"
+                    f"Positive signature already exists for {correct_appliance_name} "
+                    f"at {start_time} - {end_time}"
                 )
 
             # Mark detection as incorrect to hide it from the list
@@ -485,18 +427,8 @@ class DetectionRepository(DatabaseBase):
             """
             )
 
-            conn.execute(
-                update_query,
-                {
-                    "detection_id": detection_id,
-                    "user_validated": True,
-                    "is_correct": False,
-                },
-            )
-            logger.info(
-                f"Detection {detection_id} reassigned from "
-                f"{incorrect_appliance_name} to {correct_appliance_name}"
-            )
+            conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": False})
+            logger.info(f"Detection {detection_id} reassigned from " f"{incorrect_appliance_name} to {correct_appliance_name}")
 
             conn.commit()
 
