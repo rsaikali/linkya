@@ -97,9 +97,7 @@ class ConsumptionRepository(DatabaseBase):
 
         with self.engine.connect() as conn:
             if interval in ("raw", "none"):
-                result = conn.execute(
-                    query, {"start_time": start_time, "end_time": end_time}
-                )
+                result = conn.execute(query, {"start_time": start_time, "end_time": end_time})
             else:
                 result = conn.execute(
                     query,

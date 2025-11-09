@@ -18,9 +18,7 @@ def get_redis_client():
     global _redis_client
     if _redis_client is None:
         try:
-            _redis_client = redis.from_url(
-                settings.celery_broker_url, decode_responses=True
-            )
+            _redis_client = redis.from_url(settings.celery_broker_url, decode_responses=True)
             logger.info("Redis client initialized for real-time events")
         except Exception as e:
             logger.warning(f"Redis client init failed: {e}")

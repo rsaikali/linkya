@@ -182,9 +182,7 @@ class ApplianceRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            exists = conn.execute(
-                check_query, {"appliance_id": appliance_id}
-            ).fetchone()
+            exists = conn.execute(check_query, {"appliance_id": appliance_id}).fetchone()
 
             if not exists:
                 return None
@@ -205,13 +203,9 @@ class ApplianceRepository(DatabaseBase):
             """
             )
 
-            signatures_count = conn.execute(
-                count_signatures_query, {"appliance_id": appliance_id}
-            ).scalar()
+            signatures_count = conn.execute(count_signatures_query, {"appliance_id": appliance_id}).scalar()
 
-            detections_count = conn.execute(
-                count_detections_query, {"appliance_id": appliance_id}
-            ).scalar()
+            detections_count = conn.execute(count_detections_query, {"appliance_id": appliance_id}).scalar()
 
             # Supprimer dans l'ordre (FK constraints)
             delete_detections_query = text(

@@ -57,9 +57,7 @@ class MorphologyAnalyzer:
                 "shape_features": self._compute_shape_features(power_values),
                 "gradient": self._compute_gradient_features(power_values),
                 "plateaus": self._detect_plateaus(power_values),
-                "oscillation_features": self._compute_oscillation_features(
-                    power_values
-                ),
+                "oscillation_features": self._compute_oscillation_features(power_values),
                 "statistical_moments": self._compute_statistical_moments(power_values),
                 "frequency_domain": self._compute_frequency_features(power_values),
             }
@@ -99,9 +97,7 @@ class MorphologyAnalyzer:
     def _compute_shape_features(self, power):
         """Compute shape-related features."""
         # Normalize power for shape analysis
-        power_normalized = (power - np.min(power)) / (
-            np.max(power) - np.min(power) + 1e-7
-        )
+        power_normalized = (power - np.min(power)) / (np.max(power) - np.min(power) + 1e-7)
 
         # Count transitions (changes > 10% of range)
         threshold = 0.1
@@ -128,17 +124,11 @@ class MorphologyAnalyzer:
         gradient = np.gradient(power_norm)
 
         # Check if mostly increasing (ramp up)
-        if (
-            np.mean(gradient[gradient > 0]) > 0.01
-            and np.sum(gradient > 0) > len(gradient) * 0.7
-        ):
+        if np.mean(gradient[gradient > 0]) > 0.01 and np.sum(gradient > 0) > len(gradient) * 0.7:
             return "ramp_up"
 
         # Check if mostly decreasing (ramp down)
-        if (
-            np.mean(gradient[gradient < 0]) < -0.01
-            and np.sum(gradient < 0) > len(gradient) * 0.7
-        ):
+        if np.mean(gradient[gradient < 0]) < -0.01 and np.sum(gradient < 0) > len(gradient) * 0.7:
             return "ramp_down"
 
         # Check for oscillations
@@ -215,9 +205,7 @@ class MorphologyAnalyzer:
     def _compute_oscillation_features(self, power):
         """Compute oscillation characteristics."""
         # Find peaks
-        peaks, properties = signal.find_peaks(
-            power, prominence=np.std(power) * 0.5, distance=5
-        )
+        peaks, properties = signal.find_peaks(power, prominence=np.std(power) * 0.5, distance=5)
 
         is_oscillating = len(peaks) > 2
 
@@ -285,9 +273,7 @@ class MorphologyAnalyzer:
         # Spectral entropy
         psd = fft_mag**2
         psd_norm = psd / (np.sum(psd) + 1e-10)
-        spectral_entropy = -np.sum(psd_norm * np.log2(psd_norm + 1e-10)) / np.log2(
-            len(psd_norm)
-        )
+        spectral_entropy = -np.sum(psd_norm * np.log2(psd_norm + 1e-10)) / np.log2(len(psd_norm))
 
         return {
             "dominant_frequencies": [float(f) for f in dominant_freqs],
@@ -302,9 +288,7 @@ class MorphologyAnalyzer:
 
         # Smooth gradient
         window_size = max(5, int(len(gradient) * 0.02))
-        gradient_smooth = np.convolve(
-            gradient, np.ones(window_size) / window_size, mode="same"
-        )
+        gradient_smooth = np.convolve(gradient, np.ones(window_size) / window_size, mode="same")
 
         # Find change points (peaks in gradient)
         threshold = np.mean(gradient_smooth) + np.std(gradient_smooth)
@@ -336,9 +320,7 @@ class MorphologyAnalyzer:
             phase_duration = (end - start) / self.sampling_rate
 
             # Classify phase pattern
-            power_norm = (phase_power - np.min(phase_power)) / (
-                np.max(phase_power) - np.min(phase_power) + 1e-7
-            )
+            power_norm = (phase_power - np.min(phase_power)) / (np.max(phase_power) - np.min(phase_power) + 1e-7)
             pattern_type = self._classify_pattern(power_norm)
 
             phases.append(

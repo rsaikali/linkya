@@ -20,9 +20,7 @@ class Seq2PointPreprocessor:
             sequence_length: Longueur de la fenêtre d'entrée (impair pour point central)
         """
         # Forcer impair pour avoir un point central
-        self.sequence_length = (
-            sequence_length if sequence_length % 2 == 1 else sequence_length - 1
-        )
+        self.sequence_length = sequence_length if sequence_length % 2 == 1 else sequence_length - 1
         self.input_scaler = StandardScaler()
         self.target_scaler = MinMaxScaler(feature_range=(0, 1))
         self.fitted = False
@@ -40,14 +38,10 @@ class Seq2PointPreprocessor:
             Tuple (X: séquences d'entrée, y: valeurs cibles au point central)
         """
         if len(aggregate_power) != len(appliance_power):
-            raise ValueError(
-                "aggregate_power et appliance_power doivent avoir la même longueur"
-            )
+            raise ValueError("aggregate_power et appliance_power doivent avoir la même longueur")
 
         if len(aggregate_power) < self.sequence_length:
-            logger.warning(
-                f"Séquence trop courte ({len(aggregate_power)} < {self.sequence_length})"
-            )
+            logger.warning(f"Séquence trop courte ({len(aggregate_power)} < {self.sequence_length})")
             return np.array([]), np.array([])
 
         X, y = [], []
@@ -80,9 +74,7 @@ class Seq2PointPreprocessor:
             Array of windows for prediction
         """
         if len(aggregate_power) < self.sequence_length:
-            logger.warning(
-                f"Sequence too short ({len(aggregate_power)} < {self.sequence_length})"
-            )
+            logger.warning(f"Sequence too short ({len(aggregate_power)} < {self.sequence_length})")
             return np.array([])
 
         X = []
@@ -126,9 +118,7 @@ class Seq2PointPreprocessor:
             Tuple (X transformé, y transformé ou None)
         """
         if not self.fitted:
-            raise ValueError(
-                "Le preprocessor doit être ajusté avant transformation (fit)"
-            )
+            raise ValueError("Le preprocessor doit être ajusté avant transformation (fit)")
 
         # Normaliser X (chaque séquence indépendamment)
         X_scaled = np.zeros_like(X)

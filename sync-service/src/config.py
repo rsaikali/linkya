@@ -22,9 +22,7 @@ class Settings:
 
         # Celery
         self.celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-        self.celery_result_backend = os.getenv(
-            "CELERY_RESULT_BACKEND", "redis://redis:6379/0"
-        )
+        self.celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 
         # Synchronisation
         self.sync_interval_seconds = int(os.getenv("SYNC_INTERVAL_SECONDS", "5"))
@@ -33,15 +31,13 @@ class Settings:
     @property
     def remote_db_url(self):
         return (
-            f"mysql+pymysql://{self.remote_db_user}:{self.remote_db_password}"
-            f"@{self.remote_db_host}:{self.remote_db_port}/{self.remote_db_name}"
+            f"mysql+pymysql://{self.remote_db_user}:{self.remote_db_password}" f"@{self.remote_db_host}:{self.remote_db_port}/{self.remote_db_name}"
         )
 
     @property
     def local_db_url(self):
         return (
-            f"postgresql+psycopg://{self.local_db_user}:{self.local_db_password}"
-            f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
+            f"postgresql+psycopg://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
         )
 
 

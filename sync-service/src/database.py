@@ -17,14 +17,10 @@ class DatabaseManager:
 
     def __init__(self):
         # Connexion à la base distante (lecture seule)
-        self.remote_engine = create_engine(
-            settings.remote_db_url, pool_pre_ping=True, echo=False
-        )
+        self.remote_engine = create_engine(settings.remote_db_url, pool_pre_ping=True, echo=False)
 
         # Connexion à la base locale (TimescaleDB)
-        self.local_engine = create_engine(
-            settings.local_db_url, pool_pre_ping=True, echo=False
-        )
+        self.local_engine = create_engine(settings.local_db_url, pool_pre_ping=True, echo=False)
 
         self.LocalSession = sessionmaker(bind=self.local_engine)
         self.RemoteSession = sessionmaker(bind=self.remote_engine)
@@ -133,9 +129,7 @@ class DatabaseManager:
     def get_last_sync_timestamp(self):
         """Récupère le timestamp de la dernière synchronisation"""
         with self.local_engine.connect() as conn:
-            result = conn.execute(
-                text("SELECT MAX(time) as last_ts FROM linky_realtime")
-            )
+            result = conn.execute(text("SELECT MAX(time) as last_ts FROM linky_realtime"))
             row = result.fetchone()
             return row[0] if row and row[0] else None
 

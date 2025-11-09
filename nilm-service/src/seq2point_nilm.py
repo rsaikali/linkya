@@ -48,10 +48,7 @@ class Seq2PointNILMManager:
         # Modèle Multi-Output
         self.multioutput_model = None
 
-        logger.info(
-            f"🎯 Architecture: {self.architecture.upper()}, "
-            f"Type: {self.model_type.upper()}"
-        )
+        logger.info(f"🎯 Architecture: {self.architecture.upper()}, " f"Type: {self.model_type.upper()}")
 
     def load_model(self, model_path):
         """
@@ -71,9 +68,7 @@ class Seq2PointNILMManager:
 
             appliance_ids = metadata.get("appliance_ids", [])
             appliance_names = metadata.get("appliance_names", [])
-            sequence_length = metadata.get(
-                "sequence_length", settings.effective_sequence_length
-            )
+            sequence_length = metadata.get("sequence_length", settings.effective_sequence_length)
             architecture = metadata.get("architecture", "MultiOutput")
 
             logger.info(f"📂 Chargement modèle {architecture}...")
@@ -88,10 +83,7 @@ class Seq2PointNILMManager:
                 self.multioutput_model.load(model_path)
                 self.architecture = "multioutput"
             else:
-                raise ValueError(
-                    f"Architecture {architecture} non supportée. "
-                    f"Seule 'MultiOutput' est disponible."
-                )
+                raise ValueError(f"Architecture {architecture} non supportée. " f"Seule 'MultiOutput' est disponible.")
 
             logger.info(f"✅ Modèle {architecture} chargé: {model_path}")
 
@@ -139,12 +131,8 @@ class Seq2PointNILMManager:
                         WHERE appliance_id = :appliance_id
                         ORDER BY created_at
                     """
-                    result = session.execute(
-                        text(query), {"appliance_id": appliance_id}
-                    )
-                    all_signatures[appliance_id] = [
-                        dict(row._mapping) for row in result
-                    ]
+                    result = session.execute(text(query), {"appliance_id": appliance_id})
+                    all_signatures[appliance_id] = [dict(row._mapping) for row in result]
 
             # Charger les profils pour change point detector
             logger.info("📊 Chargement profils signatures...")
@@ -153,15 +141,11 @@ class Seq2PointNILMManager:
                 appliance_name = appliance_names[app_idx]
                 for sig in signatures:
                     # Charger les données de signature
-                    agg, app_pwr = (
-                        Seq2PointMultiOutputModel._load_signature_data_static(sig)
-                    )
+                    agg, app_pwr = Seq2PointMultiOutputModel._load_signature_data_static(sig)
                     if app_pwr is None or len(app_pwr) == 0:
                         continue
 
-                    duration = int(
-                        (sig["end_time"] - sig["start_time"]).total_seconds()
-                    )
+                    duration = int((sig["end_time"] - sig["start_time"]).total_seconds())
 
                     self.change_point_detector.add_signature_profile(
                         appliance_id=appliance_id,
@@ -171,26 +155,16 @@ class Seq2PointNILMManager:
                         signature_id=sig["id"],
                     )
 
-            total_profiles = sum(
-                len(data["profiles"])
-                for data in (self.change_point_detector.signature_profiles.values())
-            )
-            logger.info(
-                f"✅ {len(self.change_point_detector.signature_profiles)} "
-                f"appareils, {total_profiles} profils"
-            )
+            total_profiles = sum(len(data["profiles"]) for data in (self.change_point_detector.signature_profiles.values()))
+            logger.info(f"✅ {len(self.change_point_detector.signature_profiles)} " f"appareils, {total_profiles} profils")
 
             # Entraîner avec l'architecture choisie
             if self.architecture == "multioutput":
-                logger.info(
-                    "🎬 Entraînement Multi-Output " "(outputs parallèles + attention)"
-                )
+                logger.info("🎬 Entraînement Multi-Output " "(outputs parallèles + attention)")
 
                 # Créer ou réutiliser modèle Multi-Output
                 if fine_tune and self.multioutput_model is not None:
-                    logger.info(
-                        "♻️  Réutilisation modèle Multi-Output " "pour fine-tuning"
-                    )
+                    logger.info("♻️  Réutilisation modèle Multi-Output " "pour fine-tuning")
                 else:
                     self.multioutput_model = Seq2PointMultiOutputModel(
                         appliance_ids,
@@ -209,10 +183,7 @@ class Seq2PointNILMManager:
                 )
 
                 if not metrics:
-                    logger.error(
-                        "Entraînement Multi-Output impossible "
-                        "(données insuffisantes)"
-                    )
+                    logger.error("Entraînement Multi-Output impossible " "(données insuffisantes)")
                     return {"error": "insufficient_training_data"}
 
                 model_path = Path(settings.nilm_model_path) / (f"{model_name}.keras")
@@ -336,28 +307,17 @@ class Seq2PointNILMManager:
             is_false_positive = False
 
             # DEBUG: Log de la détection à analyser
-            logger.info(
-                f"🔍 Analyse détection: {det['duration_seconds']}s, "
-                f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh"
-            )
+            logger.info(f"🔍 Analyse détection: {det['duration_seconds']}s, " f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh")
 
             for neg in negs:
                 # Critère 1: Durée similaire (±50% car change points)
-                duration_ratio = (
-                    det["duration_seconds"] / neg["duration_seconds"]
-                    if neg["duration_seconds"] > 0
-                    else 0
-                )
+                duration_ratio = det["duration_seconds"] / neg["duration_seconds"] if neg["duration_seconds"] > 0 else 0
 
                 # DEBUG: Log détaillé de la comparaison
                 logger.debug(
-                    f"  vs signature négative #{neg['id']}: "
-                    f"{neg['duration_seconds']:.0f}s, "
-                    f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
+                    f"  vs signature négative #{neg['id']}: " f"{neg['duration_seconds']:.0f}s, " f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
                 )
-                logger.debug(
-                    f"    Ratios: durée={duration_ratio:.2f}, " f"seuils=[0.50, 1.50]"
-                )
+                logger.debug(f"    Ratios: durée={duration_ratio:.2f}, " f"seuils=[0.50, 1.50]")
 
                 if not (0.50 <= duration_ratio <= 1.50):
                     logger.debug("    ✗ Durée hors limite")
@@ -368,10 +328,7 @@ class Seq2PointNILMManager:
                 # Critère 2: Puissance moyenne similaire (±15% assoupli)
                 if neg["avg_power"] > 0:
                     power_ratio = det["avg_power"] / neg["avg_power"]
-                    logger.debug(
-                        f"    Puissance: ratio={power_ratio:.2f}, "
-                        f"seuils=[0.85, 1.15]"
-                    )
+                    logger.debug(f"    Puissance: ratio={power_ratio:.2f}, " f"seuils=[0.85, 1.15]")
                     if not (0.85 <= power_ratio <= 1.15):
                         logger.debug("    ✗ Puissance hors limite")
                         continue
@@ -381,10 +338,7 @@ class Seq2PointNILMManager:
                 det_energy = det.get("energy_wh", 0)
                 if neg["energy_wh"] > 0 and det_energy > 0:
                     energy_ratio = det_energy / neg["energy_wh"]
-                    logger.debug(
-                        f"    Énergie: ratio={energy_ratio:.2f}, "
-                        f"seuils=[0.80, 1.20]"
-                    )
+                    logger.debug(f"    Énergie: ratio={energy_ratio:.2f}, " f"seuils=[0.80, 1.20]")
                     if not (0.80 <= energy_ratio <= 1.20):
                         logger.debug("    ✗ Énergie hors limite")
                         continue
@@ -406,10 +360,7 @@ class Seq2PointNILMManager:
                 rejected_count += 1
 
         if rejected_count > 0:
-            logger.info(
-                f"✅ Filtrage terminé: {rejected_count} faux positifs "
-                f"rejetés, {len(filtered)} détections conservées"
-            )
+            logger.info(f"✅ Filtrage terminé: {rejected_count} faux positifs " f"rejetés, {len(filtered)} détections conservées")
 
         return filtered
 
@@ -445,9 +396,7 @@ class Seq2PointNILMManager:
                       AND is_negative = FALSE
                     ORDER BY created_at
                 """
-                signatures = session.execute(
-                    text(sig_query), {"appliance_id": appliance_id}
-                ).fetchall()
+                signatures = session.execute(text(sig_query), {"appliance_id": appliance_id}).fetchall()
 
                 for row in signatures:
                     sig_id = row[0]
@@ -465,9 +414,7 @@ class Seq2PointNILMManager:
                             power_data = json_module.loads(power_data_json)
                             appliance_power = np.array(power_data.get("values", []))
                         except Exception as e:
-                            logger.warning(
-                                f"Erreur lecture power_data " f"sig {sig_id}: {e}"
-                            )
+                            logger.warning(f"Erreur lecture power_data " f"sig {sig_id}: {e}")
 
                     # Fallback: charger depuis linky_realtime
                     if appliance_power is None or len(appliance_power) == 0:
@@ -477,11 +424,7 @@ class Seq2PointNILMManager:
                             "start_time": start_time,
                             "end_time": end_time,
                         }
-                        aggregate_power, appliance_power = (
-                            Seq2PointMultiOutputModel._load_signature_data_static(
-                                signature
-                            )
-                        )
+                        aggregate_power, appliance_power = Seq2PointMultiOutputModel._load_signature_data_static(signature)
 
                     if appliance_power is None or len(appliance_power) == 0:
                         continue
@@ -494,9 +437,7 @@ class Seq2PointNILMManager:
                         try:
                             morphology = json_module.loads(morphology_json)
                         except Exception as e:
-                            logger.warning(
-                                f"Erreur lecture morphology " f"sig {sig_id}: {e}"
-                            )
+                            logger.warning(f"Erreur lecture morphology " f"sig {sig_id}: {e}")
 
                     # Ajouter le profil avec morphologie
                     self.change_point_detector.add_signature_profile(
@@ -508,15 +449,8 @@ class Seq2PointNILMManager:
                         morphology=morphology,
                     )
 
-        total_profiles = sum(
-            len(data["profiles"])
-            for data in self.change_point_detector.signature_profiles.values()
-        )
-        logger.info(
-            f"Profils chargés: "
-            f"{len(self.change_point_detector.signature_profiles)} "
-            f"appareils, {total_profiles} profils"
-        )
+        total_profiles = sum(len(data["profiles"]) for data in self.change_point_detector.signature_profiles.values())
+        logger.info(f"Profils chargés: " f"{len(self.change_point_detector.signature_profiles)} " f"appareils, {total_profiles} profils")
 
     def disaggregate(self, start_time, end_time):
         """
@@ -548,9 +482,7 @@ class Seq2PointNILMManager:
                     WHERE time >= :start_time AND time <= :end_time
                     ORDER BY time
                 """
-                result = session.execute(
-                    text(query), {"start_time": start_time, "end_time": end_time}
-                )
+                result = session.execute(text(query), {"start_time": start_time, "end_time": end_time})
                 data = result.fetchall()
                 if not data:
                     logger.warning("Aucune donnée pour désagrégation")
@@ -563,23 +495,17 @@ class Seq2PointNILMManager:
             # APPROCHE HYBRIDE : Change Point Detection + Pattern Matching
             ##########################################################
 
-            logger.info(
-                "=== Détection Hybride " "(Change Point + Pattern Matching) ==="
-            )
+            logger.info("=== Détection Hybride " "(Change Point + Pattern Matching) ===")
 
             # Étape 1 : Détecter les change points dans l'agrégé
-            change_points = self.change_point_detector.detect_change_points(
-                aggregate_power
-            )
+            change_points = self.change_point_detector.detect_change_points(aggregate_power)
 
             if not change_points:
                 logger.warning("Aucun change point détecté")
                 return []
 
             # Étape 2 : Extraire les patterns entre les change points
-            patterns = self.change_point_detector.extract_patterns(
-                aggregate_power, change_points
-            )
+            patterns = self.change_point_detector.extract_patterns(aggregate_power, change_points)
 
             if not patterns:
                 logger.warning("Aucun pattern extrait")
@@ -588,14 +514,10 @@ class Seq2PointNILMManager:
             # Étape 3 : Matcher chaque pattern avec les profils de signatures
             detections = []
             for pattern_data in patterns:
-                match_result = self.change_point_detector.match_pattern(
-                    pattern_data, pattern_morphology=pattern_data.get("morphology")
-                )
+                match_result = self.change_point_detector.match_pattern(pattern_data, pattern_morphology=pattern_data.get("morphology"))
 
                 if match_result:
-                    (appliance_id, appliance_name, matched_signature_id, confidence) = (
-                        match_result
-                    )
+                    (appliance_id, appliance_name, matched_signature_id, confidence) = match_result
 
                     # Mapper les indices vers les timestamps
                     start_idx = pattern_data["start_idx"]
@@ -619,9 +541,7 @@ class Seq2PointNILMManager:
                             },
                         }
                         if matched_signature_id is not None:
-                            detection["features"]["matched_signature_id"] = int(
-                                matched_signature_id
-                            )
+                            detection["features"]["matched_signature_id"] = int(matched_signature_id)
                             detection["features"]["matching"] = {
                                 "score": float(confidence),
                                 "method": "duration_power_shape_combined",
@@ -643,14 +563,10 @@ class Seq2PointNILMManager:
             # ✨ NOUVEAU: Filtrer par seuil de confiance minimum
             min_confidence = 0.40  # 40% de confiance minimum (assoupli)
             before_conf_filter = len(detections)
-            detections = [
-                d for d in detections if d.get("confidence_score", 0) >= min_confidence
-            ]
+            detections = [d for d in detections if d.get("confidence_score", 0) >= min_confidence]
             if before_conf_filter > len(detections):
                 logger.info(
-                    f"Filtrage confiance: "
-                    f"{before_conf_filter - len(detections)} "
-                    f"détections rejetées (confiance < {min_confidence:.0%})"
+                    f"Filtrage confiance: " f"{before_conf_filter - len(detections)} " f"détections rejetées (confiance < {min_confidence:.0%})"
                 )
 
             logger.info(f"Total détections après filtrage: {len(detections)}")
@@ -690,22 +606,14 @@ class Seq2PointNILMManager:
             if gap <= max_gap_seconds:
                 # Fusionner : étendre le cycle actuel
                 current_merged["end_idx"] = cycle["end_idx"]
-                current_merged["duration_seconds"] = (
-                    current_merged["end_idx"] - current_merged["start_idx"]
-                )
+                current_merged["duration_seconds"] = current_merged["end_idx"] - current_merged["start_idx"]
                 # Recalculer avg_power et max_power (moyenne pondérée)
                 # Note: on garde la max_power la plus élevée
-                current_merged["max_power"] = max(
-                    current_merged["max_power"], cycle["max_power"]
-                )
+                current_merged["max_power"] = max(current_merged["max_power"], cycle["max_power"])
                 # Pour avg_power, on fait une moyenne simple (approximation)
-                current_merged["avg_power"] = (
-                    current_merged["avg_power"] + cycle["avg_power"]
-                ) / 2
+                current_merged["avg_power"] = (current_merged["avg_power"] + cycle["avg_power"]) / 2
                 # Sommer l'énergie
-                current_merged["energy_wh"] = (
-                    current_merged["energy_wh"] + cycle["energy_wh"]
-                )
+                current_merged["energy_wh"] = current_merged["energy_wh"] + cycle["energy_wh"]
             else:
                 # Gap trop grand : sauvegarder le cycle fusionné actuel et commencer un nouveau
                 merged.append(current_merged)
@@ -738,12 +646,8 @@ class Seq2PointNILMManager:
         # Paramètres de détection de gaps (périodes inactives entre deux cycles)
         # Un gap est détecté si la puissance reste < 20% du threshold pendant min_gap_duration
         # Pour un ballon d'eau chaude (3500W), un gap = puissance < 100W
-        gap_threshold = (
-            settings.nilm_min_power_threshold * 0.2
-        )  # 20% du seuil (= 100W avec threshold=500W)
-        min_gap_duration = (
-            120  # 2 minutes minimum pour considérer un vrai gap (fin de chauffe)
-        )
+        gap_threshold = settings.nilm_min_power_threshold * 0.2  # 20% du seuil (= 100W avec threshold=500W)
+        min_gap_duration = 120  # 2 minutes minimum pour considérer un vrai gap (fin de chauffe)
 
         in_segment = False
         start_idx = 0
@@ -773,29 +677,18 @@ class Seq2PointNILMManager:
                             orig_start = start_idx + half_window
                             orig_end = gap_start + half_window
 
-                            if orig_start < len(timestamps) and orig_end <= len(
-                                timestamps
-                            ):
+                            if orig_start < len(timestamps) and orig_end <= len(timestamps):
                                 segment_predictions = predictions[start_idx:gap_start]
 
                                 segment = {
                                     "start_time": timestamps[orig_start],
-                                    "end_time": timestamps[
-                                        min(orig_end, len(timestamps) - 1)
-                                    ],
+                                    "end_time": timestamps[min(orig_end, len(timestamps) - 1)],
                                     "duration_seconds": duration,
                                     "avg_power": float(np.mean(segment_predictions)),
                                     "max_power": float(np.max(segment_predictions)),
-                                    "energy_wh": float(
-                                        np.sum(segment_predictions) / 3600
-                                    ),
+                                    "energy_wh": float(np.sum(segment_predictions) / 3600),
                                     "confidence_score": (
-                                        float(
-                                            np.mean(segment_predictions)
-                                            / np.max(predictions)
-                                        )
-                                        if np.max(predictions) > 0
-                                        else 0.0
+                                        float(np.mean(segment_predictions) / np.max(predictions)) if np.max(predictions) > 0 else 0.0
                                     ),
                                 }
                                 segments.append(segment)
@@ -821,21 +714,12 @@ class Seq2PointNILMManager:
 
                             segment = {
                                 "start_time": timestamps[orig_start],
-                                "end_time": timestamps[
-                                    min(orig_end, len(timestamps) - 1)
-                                ],
+                                "end_time": timestamps[min(orig_end, len(timestamps) - 1)],
                                 "duration_seconds": duration,
                                 "avg_power": float(np.mean(segment_predictions)),
                                 "max_power": float(np.max(segment_predictions)),
                                 "energy_wh": float(np.sum(segment_predictions) / 3600),
-                                "confidence_score": (
-                                    float(
-                                        np.mean(segment_predictions)
-                                        / np.max(predictions)
-                                    )
-                                    if np.max(predictions) > 0
-                                    else 0.0
-                                ),
+                                "confidence_score": (float(np.mean(segment_predictions) / np.max(predictions)) if np.max(predictions) > 0 else 0.0),
                             }
                             segments.append(segment)
 
@@ -859,11 +743,7 @@ class Seq2PointNILMManager:
                         "avg_power": float(np.mean(segment_predictions)),
                         "max_power": float(np.max(segment_predictions)),
                         "energy_wh": float(np.sum(segment_predictions) / 3600),
-                        "confidence_score": (
-                            float(np.mean(segment_predictions) / np.max(predictions))
-                            if np.max(predictions) > 0
-                            else 0.0
-                        ),
+                        "confidence_score": (float(np.mean(segment_predictions) / np.max(predictions)) if np.max(predictions) > 0 else 0.0),
                     }
                     segments.append(segment)
 

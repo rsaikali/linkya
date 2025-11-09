@@ -62,9 +62,7 @@ async def delete_all_detections():
                     }
                 )
                 redis_client.publish("detections:updates", message)
-                logger.info(
-                    f"Published detections_cleared to Redis ({result['deleted_count']} deleted)"
-                )
+                logger.info(f"Published detections_cleared to Redis ({result['deleted_count']} deleted)")
             except Exception as e:
                 logger.error(f"Failed to publish detections_cleared to Redis: {e}")
 
@@ -102,9 +100,7 @@ async def validate_detection(detection_id):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la validation de la détection {detection_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de la validation de la détection {detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -132,9 +128,7 @@ async def invalidate_detection(detection_id):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de l'invalidation de la détection {detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -155,9 +149,7 @@ async def reassign_detection(detection_id, request):
     try:
         appliance_name = request.get("appliance_name")
         if not appliance_name:
-            raise HTTPException(
-                status_code=400, detail="Le nom de l'appareil est requis"
-            )
+            raise HTTPException(status_code=400, detail="Le nom de l'appareil est requis")
 
         result = db_manager.reassign_detection(detection_id, appliance_name)
         if not result:
@@ -165,17 +157,11 @@ async def reassign_detection(detection_id, request):
 
         return {
             "status": "success",
-            "message": (
-                f"Détection réassignée de {result['incorrect_appliance']} "
-                f"à {result['correct_appliance']}"
-            ),
+            "message": (f"Détection réassignée de {result['incorrect_appliance']} " f"à {result['correct_appliance']}"),
             "reassignment": result,
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la réassignation de la détection "
-            f"{detection_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de la réassignation de la détection " f"{detection_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")

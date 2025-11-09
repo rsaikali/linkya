@@ -8,9 +8,7 @@ from .database import db_manager
 
 
 # Configuration du logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Initialisation de Celery
@@ -83,9 +81,7 @@ def incremental_sync():
             logger.info(f"Dernière synchronisation: {last_sync}")
             data = db_manager.get_remote_data(since=last_sync)
         else:
-            logger.warning(
-                "Aucune synchronisation précédente, synchronisation complète nécessaire"
-            )
+            logger.warning("Aucune synchronisation précédente, synchronisation complète nécessaire")
             return full_sync()
 
         if data:

@@ -18,17 +18,11 @@ class Settings:
 
         # Redis/Celery
         self.celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-        self.celery_result_backend = os.getenv(
-            "CELERY_RESULT_BACKEND", "redis://redis:6379/0"
-        )
+        self.celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 
         # Configuration NILM
-        self.nilm_training_interval_hours = int(
-            os.getenv("NILM_TRAINING_INTERVAL_HOURS", "24")
-        )
-        self.nilm_detection_interval_minutes = int(
-            os.getenv("NILM_DETECTION_INTERVAL_MINUTES", "5")
-        )
+        self.nilm_training_interval_hours = int(os.getenv("NILM_TRAINING_INTERVAL_HOURS", "24"))
+        self.nilm_detection_interval_minutes = int(os.getenv("NILM_DETECTION_INTERVAL_MINUTES", "5"))
         # Période analysée (None=tout, ou nombre d'heures)
         period_hours = os.getenv("NILM_DETECTION_PERIOD_HOURS")
         self.nilm_detection_period_hours = int(period_hours) if period_hours else None
@@ -36,9 +30,7 @@ class Settings:
         self.nilm_window_size_minutes = int(os.getenv("NILM_WINDOW_SIZE_MINUTES", "10"))
         # Seuil minimal de puissance (W) - réduit pour transitions douces
         self.nilm_min_power_threshold = int(os.getenv("NILM_MIN_POWER_THRESHOLD", "15"))
-        self.nilm_min_duration_seconds = int(
-            os.getenv("NILM_MIN_DURATION_SECONDS", "30")
-        )
+        self.nilm_min_duration_seconds = int(os.getenv("NILM_MIN_DURATION_SECONDS", "30"))
 
         # Configuration du modèle (S2P, LSTM, GRU)
         self.nilm_model_path = os.getenv("NILM_MODEL_PATH", "/app/models")
@@ -60,10 +52,7 @@ class Settings:
     @property
     def database_url(self):
         """URL de connexion à la base de données locale"""
-        return (
-            f"postgresql://{self.local_db_user}:{self.local_db_password}"
-            f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
-        )
+        return f"postgresql://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
 
     @property
     def effective_sequence_length(self):

@@ -31,9 +31,5 @@ class DatabaseBase:
 
     def __init__(self):
         """Initializes the database connection."""
-        self.engine = create_engine(
-            settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20
-        )
-        self.SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine
-        )
+        self.engine = create_engine(settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20)
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)

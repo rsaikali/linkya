@@ -39,14 +39,10 @@ class Seq2PointMultiOutputModel:
     - Architecture simple et efficace
     """
 
-    def __init__(
-        self, appliance_ids, appliance_names, sequence_length=599, model_type="gru"
-    ):
+    def __init__(self, appliance_ids, appliance_names, sequence_length=599, model_type="gru"):
         self.appliance_ids = appliance_ids
         self.appliance_names = appliance_names
-        self.sequence_length = (
-            sequence_length if sequence_length % 2 == 1 else sequence_length - 1
-        )
+        self.sequence_length = sequence_length if sequence_length % 2 == 1 else sequence_length - 1
         self.model_type = model_type
         self.num_appliances = len(appliance_ids)
         self.model = None
@@ -55,12 +51,8 @@ class Seq2PointMultiOutputModel:
         self.use_gpu = self._configure_device()
 
         # Mapping appareil ID -> index
-        self.appliance_id_to_idx = {
-            app_id: idx for idx, app_id in enumerate(appliance_ids)
-        }
-        self.appliance_idx_to_id = {
-            idx: app_id for app_id, idx in self.appliance_id_to_idx.items()
-        }
+        self.appliance_id_to_idx = {app_id: idx for idx, app_id in enumerate(appliance_ids)}
+        self.appliance_idx_to_id = {idx: app_id for app_id, idx in self.appliance_id_to_idx.items()}
 
     def _configure_device(self):
         gpus = tf.config.list_physical_devices("GPU")
@@ -85,14 +77,10 @@ class Seq2PointMultiOutputModel:
         - Outputs: N branches (une par appareil)
         """
         # Input
-        aggregate_input = layers.Input(
-            shape=(self.sequence_length, 1), name="aggregate_power"
-        )
+        aggregate_input = layers.Input(shape=(self.sequence_length, 1), name="aggregate_power")
 
         # Conv1D pour features locales
-        x = layers.Conv1D(
-            64, kernel_size=5, padding="same", activation="relu", name="conv1d_1"
-        )(aggregate_input)
+        x = layers.Conv1D(64, kernel_size=5, padding="same", activation="relu", name="conv1d_1")(aggregate_input)
         x = layers.MaxPooling1D(pool_size=2, name="pool_1")(x)
 
         # Recurrent layers pour features temporelles
@@ -110,9 +98,7 @@ class Seq2PointMultiOutputModel:
             raise ValueError(f"Type de modèle inconnu: {self.model_type}")
 
         # Multi-Head Attention pour capturer patterns simultanés
-        x = MultiHeadAttentionLayer(
-            num_heads=4, key_dim=16, name="multi_head_attention"
-        )(x)
+        x = MultiHeadAttentionLayer(num_heads=4, key_dim=16, name="multi_head_attention")(x)
 
         # Flatten pour dense layers
         x = layers.Flatten(name="flatten")(x)
@@ -128,17 +114,13 @@ class Seq2PointMultiOutputModel:
         # pour que le modèle reste valide si l'utilisateur renomme
         outputs = []
         output_names = []
-        for i, (app_id, app_name) in enumerate(
-            zip(self.appliance_ids, self.appliance_names)
-        ):
+        for i, (app_id, app_name) in enumerate(zip(self.appliance_ids, self.appliance_names)):
             # Utiliser l'ID de l'appareil pour le nom du layer
             output_name = f"output_appliance_{app_id}"
             output_names.append(output_name)
 
             # Branch spécifique à l'appareil
-            branch = layers.Dense(
-                32, activation="relu", name=f"branch_appliance_{app_id}"
-            )(shared)
+            branch = layers.Dense(32, activation="relu", name=f"branch_appliance_{app_id}")(shared)
             output = layers.Dense(1, activation="linear", name=output_name)(branch)
             outputs.append(output)
 
@@ -238,22 +220,14 @@ class Seq2PointMultiOutputModel:
 
                     # Timestamps
                     sig_start = sig["start_time"]
-                    sig_timestamp = (
-                        sig_start.timestamp()
-                        if hasattr(sig_start, "timestamp")
-                        else sig_start
-                    )
+                    sig_timestamp = sig_start.timestamp() if hasattr(sig_start, "timestamp") else sig_start
                     timestamps.extend([sig_timestamp] * len(X))
 
         # Ajouter exemples négatifs si demandé
         if use_feedback:
-            negative_count = self._add_negative_examples_multioutput(
-                X_aggregate, y_outputs, timestamps, class_counts
-            )
+            negative_count = self._add_negative_examples_multioutput(X_aggregate, y_outputs, timestamps, class_counts)
             if negative_count > 0:
-                logger.info(
-                    f"✅ {negative_count} exemples négatifs ajoutés " f"(Multi-Output)"
-                )
+                logger.info(f"✅ {negative_count} exemples négatifs ajoutés " f"(Multi-Output)")
 
         # Concaténer
         if not X_aggregate:
@@ -261,10 +235,7 @@ class Seq2PointMultiOutputModel:
             return {}
 
         X = np.concatenate(X_aggregate, axis=0)
-        y_dict = {
-            idx: np.concatenate(y_outputs[idx], axis=0)
-            for idx in range(self.num_appliances)
-        }
+        y_dict = {idx: np.concatenate(y_outputs[idx], axis=0) for idx in range(self.num_appliances)}
 
         # Calculer class weights (inverse proportionnel)
         total_samples = len(X)
@@ -280,10 +251,7 @@ class Seq2PointMultiOutputModel:
         logger.info("📊 Class weights:")
         for idx, app_id in self.appliance_idx_to_id.items():
             app_name = self.appliance_names[idx]
-            logger.info(
-                f"   {app_name}: {class_weights[idx]:.2f} "
-                f"({class_counts[idx]} samples)"
-            )
+            logger.info(f"   {app_name}: {class_weights[idx]:.2f} " f"({class_counts[idx]} samples)")
 
         # Ajuster scalers (from-scratch seulement)
         if not is_fine_tuning:
@@ -302,9 +270,7 @@ class Seq2PointMultiOutputModel:
 
         y_scaled_dict = {}
         for idx in range(self.num_appliances):
-            y_scaled = self.preprocessor.target_scaler.transform(
-                y_dict[idx].reshape(-1, 1)
-            ).flatten()
+            y_scaled = self.preprocessor.target_scaler.transform(y_dict[idx].reshape(-1, 1)).flatten()
             y_scaled_dict[idx] = y_scaled
 
         # Time Series Cross-Validation
@@ -319,9 +285,7 @@ class Seq2PointMultiOutputModel:
         idx_val = sorted_indices[val_idx]
 
         logger.info(
-            f"Dernier fold utilisé: {len(idx_train)} train / "
-            f"{len(idx_val)} val "
-            f"({100 * len(idx_val) / len(sorted_indices):.1f}% récent)"
+            f"Dernier fold utilisé: {len(idx_train)} train / " f"{len(idx_val)} val " f"({100 * len(idx_val) / len(sorted_indices):.1f}% récent)"
         )
 
         X_train = X_scaled[idx_train]
@@ -331,9 +295,7 @@ class Seq2PointMultiOutputModel:
         y_val_dict = {}
         safe_output_names = []
 
-        for idx, (app_id, app_name) in enumerate(
-            zip(self.appliance_ids, self.appliance_names)
-        ):
+        for idx, (app_id, app_name) in enumerate(zip(self.appliance_ids, self.appliance_names)):
             # Utiliser l'ID de l'appareil pour le nom du layer
             output_name = f"output_appliance_{app_id}"
             safe_output_names.append(output_name)
@@ -364,18 +326,12 @@ class Seq2PointMultiOutputModel:
 
         # Callbacks
         callbacks_list = [
-            callbacks.EarlyStopping(
-                monitor="val_loss", patience=10, restore_best_weights=True, verbose=1
-            ),
-            callbacks.ReduceLROnPlateau(
-                monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1
-            ),
+            callbacks.EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True, verbose=1),
+            callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=1),
         ]
 
         # Redis real-time training logs callback
-        redis_callback = RedisTrainingCallback(
-            model_name=model_name, total_epochs=epochs, batch_update_freq=10
-        )
+        redis_callback = RedisTrainingCallback(model_name=model_name, total_epochs=epochs, batch_update_freq=10)
         callbacks_list.append(redis_callback)
         logger.info("Real-time logs → channel 'training:logs'")
 
@@ -399,26 +355,17 @@ class Seq2PointMultiOutputModel:
             "val_loss": float(self.history.history["val_loss"][-1]),
             "appliances": self.appliance_names,
             "architecture": "MultiOutput",
-            "class_weights": {
-                self.appliance_names[idx]: float(class_weights[idx])
-                for idx in range(self.num_appliances)
-            },
+            "class_weights": {self.appliance_names[idx]: float(class_weights[idx]) for idx in range(self.num_appliances)},
         }
 
         # Métriques par appareil
-        for idx, (app_id, app_name) in enumerate(
-            zip(self.appliance_ids, self.appliance_names)
-        ):
+        for idx, (app_id, app_name) in enumerate(zip(self.appliance_ids, self.appliance_names)):
             # Utiliser l'ID de l'appareil pour retrouver les métriques
             output_name = f"output_appliance_{app_id}"
             mae_key = f"{output_name}_mae"
             if mae_key in self.history.history:
-                metrics[f"{app_name}_train_mae"] = float(
-                    self.history.history[mae_key][-1]
-                )
-                metrics[f"{app_name}_val_mae"] = float(
-                    self.history.history[f"val_{mae_key}"][-1]
-                )
+                metrics[f"{app_name}_train_mae"] = float(self.history.history[mae_key][-1])
+                metrics[f"{app_name}_val_mae"] = float(self.history.history[f"val_{mae_key}"][-1])
 
         return metrics
 
@@ -440,9 +387,7 @@ class Seq2PointMultiOutputModel:
         X = self.preprocessor.create_prediction_windows(aggregate_power, stride=stride)
 
         if len(X) == 0:
-            return {
-                app_id: np.zeros_like(aggregate_power) for app_id in self.appliance_ids
-            }
+            return {app_id: np.zeros_like(aggregate_power) for app_id in self.appliance_ids}
 
         # Normaliser
         X_scaled, _ = self.preprocessor.transform(X)
@@ -457,9 +402,7 @@ class Seq2PointMultiOutputModel:
 
         for idx, app_id in enumerate(self.appliance_ids):
             predictions_scaled = predictions_scaled_list[idx]
-            predictions = self.preprocessor.target_scaler.inverse_transform(
-                predictions_scaled
-            ).flatten()
+            predictions = self.preprocessor.target_scaler.inverse_transform(predictions_scaled).flatten()
 
             # Post-traitement
             predictions = np.maximum(predictions, 0)
@@ -527,9 +470,7 @@ class Seq2PointMultiOutputModel:
             logger.error(f"Erreur chargement données signature: {e}")
             return None, None
 
-    def _add_negative_examples_multioutput(
-        self, X_aggregate, y_outputs, timestamps, class_counts
-    ):
+    def _add_negative_examples_multioutput(self, X_aggregate, y_outputs, timestamps, class_counts):
         """Ajoute exemples négatifs pour Multi-Output."""
         negative_count = 0
         negative_sigs = self._load_negative_signatures()
@@ -541,18 +482,14 @@ class Seq2PointMultiOutputModel:
             app_idx = self.appliance_id_to_idx[appliance_id]
 
             for sig in signatures:
-                aggregate = self._load_aggregate_data(
-                    sig["start_time"], sig["end_time"]
-                )
+                aggregate = self._load_aggregate_data(sig["start_time"], sig["end_time"])
 
                 if aggregate is None or len(aggregate) < self.sequence_length:
                     continue
 
                 zero_target = np.zeros(len(aggregate), dtype=np.float32)
 
-                X, y = self.preprocessor.create_sequences(
-                    aggregate, zero_target, stride=15
-                )
+                X, y = self.preprocessor.create_sequences(aggregate, zero_target, stride=15)
 
                 if len(X) > 0:
                     X_aggregate.append(X)
@@ -565,11 +502,7 @@ class Seq2PointMultiOutputModel:
                     class_counts[app_idx] += len(y)
 
                     sig_start = sig["start_time"]
-                    sig_timestamp = (
-                        sig_start.timestamp()
-                        if hasattr(sig_start, "timestamp")
-                        else sig_start
-                    )
+                    sig_timestamp = sig_start.timestamp() if hasattr(sig_start, "timestamp") else sig_start
                     timestamps.extend([sig_timestamp] * len(X))
                     negative_count += 1
 
@@ -623,9 +556,7 @@ class Seq2PointMultiOutputModel:
                     ORDER BY time
                 """
                 )
-                result = conn.execute(
-                    query, {"start_time": start_time, "end_time": end_time}
-                )
+                result = conn.execute(query, {"start_time": start_time, "end_time": end_time})
                 data = [row[0] for row in result if row[0] is not None]
 
                 if not data:
@@ -679,10 +610,6 @@ class Seq2PointMultiOutputModel:
             self.appliance_ids = meta["appliance_ids"]
             self.appliance_names = meta["appliance_names"]
             self.num_appliances = meta["num_appliances"]
-            self.appliance_id_to_idx = {
-                int(k): v for k, v in meta["appliance_id_to_idx"].items()
-            }
-            self.appliance_idx_to_id = {
-                v: int(k) for k, v in self.appliance_id_to_idx.items()
-            }
+            self.appliance_id_to_idx = {int(k): v for k, v in meta["appliance_id_to_idx"].items()}
+            self.appliance_idx_to_id = {v: int(k) for k, v in self.appliance_id_to_idx.items()}
             logger.info(f"📋 Métadonnées chargées: {self.num_appliances} appareils")

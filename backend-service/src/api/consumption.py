@@ -68,9 +68,7 @@ async def get_consumption_history(
 
         data = db_manager.get_consumption_history(start_time_dt, end_time_dt, interval)
         if not data:
-            raise HTTPException(
-                status_code=404, detail="Aucune donnée disponible pour cette période"
-            )
+            raise HTTPException(status_code=404, detail="Aucune donnée disponible pour cette période")
 
         return {
             "start_time": start_time_dt.isoformat(),

@@ -44,14 +44,10 @@ async def update_appliance(appliance_id, appliance_data):
         if not name:
             raise HTTPException(status_code=400, detail="Name is required")
 
-        updated_appliance = db_manager.update_appliance(
-            appliance_id=appliance_id, name=name
-        )
+        updated_appliance = db_manager.update_appliance(appliance_id=appliance_id, name=name)
 
         if not updated_appliance:
-            raise HTTPException(
-                status_code=404, detail=f"Appliance {appliance_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Appliance {appliance_id} not found")
 
         return updated_appliance
     except HTTPException:

@@ -19,9 +19,7 @@ class Settings:
         # API Configuration
         self.api_title = os.getenv("API_TITLE", "Linkya API")
         self.api_version = os.getenv("API_VERSION", "0.1.0")
-        self.api_description = os.getenv(
-            "API_DESCRIPTION", "API REST pour accéder aux données Linky et NILM"
-        )
+        self.api_description = os.getenv("API_DESCRIPTION", "API REST pour accéder aux données Linky et NILM")
         self.cors_origins = [
             "http://localhost:3000",
             "http://frontend:3000",
@@ -31,17 +29,12 @@ class Settings:
 
         # Celery Configuration
         self.celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-        self.celery_result_backend = os.getenv(
-            "CELERY_RESULT_BACKEND", "redis://redis:6379/0"
-        )
+        self.celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 
     @property
     def local_db_url(self):
         """TimescaleDB connection URL."""
-        return (
-            f"postgresql://{self.local_db_user}:{self.local_db_password}"
-            f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
-        )
+        return f"postgresql://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
 
 
 settings = Settings()

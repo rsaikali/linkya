@@ -52,10 +52,7 @@ async def create_signature(signature: SignatureCreate):
     """
     try:
         celery_app = get_celery_app()
-        logger.info(
-            f"Création de signature pour {signature.appliance_name} "
-            f"de {signature.start_time} à {signature.end_time}"
-        )
+        logger.info(f"Création de signature pour {signature.appliance_name} " f"de {signature.start_time} à {signature.end_time}")
 
         # Envoyer la tâche au service NILM
         task = celery_app.send_task(
@@ -82,9 +79,7 @@ async def create_signature(signature: SignatureCreate):
         }
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la création de la signature: {str(e)}", exc_info=True
-        )
+        logger.error(f"Erreur lors de la création de la signature: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -133,9 +128,7 @@ async def delete_signature(signature_id):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}"
-        )
+        logger.error(f"Erreur lors de la suppression de la signature {signature_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -181,9 +174,7 @@ async def export_signatures():
         )
     except Exception as e:
         logger.error(f"Erreur lors de l'export CSV: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur lors de l'export: {str(e)}")
 
 
 @router.post("/import")
@@ -221,9 +212,7 @@ async def import_signatures(file):
 
     try:
         # Publish import_start event
-        publish_progress_sync(
-            "import_start", {"status": "started", "filename": file.filename}
-        )
+        publish_progress_sync("import_start", {"status": "started", "filename": file.filename})
 
         # Lire le contenu du CSV
         content = await file.read()
@@ -305,11 +294,7 @@ async def import_signatures(file):
 
                 # Publish progress every 5 lines
                 if processed_lines % 5 == 0:
-                    progress_percent = (
-                        int((processed_lines / total_lines_expected) * 100)
-                        if total_lines_expected > 0
-                        else 0
-                    )
+                    progress_percent = int((processed_lines / total_lines_expected) * 100) if total_lines_expected > 0 else 0
                     publish_progress_sync(
                         "import_progress",
                         {
@@ -325,9 +310,7 @@ async def import_signatures(file):
                 errors.append({"line": line_num, "error": str(e)})
             except Exception as e:
                 error_count += 1
-                errors.append(
-                    {"line": line_num, "error": f"Erreur inattendue: {str(e)}"}
-                )
+                errors.append({"line": line_num, "error": f"Erreur inattendue: {str(e)}"})
 
         # Publish import_complete event
         publish_progress_sync(
@@ -353,6 +336,4 @@ async def import_signatures(file):
         raise
     except Exception as e:
         logger.error(f"Erreur lors de l'import CSV: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Erreur serveur lors de l'import: {str(e)}")

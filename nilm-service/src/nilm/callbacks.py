@@ -50,15 +50,11 @@ class RedisTrainingCallback(callbacks.Callback):
             redis_host = os.environ.get("REDIS_HOST", "redis")
             redis_port = int(os.environ.get("REDIS_PORT", 6379))
             print(f"[RedisCallback] Connecting to Redis at {redis_host}:{redis_port}")
-            self.redis_client = redis.Redis(
-                host=redis_host, port=redis_port, db=0, decode_responses=True
-            )
+            self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=0, decode_responses=True)
             # Test connection
             self.redis_client.ping()
             print("[RedisCallback] ✅ Connected to Redis")
-            logger.info(
-                f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}"
-            )
+            logger.info(f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}")
         except Exception as e:
             print(f"[RedisCallback] ❌ Failed to connect to Redis: {e}")
             logger.warning(f"⚠️  RedisTrainingCallback: Could not connect to Redis: {e}")
@@ -98,9 +94,7 @@ class RedisTrainingCallback(callbacks.Callback):
     def on_epoch_begin(self, epoch, logs=None):
         """Called at the beginning of each epoch"""
         self.current_epoch = epoch + 1
-        print(
-            f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}"
-        )
+        print(f"[RedisCallback] on_epoch_begin - Epoch {self.current_epoch}/{self.total_epochs}")
         self._publish(
             "epoch_start",
             {
@@ -116,9 +110,7 @@ class RedisTrainingCallback(callbacks.Callback):
 
         # Calculate ETA
         elapsed = (datetime.utcnow() - self.training_start_time).total_seconds()
-        eta_seconds = (elapsed / self.current_epoch) * (
-            self.total_epochs - self.current_epoch
-        )
+        eta_seconds = (elapsed / self.current_epoch) * (self.total_epochs - self.current_epoch)
 
         self._publish(
             "epoch_end",
