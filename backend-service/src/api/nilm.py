@@ -28,7 +28,7 @@ async def trigger_nilm_training():
     """
     try:
         celery_app = get_celery_app()
-        logger.info("Lancement de l'entraînement NILM")
+        logger.info("Lancement oftraining NILM")
 
         # Incrémenter un compteur pour marquer ce training comme légitime
         training_generation = 0
@@ -37,28 +37,21 @@ async def trigger_nilm_training():
             try:
                 # Incrémenter atomiquement le compteur de génération
                 training_generation = redis_client.incr("nilm:training:generation")
-                logger.info(f"Nouvelle génération de training: {training_generation}")
+                logger.info(f"Nouvelle generation de training: {training_generation}")
             except Exception as e:
-                logger.warning(f"Impossible d'incrémenter génération: {e}")
+                logger.warning(f"Unable to increment generation: {e}")
 
         # Envoyer la nouvelle tâche avec la génération en argument
         task = celery_app.send_task(
-            "train_nilm_model",
-            args=[2, training_generation],
-            queue="nilm",
-            routing_key="nilm.train_nilm_model",
+            "train_nilm_model", args=[2, training_generation], queue="nilm", routing_key="nilm.train_nilm_model"
         )  # min_signatures, generation
 
-        logger.info(f"Tâche d'entraînement créée: {task.id}")
+        logger.info(f"Training task created: {task.id}")
 
-        return {
-            "status": "pending",
-            "message": "Entraînement du modèle NILM lancé",
-            "task_id": str(task.id),
-        }
+        return {"status": "pending", "message": "Entraînement du modèle NILM lancé", "task_id": str(task.id)}
 
     except Exception as e:
-        logger.error(f"Erreur lors du lancement de l'entraînement: {str(e)}", exc_info=True)
+        logger.error(f"Error during lancement oftraining: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -72,25 +65,17 @@ async def trigger_nilm_detection():
     """
     try:
         celery_app = get_celery_app()
-        logger.info("Lancement de la détection NILM")
+        logger.info("Lancement of detection NILM")
 
         # Envoyer la tâche à la queue NILM
-        task = celery_app.send_task(
-            "detect_nilm_appliances",
-            queue="nilm",
-            routing_key="nilm.detect_nilm_appliances",
-        )
+        task = celery_app.send_task("detect_nilm_appliances", queue="nilm", routing_key="nilm.detect_nilm_appliances")
 
-        logger.info(f"Tâche de détection créée: {task.id}")
+        logger.info(f"Detection task created: {task.id}")
 
-        return {
-            "status": "pending",
-            "message": "Détection NILM lancée",
-            "task_id": str(task.id),
-        }
+        return {"status": "pending", "message": "Détection NILM lancée", "task_id": str(task.id)}
 
     except Exception as e:
-        logger.error(f"Erreur lors du lancement de la détection: {str(e)}", exc_info=True)
+        logger.error(f"Error during lancement of detection: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -111,7 +96,7 @@ async def get_nilm_models():
             return {"models": [], "total": 0}
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des modèles: {str(e)}", exc_info=True)
+        logger.error(f"Error retrieving models: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 
@@ -143,11 +128,11 @@ async def delete_all_nilm_models():
                 try:
                     os.remove(file_path)
                     deleted_files.append(file_path)
-                    logger.info(f"Fichier supprimé: {file_path}")
+                    logger.info(f"File deleted: {file_path}")
                 except OSError as e:
                     errors.append(f"Fichier {file_path}: {str(e)}")
 
-        logger.info(f"Suppression terminée: " f"{deleted_count} modèle(s), {len(deleted_files)} fichier(s)")
+        logger.info(f"Deletion completed: " f"{deleted_count} model(s), {len(deleted_files)} file(s)")
 
         return {
             "message": f"{deleted_count} modèle(s) supprimé(s) avec succès",
@@ -157,8 +142,5 @@ async def delete_all_nilm_models():
         }
 
     except Exception as e:
-        logger.error(
-            f"Erreur lors de la suppression de tous les modèles: {str(e)}",
-            exc_info=True,
-        )
+        logger.error(f"Error deleting all models: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
