@@ -12,11 +12,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Initialisation de Celery
-celery_app = Celery(
-    "linkya-sync",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-)
+celery_app = Celery("linkya-sync", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
 
 celery_app.conf.update(
     task_serializer="json",
@@ -32,61 +28,51 @@ celery_app.conf.update(
 
 @celery_app.task(name="full_sync")
 def full_sync():
-    """Synchronisation complète des 48h de données"""
-    logger.info("Démarrage de la synchronisation complète...")
+    """Full synchronization of 48h of data"""
+    logger.info("Starting full synchronization...")
 
     try:
-        # Récupération des données des 48 dernières heures
+        # Retrieve data from last 48 hours
         since = datetime.utcnow() - timedelta(hours=settings.sync_retention_hours)
 
-        logger.info(f"Récupération des données depuis {since}")
+        logger.info(f"Fetching data since {since}")
         data = db_manager.get_remote_data(since=since)
 
-        logger.info(f"{len(data)} enregistrements récupérés")
+        logger.info(f"{len(data)} records retrieved")
 
         if data:
             inserted = db_manager.bulk_insert_data(data)
-            logger.info(f"{inserted} enregistrements insérés")
+            logger.info(f"{inserted} records inserted")
 
-            return {
-                "status": "success",
-                "fetched": len(data),
-                "inserted": inserted,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+            return {"status": "success", "fetched": len(data), "inserted": inserted, "timestamp": datetime.utcnow().isoformat()}
         else:
-            logger.info("Aucune donnée à synchroniser")
-            return {
-                "status": "success",
-                "fetched": 0,
-                "inserted": 0,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+            logger.info("No data to synchronize")
+            return {"status": "success", "fetched": 0, "inserted": 0, "timestamp": datetime.utcnow().isoformat()}
 
     except Exception as e:
-        logger.error(f"Erreur lors de la synchronisation complète: {e}")
+        logger.error(f"Error during full synchronization: {e}")
         return {"status": "error", "message": str(e)}
 
 
 @celery_app.task(name="incremental_sync")
 def incremental_sync():
-    """Synchronisation incrémentale des nouvelles données"""
-    logger.info("Démarrage de la synchronisation incrémentale...")
+    """Incremental synchronization of new data"""
+    logger.info("Starting incremental synchronization...")
 
     try:
-        # Récupération du dernier timestamp synchronisé
+        # Retrieve last sync timestamp
         last_sync = db_manager.get_last_sync_timestamp()
 
         if last_sync:
-            logger.info(f"Dernière synchronisation: {last_sync}")
+            logger.info(f"Last synchronization: {last_sync}")
             data = db_manager.get_remote_data(since=last_sync)
         else:
-            logger.warning("Aucune synchronisation précédente, synchronisation complète nécessaire")
+            logger.warning("No previous synchronization, full synchronization required")
             return full_sync()
 
         if data:
             inserted = db_manager.bulk_insert_data(data)
-            logger.info(f"{inserted} nouveaux enregistrements insérés")
+            logger.info(f"{inserted} new records inserted")
 
             return {
                 "status": "success",
@@ -96,7 +82,7 @@ def incremental_sync():
                 "timestamp": datetime.utcnow().isoformat(),
             }
         else:
-            logger.info("Aucune nouvelle donnée")
+            logger.info("No new data")
             return {
                 "status": "success",
                 "fetched": 0,
@@ -106,14 +92,9 @@ def incremental_sync():
             }
 
     except Exception as e:
-        logger.error(f"Erreur lors de la synchronisation incrémentale: {e}")
+        logger.error(f"Error during incremental synchronization: {e}")
         return {"status": "error", "message": str(e)}
 
 
 # Configuration du Beat scheduler pour les tâches périodiques
-celery_app.conf.beat_schedule = {
-    "incremental-sync": {
-        "task": "incremental_sync",
-        "schedule": float(settings.sync_interval_seconds),
-    }
-}
+celery_app.conf.beat_schedule = {"incremental-sync": {"task": "incremental_sync", "schedule": float(settings.sync_interval_seconds)}}

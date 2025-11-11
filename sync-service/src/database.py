@@ -25,23 +25,23 @@ class DatabaseManager:
         self.LocalSession = sessionmaker(bind=self.local_engine)
         self.RemoteSession = sessionmaker(bind=self.remote_engine)
 
-        # Redis client pour WebSocket real-time updates
+        # Redis client for WebSocket real-time updates
         try:
             redis_url = settings.celery_broker_url
             self.redis_client = redis.from_url(redis_url, decode_responses=True)
-            logger.info("✅ Redis client initialized for consumption updates")
+            logger.info("Redis client initialized for consumption updates")
         except Exception as e:
-            logger.warning(f"⚠️ Redis client init failed: {e}")
+            logger.warning(f"Redis client init failed: {e}")
             self.redis_client = None
 
     def init_local_db(self):
-        """Initialise la base locale avec TimescaleDB"""
+        """Initialize local database with TimescaleDB"""
         with self.local_engine.connect() as conn:
-            # Activation de l'extension TimescaleDB
+            # Enable TimescaleDB extension
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
             conn.commit()
 
-            # Création de la table linky_realtime dans TimescaleDB
+            # Create linky_realtime table in TimescaleDB
             conn.execute(
                 text(
                     """
@@ -59,7 +59,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-            # Conversion en hypertable TimescaleDB
+            # Convert to TimescaleDB hypertable
             try:
                 conn.execute(
                     text(
@@ -72,11 +72,11 @@ class DatabaseManager:
                     )
                 )
                 conn.commit()
-                logger.info("Hypertable créée avec succès")
+                logger.info("Hypertable created successfully")
             except Exception as e:
-                logger.warning(f"L'hypertable existe déjà ou erreur: {e}")
+                logger.warning(f"Hypertable already exists or error: {e}")
 
-            # Index pour optimiser les requêtes
+            # Index to optimize queries
             conn.execute(
                 text(
                     """
@@ -96,12 +96,12 @@ class DatabaseManager:
             conn.commit()
 
     def get_remote_data(self, since=None, limit=None):
-        """Récupère les données depuis la base distante MySQL"""
+        """Retrieve data from remote MySQL database"""
         with self.remote_engine.connect() as conn:
             query = f"SELECT * FROM {settings.remote_db_table}"
 
             if since:
-                # Formatage de la date pour MySQL
+                # Format date for MySQL
                 since_str = since.strftime("%Y-%m-%d %H:%M:%S")
                 query += f" WHERE time > '{since_str}'"
 
@@ -113,7 +113,7 @@ class DatabaseManager:
             result = conn.execute(text(query))
             rows = []
             for row in result:
-                # Conversion des noms de colonnes en minuscules pour PostgreSQL
+                # Convert column names to lowercase for PostgreSQL
                 rows.append(
                     {
                         "time": row.time,
@@ -127,14 +127,14 @@ class DatabaseManager:
             return rows
 
     def get_last_sync_timestamp(self):
-        """Récupère le timestamp de la dernière synchronisation"""
+        """Retrieve timestamp of last synchronization"""
         with self.local_engine.connect() as conn:
             result = conn.execute(text("SELECT MAX(time) as last_ts FROM linky_realtime"))
             row = result.fetchone()
             return row[0] if row and row[0] else None
 
     def bulk_insert_data(self, data):
-        """Insère des données en masse dans la base locale"""
+        """Bulk insert data into local database"""
         if not data:
             return 0
 
@@ -161,7 +161,7 @@ class DatabaseManager:
                     inserted += 1
                     latest_row = row
                 except Exception as e:
-                    logger.error(f"Erreur insertion: {e}")
+                    logger.error(f"Insertion error: {e}")
 
             # Publish latest consumption to Redis for WebSocket streaming
             if inserted > 0 and latest_row and self.redis_client:
@@ -188,7 +188,7 @@ class DatabaseManager:
             return inserted
 
     def get_data_stats(self):
-        """Récupère des statistiques sur les données locales"""
+        """Retrieve statistics on local data"""
         with self.local_engine.connect() as conn:
             result = conn.execute(
                 text(
