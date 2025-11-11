@@ -28,6 +28,28 @@ clean: ## Supprime tous les containers et volumes
 	docker-compose down -v
 
 ###############################################
+## MQTT Service Management
+###############################################
+mqtt-test: ## Test la connexion MQTT avec le broker
+	@echo "Test de connexion MQTT..."
+	@docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t "test/connection" -m "Hello from Linkya" -u admin -P "${MQTT_ADMIN_PASSWORD}"
+
+mqtt-logs: ## Affiche les logs du broker MQTT
+	@docker-compose logs -f mosquitto
+
+mqtt-status: ## Affiche les statistiques du broker MQTT
+	@echo "Statistiques MQTT..."
+	@docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t '$$SYS/broker/clients/connected' -m '' -u admin -P "${MQTT_ADMIN_PASSWORD}" || true
+
+mqtt-certs-regen: ## Régénère les certificats TLS
+	@echo "Régénération des certificats TLS..."
+	@docker-compose exec mosquitto /mosquitto/scripts/generate-certs.sh
+
+mqtt-passwords-regen: ## Régénère le fichier de mots de passe
+	@echo "Régénération des mots de passe..."
+	@docker-compose exec mosquitto /mosquitto/scripts/generate-passwords.sh
+
+###############################################
 ## NILM Service Management via API
 ###############################################
 train: ## Lance l'entraînement NILM via l'API (utilise automatiquement les feedbacks utilisateur)

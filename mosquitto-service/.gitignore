@@ -1,0 +1,21 @@
+# Mosquitto service specific ignores
+
+# TLS certificates and private keys
+certs/*.crt
+certs/*.key
+certs/*.csr
+certs/*.srl
+certs/*.ext
+certs/*.pem
+
+# Password files
+config/passwd
+config/*.passwd
+
+# Temporary files
+*.tmp
+*.bak
+
+# Logs
+logs/
+*.log

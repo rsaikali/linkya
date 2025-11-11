@@ -1,76 +1,53 @@
 services:
-  # Base de données locale TimescaleDB
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
     container_name: timescaledb
-    environment:
-      POSTGRES_DB: linkya_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      TZ: Europe/Paris
+    image: timescale/timescaledb:latest-pg16
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${LOCAL_DB_NAME}
+      POSTGRES_USER: ${LOCAL_DB_USER}
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD}
+    env_file:
+      - .env
+    networks:
+      - linkya-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - linkya-network
 
-  # Redis pour Celery
   redis:
-    image: redis:7-alpine
     container_name: redis
-    environment:
-      TZ: Europe/Paris
+    image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis_data:/data
+    env_file:
+      - .env
+    networks:
+      - linkya-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        - CMD
+        - redis-cli
+        - ping
       interval: 10s
       timeout: 3s
       retries: 5
-    networks:
-      - linkya-network
 
-  # Service de synchronisation - Worker Celery
   sync-worker:
-    build:
-      context: ./sync-service
-      dockerfile: Dockerfile
     container_name: sync-worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info
-    environment:
-      TZ: Europe/Paris
-    env_file:
-      - .env
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./sync-service/src:/app/src
-    networks:
-      - linkya-network
-    restart: unless-stopped
-
-  # Celery Beat - Planificateur de tâches (initialise aussi la DB au démarrage)
-  sync-beat:
     build:
       context: ./sync-service
       dockerfile: Dockerfile
-    container_name: sync-beat
-    command: /app/scripts/entrypoint-beat.sh
-    environment:
-      TZ: Europe/Paris
-    env_file:
-      - .env
+    restart: unless-stopped
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -78,26 +55,37 @@ services:
         condition: service_healthy
     volumes:
       - ./sync-service/src:/app/src
+    env_file:
+      - .env
     networks:
       - linkya-network
-    restart: unless-stopped
+    command: celery -A src.tasks.celery_app worker --loglevel=info
 
-  # Service NILM - Worker Celery
+  sync-beat:
+    container_name: sync-beat
+    build:
+      context: ./sync-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./sync-service/src:/app/src
+    env_file:
+      - .env
+    networks:
+      - linkya-network
+    command: /app/scripts/entrypoint-beat.sh
+
   nilm-worker:
+    container_name: nilm-worker
     build:
       context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilm-worker
-    command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
-    runtime: nvidia
-    environment:
-      TZ: Europe/Paris
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
-      NILM_MODEL_TYPE: "gru"  # Type de modèle: 'gru' (défaut) ou 'lstm'
-    env_file:
-      - .env
+    restart: unless-stopped
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -109,23 +97,19 @@ services:
       - ./nilm-service/src:/app/src
       - ./.data/models:/app/models
       - nilm_uv_cache:/root/.cache/uv
+    env_file:
+      - .env
     networks:
       - linkya-network
-    restart: unless-stopped
+    command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
+    runtime: nvidia
 
-  # Celery Beat pour NILM (initialise aussi les tables NILM au démarrage)
   nilm-beat:
+    container_name: nilm-beat
     build:
       context: ./nilm-service
       dockerfile: Dockerfile
-    container_name: nilm-beat
-    command: /app/scripts/entrypoint-beat.sh
-    environment:
-      TZ: Europe/Paris
-      C_FORCE_ROOT: "true"  # Désactive le warning Celery root (container Docker isolé)
-      CUDA_VISIBLE_DEVICES: ""  # Pas de GPU pour beat (planificateur uniquement)
-    env_file:
-      - .env
+    restart: unless-stopped
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -136,103 +120,131 @@ services:
     volumes:
       - ./nilm-service/src:/app/src
       - ./.data/models:/app/models
+    environment:
+      CUDA_VISIBLE_DEVICES: ''
+    env_file:
+      - .env
     networks:
       - linkya-network
-    restart: unless-stopped
+    command: /app/scripts/entrypoint-beat.sh
 
-  # Backend API FastAPI
   backend:
+    container_name: backend
     build:
       context: ./backend-service
       dockerfile: Dockerfile
-    container_name: backend
-    environment:
-      TZ: Europe/Paris
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
     depends_on:
       timescaledb:
         condition: service_healthy
       sync-worker:
         condition: service_started
+    ports:
+      - '8000:8000'
     volumes:
       - ./backend-service/src:/app/src
       - ./.data/models:/app/models
+    env_file:
+      - .env
     networks:
       - linkya-network
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      test:
+        - CMD-SHELL
+        - curl -f http://localhost:8000/health || exit 1
       interval: 5s
       timeout: 10s
       retries: 3
 
-  # React dev server (hot reload)
   react-dev:
+    container_name: react-dev
     build:
       context: ./frontend-service
       dockerfile: Dockerfile.dev
-    container_name: react-dev
-    command: npm start
-    environment:
-      TZ: Europe/Paris
-      REACT_APP_API_URL: ${REACT_APP_API_URL}
-      REACT_APP_WS_URL: ${REACT_APP_WS_URL}
-      WDS_SOCKET_PORT: 0
+    restart: unless-stopped
     volumes:
       - ./frontend-service/src:/app/src
       - ./frontend-service/public:/app/public
       - ./frontend-service/package.json:/app/package.json
       - /app/node_modules
+    env_file:
+      - .env
     networks:
       - linkya-network
-    restart: unless-stopped
+    command: npm start
     stdin_open: true
     tty: true
 
-  # Nginx reverse proxy
   frontend:
+    container_name: frontend
     build:
       context: ./frontend-service
       dockerfile: Dockerfile.nginx
-    container_name: frontend
-    ports:
-      - "80:80"
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
       react-dev:
         condition: service_started
-    networks:
-      - linkya-network
-    restart: unless-stopped
-
-  # pgweb - Interface web PostgreSQL/TimescaleDB
-  pgweb:
-    image: sosedoff/pgweb:latest
-    container_name: pgweb
-    environment:
-      PGWEB_DATABASE_URL: postgres://${LOCAL_DB_USER}:${LOCAL_DB_PASSWORD}@${LOCAL_DB_HOST}:${LOCAL_DB_PORT}/${LOCAL_DB_NAME}?sslmode=disable
-      TZ: Europe/Paris
     ports:
-      - "8081:8081"
+      - '80:80'
     networks:
       - linkya-network
+
+  mosquitto:
+    container_name: mosquitto
+    build:
+      context: ./mosquitto-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '1883:1883'
+      - '8883:8883'
+      - '9001:9001'
+      - '9002:9002'
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_certs:/mosquitto/certs
+      - mosquitto_logs:/mosquitto/log
+    env_file:
+      - .env
+    networks:
+      - linkya-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - nc -z localhost 1883 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  pgweb:
+    container_name: pgweb
+    image: sosedoff/pgweb:latest
+    restart: unless-stopped
     depends_on:
       timescaledb:
         condition: service_healthy
-    restart: unless-stopped
+    ports:
+      - '8081:8081'
+    environment:
+      PGWEB_DATABASE_URL: postgres://${LOCAL_DB_USER}:${LOCAL_DB_PASSWORD}@${LOCAL_DB_HOST}:${LOCAL_DB_PORT}/${LOCAL_DB_NAME}?sslmode=disable
+    env_file:
+      - .env
+    networks:
+      - linkya-network
 
 volumes:
-  timescaledb_data:
-  redis_data:
-  nilm_uv_cache:
+  timescaledb_data: null
+  redis_data: null
+  nilm_uv_cache: null
+  mosquitto_data: null
+  mosquitto_certs: null
+  mosquitto_logs: null
 
 networks:
   linkya-network:
     driver: bridge
     enable_ipv6: false
     driver_opts:
-      com.docker.network.enable_ipv6: "false"
+      com.docker.network.enable_ipv6: 'false'
