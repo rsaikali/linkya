@@ -17,7 +17,7 @@ class ChangePointPatternDetector:
     Approche :
     1. Détecte les change points (sauts significatifs) dans l'agrégé
     2. Extrait les patterns entre les baselines
-    3. Compare avec les profils de signatures connus
+    3. Compare avec les profiles de signatures connus
     4. Reconstruit des cycles complets
     """
 
@@ -29,7 +29,7 @@ class ChangePointPatternDetector:
         """
         self.min_power_change = min_power_change
         self.min_duration = min_duration
-        self.signature_profiles = {}  # {appliance_id: [profils]}
+        self.signature_profiles = {}  # {appliance_id: [profiles]}
 
     def add_signature_profile(
         self,
@@ -71,7 +71,7 @@ class ChangePointPatternDetector:
                     "max_power": float(profile_max),
                 }
 
-                # Ajouter features morphologiques si disponibles
+                # Ajouter features morphologiques si available
                 if morphology:
                     profile["morphology"] = morphology
 
@@ -173,7 +173,7 @@ class ChangePointPatternDetector:
                         pattern = aggregate_power[start:end]
 
                         # Note: On ne soustrait PAS la baseline car les
-                        # profils de signature sont stockés avec les
+                        # profiles de signature sont stockés avec les
                         # valeurs originales (incluant la baseline).
                         # Le change point detection isole déjà les
                         # périodes d'activation.
@@ -210,8 +210,8 @@ class ChangePointPatternDetector:
 
     def match_pattern(self, pattern_data, pattern_morphology=None):
         """
-        Compare un pattern avec les profils de signatures connus.
-        Utilise features morphologiques si disponibles pour meilleur matching.
+        Compare un pattern avec les profiles de signatures connus.
+        Utilise features morphologiques si available pour meilleur matching.
 
         Args:
             pattern_data: Données du pattern à matcher
@@ -239,7 +239,7 @@ class ChangePointPatternDetector:
         for appliance_id, data in self.signature_profiles.items():
             appliance_name = data["name"]
             logger.info(
-                f"Comparaison pattern ({pattern_duration}s, " f"{pattern_power:.0f}W) avec {len(data['profiles'])} " f"profils de {appliance_name}"
+                f"Comparaison pattern ({pattern_duration}s, " f"{pattern_power:.0f}W) avec {len(data['profiles'])} " f"profiles de {appliance_name}"
             )
 
             for i, profile in enumerate(data["profiles"]):
@@ -285,7 +285,7 @@ class ChangePointPatternDetector:
 
                 if has_morphology:
                     morphology_score = self._compute_morphology_similarity(pattern_morphology, profile["morphology"])
-                    logger.info(f"  Profil#{i}: morphology_score={morphology_score:.3f}")
+                    logger.info(f"Profil#{i}: morphology_score={morphology_score:.3f}")
 
                 # Score combiné avec pondération adaptative
                 if has_morphology:
@@ -310,7 +310,7 @@ class ChangePointPatternDetector:
                         profile.get("signature_id"),
                         combined_score,
                     )
-                    logger.info(f"  Profil#{i}: ✓ nouveau meilleur score! " f"({combined_score:.3f})")
+                    logger.info(f"Profil#{i}: ✓ nouveau meilleur score! " f"({combined_score:.3f})")
 
         # Seuil adaptatif selon disponibilité morphologie
         threshold = 0.4 if pattern_morphology else 0.35

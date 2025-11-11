@@ -1,11 +1,11 @@
 """
-Modèle Sequence-to-Point NILM pour désagrégation d'appareils concurrents
+Modèle Sequence-to-Point NILM pour désagrégation d'appliances concurrents
 et détection de cycles complexes.
 
 Architecture basée sur LSTM/GRU avec mécanisme d'attention pour :
 - Désagrégation : prédit la consommation individuelle de chaque appareil
 - Détection d'états : identifie les différentes phases/cycles (chauffage, lavage, etc.)
-- Appareils concurrents : gère plusieurs appareils fonctionnant simultanément
+- Appareils concurrents : gère plusieurs appliances fonctionnant simultanément
 """
 
 from __future__ import annotations
@@ -40,19 +40,18 @@ class Seq2PointNILMManager:
 
         # Détecteur hybride change point + pattern matching
         self.change_point_detector = ChangePointPatternDetector(
-            min_power_change=settings.nilm_min_power_threshold,
-            min_duration=settings.nilm_min_duration_seconds,
+            min_power_change=settings.nilm_min_power_threshold, min_duration=settings.nilm_min_duration_seconds
         )
         logger.info("Change Point Pattern Detector initialisé")
 
         # Modèle Multi-Output
         self.multioutput_model = None
 
-        logger.info(f"🎯 Architecture: {self.architecture.upper()}, " f"Type: {self.model_type.upper()}")
+        logger.info(f"Architecture: {self.architecture.upper()}, " f"Type: {self.model_type.upper()}")
 
     def load_model(self, model_path):
         """
-        Charge un modèle existant pour fine-tuning.
+        Charge un modèle existant for fine-tuning.
 
         Args:
             model_path: Chemin vers le modèle .keras à charger
@@ -71,29 +70,26 @@ class Seq2PointNILMManager:
             sequence_length = metadata.get("sequence_length", settings.effective_sequence_length)
             architecture = metadata.get("architecture", "MultiOutput")
 
-            logger.info(f"📂 Chargement modèle {architecture}...")
+            logger.info(f"Loading model {architecture}...")
 
             if architecture.lower() == "multioutput":
                 self.multioutput_model = Seq2PointMultiOutputModel(
-                    appliance_ids=appliance_ids,
-                    appliance_names=appliance_names,
-                    sequence_length=sequence_length,
-                    model_type=self.model_type,
+                    appliance_ids=appliance_ids, appliance_names=appliance_names, sequence_length=sequence_length, model_type=self.model_type
                 )
                 self.multioutput_model.load(model_path)
                 self.architecture = "multioutput"
             else:
-                raise ValueError(f"Architecture {architecture} non supportée. " f"Seule 'MultiOutput' est disponible.")
+                raise ValueError(f"Architecture {architecture} not supported. " f"Only 'MultiOutput' is available.")
 
-            logger.info(f"✅ Modèle {architecture} chargé: {model_path}")
+            logger.info(f"Model {architecture} loaded: {model_path}")
 
         except Exception as e:
-            logger.error(f"❌ Erreur chargement modèle: {e}")
+            logger.error(f"Error loading model: {e}")
             raise
 
     def train_all_appliances(self, model_name, fine_tune=False):
         """
-        Entraîne le modèle sur tous les appareils (Multi-Output).
+        Entraîne le modèle sur tous les appliances (Multi-Output).
 
         Args:
             model_name: Name of the model (format: linkya_model_<timestamp>)
@@ -134,8 +130,8 @@ class Seq2PointNILMManager:
                     result = session.execute(text(query), {"appliance_id": appliance_id})
                     all_signatures[appliance_id] = [dict(row._mapping) for row in result]
 
-            # Charger les profils pour change point detector
-            logger.info("📊 Chargement profils signatures...")
+            # Charger les profiles pour change point detector
+            logger.info("Loading signature profiles...")
             for appliance_id, signatures in all_signatures.items():
                 app_idx = appliance_ids.index(appliance_id)
                 appliance_name = appliance_names[app_idx]
@@ -148,42 +144,28 @@ class Seq2PointNILMManager:
                     duration = int((sig["end_time"] - sig["start_time"]).total_seconds())
 
                     self.change_point_detector.add_signature_profile(
-                        appliance_id=appliance_id,
-                        appliance_name=appliance_name,
-                        power_sequence=app_pwr,
-                        duration=duration,
-                        signature_id=sig["id"],
+                        appliance_id=appliance_id, appliance_name=appliance_name, power_sequence=app_pwr, duration=duration, signature_id=sig["id"]
                     )
 
             total_profiles = sum(len(data["profiles"]) for data in (self.change_point_detector.signature_profiles.values()))
-            logger.info(f"✅ {len(self.change_point_detector.signature_profiles)} " f"appareils, {total_profiles} profils")
+            logger.info(f"{len(self.change_point_detector.signature_profiles)} " f"appliances, {total_profiles} profiles")
 
             # Entraîner avec l'architecture choisie
             if self.architecture == "multioutput":
-                logger.info("🎬 Entraînement Multi-Output " "(outputs parallèles + attention)")
+                logger.info("Multi-Output training " "(outputs parallèles + attention)")
 
                 # Créer ou réutiliser modèle Multi-Output
                 if fine_tune and self.multioutput_model is not None:
-                    logger.info("♻️  Réutilisation modèle Multi-Output " "pour fine-tuning")
+                    logger.info("Reusing Multi-Output model " "for fine-tuning")
                 else:
                     self.multioutput_model = Seq2PointMultiOutputModel(
-                        appliance_ids,
-                        appliance_names,
-                        sequence_length=settings.effective_sequence_length,
-                        model_type=self.model_type,
+                        appliance_ids, appliance_names, sequence_length=settings.effective_sequence_length, model_type=self.model_type
                     )
 
-                metrics = self.multioutput_model.train(
-                    all_signatures,
-                    model_name,
-                    epochs=30,
-                    batch_size=32,
-                    use_feedback=True,
-                    fine_tune=fine_tune,
-                )
+                metrics = self.multioutput_model.train(all_signatures, model_name, epochs=30, batch_size=32, use_feedback=True, fine_tune=fine_tune)
 
                 if not metrics:
-                    logger.error("Entraînement Multi-Output impossible " "(données insuffisantes)")
+                    logger.error("Multi-Output training impossible " "(données insuffisantes)")
                     return {"error": "insufficient_training_data"}
 
                 model_path = Path(settings.nilm_model_path) / (f"{model_name}.keras")
@@ -226,13 +208,13 @@ class Seq2PointNILMManager:
 
         Une signature négative est créée quand l'utilisateur invalide
         une détection. On compare durée, puissance moyenne et énergie
-        pour rejeter les faux positifs similaires.
+        pour rejeter les false positives similaires.
 
         Args:
             detections: Liste de détections à filtrer
 
         Returns:
-            Liste de détections filtrées (sans les faux positifs)
+            Liste de détections filtrées (sans les false positives)
         """
         if not detections:
             return []
@@ -307,7 +289,7 @@ class Seq2PointNILMManager:
             is_false_positive = False
 
             # DEBUG: Log de la détection à analyser
-            logger.info(f"🔍 Analyse détection: {det['duration_seconds']}s, " f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh")
+            logger.info(f"Analyzing detection: {det['duration_seconds']}s, " f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh")
 
             for neg in negs:
                 # Critère 1: Durée similaire (±50% car change points)
@@ -317,37 +299,37 @@ class Seq2PointNILMManager:
                 logger.debug(
                     f"  vs signature négative #{neg['id']}: " f"{neg['duration_seconds']:.0f}s, " f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
                 )
-                logger.debug(f"    Ratios: durée={duration_ratio:.2f}, " f"seuils=[0.50, 1.50]")
+                logger.debug(f"Ratios: durée={duration_ratio:.2f}, " f"seuils=[0.50, 1.50]")
 
                 if not (0.50 <= duration_ratio <= 1.50):
-                    logger.debug("    ✗ Durée hors limite")
+                    logger.debug("✗ Durée hors limite")
                     continue
 
-                logger.debug("    ✓ Durée OK")
+                logger.debug("✓ Durée OK")
 
                 # Critère 2: Puissance moyenne similaire (±15% assoupli)
                 if neg["avg_power"] > 0:
                     power_ratio = det["avg_power"] / neg["avg_power"]
-                    logger.debug(f"    Puissance: ratio={power_ratio:.2f}, " f"seuils=[0.85, 1.15]")
+                    logger.debug(f"Puissance: ratio={power_ratio:.2f}, " f"seuils=[0.85, 1.15]")
                     if not (0.85 <= power_ratio <= 1.15):
-                        logger.debug("    ✗ Puissance hors limite")
+                        logger.debug("✗ Puissance hors limite")
                         continue
-                    logger.debug("    ✓ Puissance OK")
+                    logger.debug("✓ Puissance OK")
 
                 # Critère 3: Énergie similaire (±20% assoupli)
                 det_energy = det.get("energy_wh", 0)
                 if neg["energy_wh"] > 0 and det_energy > 0:
                     energy_ratio = det_energy / neg["energy_wh"]
-                    logger.debug(f"    Énergie: ratio={energy_ratio:.2f}, " f"seuils=[0.80, 1.20]")
+                    logger.debug(f"Énergie: ratio={energy_ratio:.2f}, " f"seuils=[0.80, 1.20]")
                     if not (0.80 <= energy_ratio <= 1.20):
-                        logger.debug("    ✗ Énergie hors limite")
+                        logger.debug("✗ Énergie hors limite")
                         continue
-                    logger.debug("    ✓ Énergie OK")
+                    logger.debug("✓ Énergie OK")
 
                 # Tous les critères correspondent → faux positif
                 is_false_positive = True
                 logger.debug(
-                    f"❌ Détection rejetée (similaire à signature "
+                    f" Détection rejetée (similaire à signature "
                     f"négative #{neg['id']}): {det.get('appliance_name')} - "
                     f"{det['duration_seconds']}s, "
                     f"{det['avg_power']:.1f}W"
@@ -360,21 +342,21 @@ class Seq2PointNILMManager:
                 rejected_count += 1
 
         if rejected_count > 0:
-            logger.info(f"✅ Filtrage terminé: {rejected_count} faux positifs " f"rejetés, {len(filtered)} détections conservées")
+            logger.info(f"Filtering complete: {rejected_count} false positives " f"rejected, {len(filtered)} detections kept")
 
         return filtered
 
     def _load_signature_profiles(self):
         """
-        Charge les profils de signatures depuis la base de données.
-        Inclut les données morphologiques si disponibles.
+        Charge les profiles de signatures depuis la base de données.
+        Inclut les données morphologiques si available.
 
         Utilisé pour le pattern matching dans la détection.
         """
         import json as json_module
 
         with db_manager.get_session() as session:
-            # Récupérer les appareils actifs avec leurs signatures
+            # Récupérer les appliances actifs avec leurs signatures
             appliances_query = """
                 SELECT DISTINCT appliance_id, ca.name
                 FROM nilm_signatures cs
@@ -418,12 +400,7 @@ class Seq2PointNILMManager:
 
                     # Fallback: charger depuis linky_realtime
                     if appliance_power is None or len(appliance_power) == 0:
-                        signature = {
-                            "id": sig_id,
-                            "appliance_id": appliance_id,
-                            "start_time": start_time,
-                            "end_time": end_time,
-                        }
+                        signature = {"id": sig_id, "appliance_id": appliance_id, "start_time": start_time, "end_time": end_time}
                         aggregate_power, appliance_power = Seq2PointMultiOutputModel._load_signature_data_static(signature)
 
                     if appliance_power is None or len(appliance_power) == 0:
@@ -450,11 +427,11 @@ class Seq2PointNILMManager:
                     )
 
         total_profiles = sum(len(data["profiles"]) for data in self.change_point_detector.signature_profiles.values())
-        logger.info(f"Profils chargés: " f"{len(self.change_point_detector.signature_profiles)} " f"appareils, {total_profiles} profils")
+        logger.info(f"Profils chargés: " f"{len(self.change_point_detector.signature_profiles)} " f"appliances, {total_profiles} profiles")
 
     def disaggregate(self, start_time, end_time):
         """
-        Désagrège la consommation totale pour tous les appareils.
+        Désagrège la consommation totale pour tous les appliances.
         Utilise l'architecture Multi-Output avec détection hybride.
 
         Args:
@@ -468,9 +445,9 @@ class Seq2PointNILMManager:
             logger.error("Aucun modèle Multi-Output chargé pour la désagrégation")
             return []
 
-        # Charger les profils de signatures si nécessaire
+        # Charger les profiles de signatures si nécessaire
         if not self.change_point_detector.signature_profiles:
-            logger.info("Chargement des profils de signatures pour détection...")
+            logger.info("Chargement des profiles de signatures pour détection...")
             self._load_signature_profiles()
 
         try:
@@ -511,7 +488,7 @@ class Seq2PointNILMManager:
                 logger.warning("Aucun pattern extrait")
                 return []
 
-            # Étape 3 : Matcher chaque pattern avec les profils de signatures
+            # Étape 3 : Matcher chaque pattern avec les profiles de signatures
             detections = []
             for pattern_data in patterns:
                 match_result = self.change_point_detector.match_pattern(pattern_data, pattern_morphology=pattern_data.get("morphology"))
@@ -535,17 +512,11 @@ class Seq2PointNILMManager:
                             "max_power": pattern_data["max_power"],
                             "energy_wh": pattern_data["energy_wh"],
                             "confidence_score": float(confidence),
-                            "features": {
-                                "detection_method": ("change_point_pattern_matching"),
-                                "change_point_based": True,
-                            },
+                            "features": {"detection_method": ("change_point_pattern_matching"), "change_point_based": True},
                         }
                         if matched_signature_id is not None:
                             detection["features"]["matched_signature_id"] = int(matched_signature_id)
-                            detection["features"]["matching"] = {
-                                "score": float(confidence),
-                                "method": "duration_power_shape_combined",
-                            }
+                            detection["features"]["matching"] = {"score": float(confidence), "method": "duration_power_shape_combined"}
                         detections.append(detection)
 
                         logger.info(
@@ -557,10 +528,10 @@ class Seq2PointNILMManager:
 
             logger.info(f"Total détections avant filtrage: {len(detections)}")
 
-            # ✨ NOUVEAU: Filtrer contre les signatures négatives
+            #  NOUVEAU: Filtrer contre les signatures négatives
             detections = self._filter_against_negative_signatures(detections)
 
-            # ✨ NOUVEAU: Filtrer par seuil de confiance minimum
+            #  NOUVEAU: Filtrer par seuil de confiance minimum
             min_confidence = 0.40  # 40% de confiance minimum (assoupli)
             before_conf_filter = len(detections)
             detections = [d for d in detections if d.get("confidence_score", 0) >= min_confidence]
@@ -579,7 +550,7 @@ class Seq2PointNILMManager:
     def _merge_consecutive_cycles(self, cycles, max_gap_seconds=120):
         """
         Fusionne les cycles consécutifs séparés par moins de max_gap_seconds.
-        Générique : fonctionne pour tous les appareils.
+        Générique : fonctionne pour tous les appliances.
 
         Args:
             cycles: Liste de cycles détectés par KMeans

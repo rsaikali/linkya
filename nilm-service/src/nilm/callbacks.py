@@ -53,11 +53,11 @@ class RedisTrainingCallback(callbacks.Callback):
             self.redis_client = redis.Redis(host=redis_host, port=redis_port, db=0, decode_responses=True)
             # Test connection
             self.redis_client.ping()
-            print("[RedisCallback] ✅ Connected to Redis")
-            logger.info(f"✅ RedisTrainingCallback connected to {redis_host}:{redis_port}")
+            print("[RedisCallback]  Connected to Redis")
+            logger.info(f"RedisTrainingCallback connected to {redis_host}:{redis_port}")
         except Exception as e:
-            print(f"[RedisCallback] ❌ Failed to connect to Redis: {e}")
-            logger.warning(f"⚠️  RedisTrainingCallback: Could not connect to Redis: {e}")
+            print(f"[RedisCallback]  Failed to connect to Redis: {e}")
+            logger.warning(f"RedisTrainingCallback: Could not connect to Redis: {e}")
             self.redis_client = None
 
     def _publish(self, event_type, data):

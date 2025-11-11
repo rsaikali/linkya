@@ -10,7 +10,7 @@ from tensorflow.keras import layers
 class MultiHeadAttentionLayer(layers.Layer):
     """
     Multi-Head Attention pour mieux capturer les patterns de multiples
-    appareils simultanés.
+    appliances simultanés.
     """
 
     def __init__(self, num_heads=4, key_dim=32, **kwargs):

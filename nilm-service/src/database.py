@@ -31,7 +31,7 @@ class DatabaseManager:
     def _define_tables(self):
         """Définit les tables pour le service NILM"""
 
-        # Table des appareils
+        # Table des appliances
         self.nilm_appliances = Table(
             "nilm_appliances",
             self.metadata,
@@ -76,7 +76,7 @@ class DatabaseManager:
             Index("idx_nilm_signatures_time", "start_time", "end_time"),
         )
 
-        # Table des détections d'appareils
+        # Table des détections d'appliances
         self.nilm_detections = Table(
             "nilm_detections",
             self.metadata,

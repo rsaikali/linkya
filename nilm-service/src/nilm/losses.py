@@ -11,7 +11,7 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
     Focal Loss pour se concentrer sur les exemples difficiles.
 
     Réduit la perte pour les exemples bien classifiés et augmente
-    pour les difficiles. Utile pour rejeter les faux positifs.
+    pour les difficiles. Utile pour rejeter les false positives.
 
     Args:
         y_true: Valeurs réelles (None si utilisé comme constructeur)
@@ -40,7 +40,7 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
         # Quand p_t proche de 0 (mauvaise prédiction): focal_weight ~1
         focal_weight = tf.pow(1.0 - p_t, gamma)
 
-        # Pénaliser plus les faux positifs (y_true=0 mais y_pred>0)
+        # Pénaliser plus les false positives (y_true=0 mais y_pred>0)
         false_positive_mask = tf.cast(y_true < 0.1, tf.float32)
         alpha_weight = 1.0 + alpha * false_positive_mask
 
@@ -65,7 +65,7 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
         # Quand p_t proche de 0 (mauvaise prédiction): focal_weight ~1
         focal_weight = tf.pow(1.0 - p_t, gamma)
 
-        # Pénaliser plus les faux positifs (y_true=0 mais y_pred>0)
+        # Pénaliser plus les false positives (y_true=0 mais y_pred>0)
         false_positive_mask = tf.cast(y_true < 0.1, tf.float32)
         alpha_weight = 1.0 + alpha * false_positive_mask
 
@@ -80,7 +80,7 @@ def focal_loss_fixed(y_true=None, y_pred=None, gamma=2.0, alpha=0.25):
 @tf.keras.utils.register_keras_serializable(package="custom_losses")
 def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=1.5):
     """
-    Loss asymétrique qui pénalise plus les faux positifs.
+    Loss asymétrique qui pénalise plus les false positives.
 
     Quand y_true=0 (appareil éteint ou signature négative),
     les erreurs de prédiction sont pénalisées davantage.
@@ -88,7 +88,7 @@ def asymmetric_loss(y_true=None, y_pred=None, false_positive_penalty=1.5):
     Args:
         y_true: Valeurs réelles (None si utilisé comme constructeur)
         y_pred: Valeurs prédites (None si utilisé comme constructeur)
-        false_positive_penalty: Multiplicateur pour les faux positifs
+        false_positive_penalty: Multiplicateur pour les false positives
                                 (défaut: 1.5, réduit de 2.5 pour être moins agressif)
 
     Returns:

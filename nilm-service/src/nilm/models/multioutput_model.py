@@ -33,7 +33,7 @@ class Seq2PointMultiOutputModel:
     4. Output branches: une par appareil
 
     Avantages :
-    - Désagrégation simultanée de N appareils
+    - Désagrégation simultanée de N appliances
     - Détection native de chevauchements temporels
     - Pas besoin de conditioning (one-hot encoding)
     - Architecture simple et efficace
@@ -59,7 +59,7 @@ class Seq2PointMultiOutputModel:
         if gpus:
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            logger.info(f"🎮 Device: GPU ({len(gpus)} disponible(s))")
+            logger.info(f"Device: GPU ({len(gpus)} disponible(s))")
             return True
         logger.info("💻 Device: CPU")
         return False
@@ -125,26 +125,18 @@ class Seq2PointMultiOutputModel:
             outputs.append(output)
 
         # Build model
-        model = models.Model(
-            inputs=aggregate_input,
-            outputs=outputs,
-            name=f"s2p_multioutput_{self.model_type}",
-        )
+        model = models.Model(inputs=aggregate_input, outputs=outputs, name=f"s2p_multioutput_{self.model_type}")
 
         # Compile avec loss asymétrique pour chaque output
         losses = {name: asymmetric_loss for name in output_names}
         metrics_dict = {name: ["mae", "mse"] for name in output_names}
 
-        model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
-            loss=losses,
-            metrics=metrics_dict,
-        )
+        model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001), loss=losses, metrics=metrics_dict)
 
         logger.info(
-            f"🎬 Modèle S2P-MultiOutput {self.model_type.upper()} "
+            f" Modèle S2P-MultiOutput {self.model_type.upper()} "
             f"construit:\n"
-            f"   - {self.num_appliances} appareils: "
+            f"   - {self.num_appliances} appliances: "
             f"{self.appliance_names}\n"
             f"   - Séquence: {self.sequence_length}\n"
             f"   - Architecture: Multi-Output + Multi-Head Attention\n"
@@ -153,16 +145,7 @@ class Seq2PointMultiOutputModel:
 
         return model
 
-    def train(
-        self,
-        all_signatures,
-        model_name,
-        epochs=30,
-        batch_size=32,
-        validation_split=0.15,
-        use_feedback=True,
-        fine_tune=False,
-    ):
+    def train(self, all_signatures, model_name, epochs=30, batch_size=32, validation_split=0.15, use_feedback=True, fine_tune=False):
         """
         Entraîne le modèle Multi-Output.
 
@@ -215,7 +198,7 @@ class Seq2PointMultiOutputModel:
                             y_outputs[other_idx].append(y)
                             class_counts[other_idx] += len(y)
                         else:
-                            # Autres appareils: zéro
+                            # Autres appliances: zéro
                             y_outputs[other_idx].append(np.zeros_like(y))
 
                     # Timestamps
@@ -227,7 +210,7 @@ class Seq2PointMultiOutputModel:
         if use_feedback:
             negative_count = self._add_negative_examples_multioutput(X_aggregate, y_outputs, timestamps, class_counts)
             if negative_count > 0:
-                logger.info(f"✅ {negative_count} exemples négatifs ajoutés " f"(Multi-Output)")
+                logger.info(f"{negative_count} negative examples added " f"(Multi-Output)")
 
         # Concaténer
         if not X_aggregate:
@@ -248,10 +231,10 @@ class Seq2PointMultiOutputModel:
             else:
                 class_weights[idx] = 1.0
 
-        logger.info("📊 Class weights:")
+        logger.info("Class weights:")
         for idx, app_id in self.appliance_idx_to_id.items():
             app_name = self.appliance_names[idx]
-            logger.info(f"   {app_name}: {class_weights[idx]:.2f} " f"({class_counts[idx]} samples)")
+            logger.info(f"{app_name}: {class_weights[idx]:.2f} " f"({class_counts[idx]} samples)")
 
         # Ajuster scalers (from-scratch seulement)
         if not is_fine_tuning:
@@ -304,7 +287,7 @@ class Seq2PointMultiOutputModel:
             y_val_dict[output_name] = y_scaled_dict[idx][idx_val]
 
         # Debug: vérifier les types et shapes
-        logger.info(f"📊 y_train_dict keys: {list(y_train_dict.keys())}")
+        logger.info(f"y_train_dict keys: {list(y_train_dict.keys())}")
         for key, val in y_train_dict.items():
             logger.info(
                 f"   {key}: type={type(val)}, "
@@ -337,16 +320,10 @@ class Seq2PointMultiOutputModel:
 
         # Entraînement
         self.history = self.model.fit(
-            X_train,
-            y_train_list,
-            validation_data=(X_val, y_val_list),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks_list,
-            verbose=1,
+            X_train, y_train_list, validation_data=(X_val, y_val_list), epochs=epochs, batch_size=batch_size, callbacks=callbacks_list, verbose=1
         )
 
-        logger.info("✅ Entraînement Multi-Output terminé")
+        logger.info("Multi-Output training terminé")
 
         # Métriques
         metrics = {
@@ -371,7 +348,7 @@ class Seq2PointMultiOutputModel:
 
     def predict(self, aggregate_power, stride=1):
         """
-        Prédit la consommation pour TOUS les appareils simultanément.
+        Prédit la consommation pour TOUS les appliances simultanément.
 
         Args:
             aggregate_power: Série agrégée
@@ -445,13 +422,7 @@ class Seq2PointMultiOutputModel:
                 """
                 )
 
-                result = conn.execute(
-                    query,
-                    {
-                        "start_time": signature["start_time"],
-                        "end_time": signature["end_time"],
-                    },
-                )
+                result = conn.execute(query, {"start_time": signature["start_time"], "end_time": signature["end_time"]})
 
                 aggregate_power = [row[1] for row in result if row[1] is not None]
 
@@ -529,14 +500,7 @@ class Seq2PointMultiOutputModel:
                     app_id = row[1]
                     if app_id not in negative_sigs:
                         negative_sigs[app_id] = []
-                    negative_sigs[app_id].append(
-                        {
-                            "id": row[0],
-                            "appliance_id": app_id,
-                            "start_time": row[2],
-                            "end_time": row[3],
-                        }
-                    )
+                    negative_sigs[app_id].append({"id": row[0], "appliance_id": app_id, "start_time": row[2], "end_time": row[3]})
         except Exception as e:
             logger.error(f"Erreur chargement signatures négatives: {e}")
 
@@ -573,7 +537,7 @@ class Seq2PointMultiOutputModel:
             raise ValueError("Aucun modèle à sauvegarder")
 
         self.model.save(filepath)
-        logger.info(f"💾 Modèle Multi-Output sauvegardé: {filepath}")
+        logger.info(f"Multi-Output model saved: {filepath}")
 
         meta = {
             "architecture": "MultiOutput",
@@ -590,7 +554,7 @@ class Seq2PointMultiOutputModel:
         meta_path = filepath.replace(".keras", ".metadata.json")
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
-        logger.info(f"📝 Métadonnées sauvegardées: {meta_path}")
+        logger.info(f"Metadata saved: {meta_path}")
 
     def load(self, filepath):
         """Charge le modèle Multi-Output."""
@@ -600,7 +564,7 @@ class Seq2PointMultiOutputModel:
             "focal_loss_fixed": focal_loss_fixed,
         }
         self.model = keras.models.load_model(filepath, custom_objects=custom_objects)
-        logger.info(f"📂 Modèle Multi-Output chargé: {filepath}")
+        logger.info(f"Multi-Output model loaded: {filepath}")
 
         meta_path = filepath.replace(".keras", ".metadata.json")
         if Path(meta_path).exists():
@@ -612,4 +576,4 @@ class Seq2PointMultiOutputModel:
             self.num_appliances = meta["num_appliances"]
             self.appliance_id_to_idx = {int(k): v for k, v in meta["appliance_id_to_idx"].items()}
             self.appliance_idx_to_id = {v: int(k) for k, v in self.appliance_id_to_idx.items()}
-            logger.info(f"📋 Métadonnées chargées: {self.num_appliances} appareils")
+            logger.info(f"📋 Métadonnées chargées: {self.num_appliances} appliances")
