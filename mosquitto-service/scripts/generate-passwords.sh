@@ -15,6 +15,7 @@ echo "Generating password file at: $PASSWD_FILE"
 
 # Create empty password file
 > "$TEMP_FILE"
+chmod 600 "$TEMP_FILE"
 
 # Function to add user with password from environment variable
 add_user() {
@@ -58,8 +59,8 @@ fi
 # Move temp file to final location
 mv "$TEMP_FILE" "$PASSWD_FILE"
 
-# Set appropriate permissions
-chmod 644 "$PASSWD_FILE"
+# Set appropriate permissions (restrictive for security)
+chmod 600 "$PASSWD_FILE"
 
 echo "Password file generated successfully!"
 echo "Users created:"

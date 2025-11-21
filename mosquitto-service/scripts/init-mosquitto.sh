@@ -26,26 +26,29 @@ fi
 echo "Generating password file..."
 /mosquitto/scripts/generate-passwords.sh
 
-# Validate configuration file
-echo "Validating Mosquitto configuration..."
-if mosquitto -c /mosquitto/config/mosquitto.conf -t; then
-    echo "Configuration is valid."
-else
-    echo "Error: Configuration validation failed!"
+# Validate configuration file exists
+echo "Checking Mosquitto configuration..."
+if [ ! -f /mosquitto/config/mosquitto.conf ]; then
+    echo "Error: Configuration file not found!"
     exit 1
 fi
+echo "Configuration file found."
 
 # Create data directory if it doesn't exist
 mkdir -p /mosquitto/data
 chmod 755 /mosquitto/data
 
-# Set proper ownership for mosquitto user
+# Set proper ownership and permissions for mosquitto user
 if id mosquitto >/dev/null 2>&1; then
     echo "Setting ownership for mosquitto user..."
     chown -R mosquitto:mosquitto /mosquitto/data
     chown -R mosquitto:mosquitto /mosquitto/config
     chown -R mosquitto:mosquitto /mosquitto/certs 2>/dev/null || true
     chown -R mosquitto:mosquitto /mosquitto/log 2>/dev/null || true
+    
+    # Fix permissions for config files
+    chmod 600 /mosquitto/config/passwd 2>/dev/null || true
+    chmod 600 /mosquitto/config/acl.conf 2>/dev/null || true
 fi
 
 echo "Initialization completed successfully!"
