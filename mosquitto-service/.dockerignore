@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Docker
+docker-compose.yml
+.dockerignore
+
+# Documentation
+README.md
+DEPLOY.md
+INTEGRATION.md
+*.md
+
+# Backups
+backups/
+*.tar.gz
+
+# Environment files
+.env
+.env.example
+
+# Certificates (will be generated in container)
+certs/*.crt
+certs/*.key
+certs/*.pem
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
