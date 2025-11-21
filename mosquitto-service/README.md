@@ -2,6 +2,15 @@
 
 Service MQTT Mosquitto pour la plateforme IoT Linkya avec support TLS et authentification.
 
+## Modes de déploiement
+
+Ce service peut être déployé de deux manières :
+
+1. **Intégré** : Avec la stack complète Linkya (voir docker-compose.yml principal)
+2. **Standalone** : Sur une machine dédiée comme Raspberry Pi (voir `DEPLOY.md`)
+
+Pour un déploiement standalone sur Raspberry Pi, consultez **[DEPLOY.md](DEPLOY.md)**.
+
 ## Fonctionnalités
 
 - **Authentication**: Authentification par nom d'utilisateur/mot de passe

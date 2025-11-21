@@ -74,7 +74,7 @@ EOF
 
 # Generate server certificate signed by CA
 echo "Generating server certificate..."
-openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days $DAYS -extensions v3_ext -extfile server.ext
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days $DAYS -sha256 -extfile server.ext
 
 # Generate client certificate (optional, for mutual TLS)
 if [ "$MQTT_MUTUAL_TLS" = "true" ]; then

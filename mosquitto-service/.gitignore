@@ -1,5 +1,8 @@
 # Mosquitto service specific ignores
 
+# Environment variables
+.env
+
 # TLS certificates and private keys
 certs/*.crt
 certs/*.key
@@ -19,3 +22,19 @@ config/*.passwd
 # Logs
 logs/
 *.log
+
+# Docker volumes
+data/
+certs/
+logs/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
