@@ -181,12 +181,22 @@ class Seq2PointMultiOutputModel:
             app_idx = self.appliance_id_to_idx[appliance_id]
 
             for sig in signatures:
-                aggregate, power = self._load_signature_data_static(sig)
-                if aggregate is None or len(aggregate) < self.sequence_length:
+                # Optimisation: utiliser les données déjà chargées
+                if sig.get("raw_data"):
+                    aggregate_power = np.array([d["papp"] for d in sig["raw_data"]], dtype=np.float32)
+                    if sig.get("is_negative", False):
+                        appliance_power = np.zeros(len(aggregate_power), dtype=np.float32)
+                    else:
+                        appliance_power = aggregate_power.copy()
+                else:
+                    # Fallback (ne devrait plus arriver souvent)
+                    aggregate_power, appliance_power = self._load_signature_data_static(sig)
+
+                if aggregate_power is None or len(aggregate_power) < self.sequence_length:
                     continue
 
                 # Créer les séquences
-                X, y = self.preprocessor.create_sequences(aggregate, power, stride=10)
+                X, y = self.preprocessor.create_sequences(aggregate_power, appliance_power, stride=10)
 
                 if len(X) > 0:
                     X_aggregate.append(X)

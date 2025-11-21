@@ -38,12 +38,7 @@ class DatabaseManager:
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("name", String(255), nullable=False),
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
-            Column(
-                "updated_at",
-                DateTime(timezone=True),
-                default=datetime.utcnow,
-                onupdate=datetime.utcnow,
-            ),
+            Column("updated_at", DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index("idx_nilm_appliances_name", "name"),
         )
 
@@ -52,11 +47,7 @@ class DatabaseManager:
             "nilm_signatures",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column(
-                "appliance_id",
-                Integer,
-                ForeignKey("nilm_appliances.id", ondelete="CASCADE"),
-            ),
+            Column("appliance_id", Integer, ForeignKey("nilm_appliances.id", ondelete="CASCADE")),
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             # Power data points (stored as JSON)
@@ -81,18 +72,8 @@ class DatabaseManager:
             "nilm_detections",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column(
-                "appliance_id",
-                Integer,
-                ForeignKey("nilm_appliances.id", ondelete="SET NULL"),
-                nullable=True,
-            ),
-            Column(
-                "signature_id",
-                Integer,
-                ForeignKey("nilm_signatures.id", ondelete="SET NULL"),
-                nullable=True,
-            ),
+            Column("appliance_id", Integer, ForeignKey("nilm_appliances.id", ondelete="SET NULL"), nullable=True),
+            Column("signature_id", Integer, ForeignKey("nilm_signatures.id", ondelete="SET NULL"), nullable=True),
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             Column("avg_power", Float),
@@ -161,12 +142,7 @@ class DatabaseManager:
                 logger.info("Tables NILM créées avec succès")
 
                 # Vérifier si les tables existent
-                for table_name in [
-                    "nilm_appliances",
-                    "nilm_signatures",
-                    "nilm_detections",
-                    "nilm_models",
-                ]:
+                for table_name in ["nilm_appliances", "nilm_signatures", "nilm_detections", "nilm_models"]:
                     result = conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}')"))
                     exists = result.scalar()
                     status = "existe" if exists else "n'existe pas"
@@ -204,14 +180,7 @@ class DatabaseManager:
                 """
                 )
 
-                result = conn.execute(
-                    query,
-                    {
-                        "interval": f"{resample_seconds} seconds",
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                )
+                result = conn.execute(query, {"interval": f"{resample_seconds} seconds", "start_time": start_time, "end_time": end_time})
 
                 data = [{"time": row.bucket_time, "papp": float(row.avg_papp)} for row in result]
 
@@ -254,14 +223,7 @@ class DatabaseManager:
                 """
                 )
 
-                result = conn.execute(
-                    overlap_query,
-                    {
-                        "appliance_id": appliance_id,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                )
+                result = conn.execute(overlap_query, {"appliance_id": appliance_id, "start_time": start_time, "end_time": end_time})
 
                 overlap = result.first()
                 if overlap:
@@ -289,12 +251,7 @@ class DatabaseManager:
             power_values = np.array([d["papp"] for d in consumption_data])
 
             # Build compact power_data JSON
-            power_data = {
-                "start": start_time.isoformat(),
-                "rate_hz": 1.0,
-                "values": power_values.tolist(),
-                "num_points": len(power_values),
-            }
+            power_data = {"start": start_time.isoformat(), "rate_hz": 1.0, "values": power_values.tolist(), "num_points": len(power_values)}
 
             # Compute basic statistics
             avg_power = float(np.mean(power_values))
@@ -356,17 +313,22 @@ class DatabaseManager:
 
     def get_all_signatures(self):
         """
-        Récupère toutes les signatures pour l'entraînement
-        Note: raw_data est récupéré à la volée depuis linky_realtime
+        Récupère toutes les signatures pour l'entraînement.
+        Optimisé pour éviter le problème N+1 :
+        1. Utilise power_data (JSON) si disponible
+        2. Charge les données manquantes en batch si nécessaire
 
         Returns:
-            Liste de signatures avec leurs données (raw_data récupéré dynamiquement)
+            Liste de signatures avec leurs données
         """
         try:
             with self.engine.connect() as conn:
+                # Récupérer toutes les signatures
                 query_text = """
                     SELECT
                         s.id, s.appliance_id, s.start_time, s.end_time,
+                        s.power_data, s.avg_power, s.power_std, s.energy_consumed,
+                        s.is_negative,
                         a.name as appliance_name
                     FROM nilm_signatures s
                     JOIN nilm_appliances a ON s.appliance_id = a.id
@@ -374,39 +336,68 @@ class DatabaseManager:
                 """
 
                 result = conn.execute(text(query_text))
-
                 signatures = []
+                missing_data_sigs = []
+
+                import json
+
                 for row in result:
-                    # Récupérer les données brutes depuis linky_realtime
-                    raw_data = self.get_consumption_data(row.start_time, row.end_time)
-
-                    # Calculer les statistiques à la volée
-                    avg_power = None
-                    power_std = None
-                    energy_consumed = None
-                    if raw_data:
-                        power_values = [d["papp"] for d in raw_data]
-                        if power_values:
-                            avg_power = sum(power_values) / len(power_values)
-                            power_std = (sum((p - avg_power) ** 2 for p in power_values) / len(power_values)) ** 0.5
-                            duration_hours = (row.end_time - row.start_time).total_seconds() / 3600
-                            energy_consumed = avg_power * duration_hours
-
                     sig = {
                         "id": row.id,
                         "appliance_id": row.appliance_id,
                         "appliance_name": row.appliance_name,
                         "start_time": row.start_time,
                         "end_time": row.end_time,
-                        "avg_power": avg_power,
-                        "power_std": power_std,
-                        "energy_consumed": energy_consumed,
-                        "raw_data": raw_data,
+                        "avg_power": row.avg_power,
+                        "power_std": row.power_std,
+                        "energy_consumed": row.energy_consumed,
+                        "is_negative": row.is_negative,
+                        "raw_data": None,
                     }
+
+                    # Stratégie 1: Utiliser power_data stocké (rapide)
+                    if row.power_data:
+                        try:
+                            p_data = row.power_data if isinstance(row.power_data, dict) else json.loads(row.power_data)
+                            values = p_data.get("values", [])
+                            # Reconstruire format attendu par le modèle [{"papp": x}, ...]
+                            sig["raw_data"] = [{"papp": v} for v in values]
+                        except Exception as e:
+                            logger.warning(f"Erreur lecture power_data sig {row.id}: {e}")
+
+                    if not sig["raw_data"]:
+                        missing_data_sigs.append(sig)
 
                     signatures.append(sig)
 
-                logger.info(f"Récupéré {len(signatures)} signatures")
+                # Stratégie 2: Batch load pour les données manquantes (lent mais optimisé)
+                if missing_data_sigs:
+                    logger.info(f"Chargement données brutes pour {len(missing_data_sigs)} signatures...")
+                    # Pour éviter une requête géante, on fait boucle optimisée ou on accepte le N+1
+                    # juste pour les anciennes signatures sans power_data
+                    for sig in missing_data_sigs:
+                        sig["raw_data"] = self.get_consumption_data(sig["start_time"], sig["end_time"])
+
+                        # Auto-repair: sauvegarder power_data pour la prochaine fois
+                        if sig["raw_data"]:
+                            try:
+                                power_values = [d["papp"] for d in sig["raw_data"]]
+                                power_data = {
+                                    "start": sig["start_time"].isoformat(),
+                                    "rate_hz": 1.0,
+                                    "values": power_values,
+                                    "num_points": len(power_values),
+                                }
+                                # Update DB (dans une nouvelle transaction)
+                                with self.get_session() as session:
+                                    session.execute(
+                                        text("UPDATE nilm_signatures SET power_data = :pd WHERE id = :id"),
+                                        {"pd": json.dumps(power_data), "id": sig["id"]},
+                                    )
+                            except Exception as e:
+                                logger.warning(f"Auto-repair failed for sig {sig['id']}: {e}")
+
+                logger.info(f"Récupéré {len(signatures)} signatures (dont {len(missing_data_sigs)} rechargées)")
                 return signatures
 
         except SQLAlchemyError as e:
