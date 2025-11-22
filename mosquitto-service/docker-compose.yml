@@ -1,0 +1,27 @@
+services:
+  mosquitto:
+    container_name: mosquitto
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '8883:8883'
+      - '9002:9002'
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - ./certs:/mosquitto/certs
+      - mosquitto_logs:/mosquitto/log
+    env_file:
+      - .env
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - nc -z localhost 8883 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mosquitto_data: null
+  mosquitto_logs: null
