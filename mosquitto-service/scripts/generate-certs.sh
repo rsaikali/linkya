@@ -8,7 +8,7 @@
 set -e
 
 CERT_DIR="/mosquitto/certs"
-DAYS=365
+DAYS=36500
 COUNTRY="FR"
 STATE="France"
 CITY="Paris"
