@@ -1,5 +1,9 @@
 .PHONY: help build up down logs restart clean init-sync stats start check redis-cli status scale-workers
 
+# Load environment variables from .env file
+include .env
+export
+
 help: ## Affiche l'aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
@@ -32,14 +36,29 @@ clean: ## Supprime tous les containers et volumes
 ###############################################
 mqtt-test: ## Test la connexion MQTT avec le broker
 	@echo "Test de connexion MQTT..."
-	@docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t "test/connection" -m "Hello from Linkya" -u admin -P "${MQTT_ADMIN_PASSWORD}"
+	@bash -c 'source .env && docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t "test/connection" -m "Hello from Linkya" -u admin -P "$$MQTT_ADMIN_PASSWORD"'
 
 mqtt-logs: ## Affiche les logs du broker MQTT
 	@docker-compose logs -f mosquitto
 
-mqtt-status: ## Affiche les statistiques du broker MQTT
+mqtt-listen: ## Écoute tous les messages MQTT en temps réel
+	@echo "Écoute de tous les topics MQTT (Ctrl+C pour arrêter)..."
+	@bash -c 'source .env && docker-compose exec mosquitto mosquitto_sub -h localhost -p 1883 -t "#" -v -u admin -P "$$MQTT_ADMIN_PASSWORD"'
+
+mqtt-subscribe: ## S'abonne à un topic spécifique (usage: make mqtt-subscribe TOPIC=linkya/teleinfo)
+	@echo "Écoute du topic: ${TOPIC}"
+	@bash -c 'source .env && docker-compose exec mosquitto mosquitto_sub -h localhost -p 1883 -t "${TOPIC}" -v -u admin -P "$$MQTT_ADMIN_PASSWORD"'
+
+mqtt-stats: ## Affiche les statistiques détaillées du broker MQTT
+	@echo "=== Statistiques du broker MQTT ==="
+	@bash -c 'source .env && echo -n "Clients connectés: " && docker-compose exec mosquitto mosquitto_sub -h localhost -p 1883 -t "$$SYS/broker/clients/connected" -C 1 -u admin -P "$$MQTT_ADMIN_PASSWORD" 2>/dev/null || echo "N/A"'
+	@bash -c 'source .env && echo -n "Messages reçus: " && docker-compose exec mosquitto mosquitto_sub -h localhost -p 1883 -t "$$SYS/broker/messages/received" -C 1 -u admin -P "$$MQTT_ADMIN_PASSWORD" 2>/dev/null || echo "N/A"'
+	@bash -c 'source .env && echo -n "Messages envoyés: " && docker-compose exec mosquitto mosquitto_sub -h localhost -p 1883 -t "$$SYS/broker/messages/sent" -C 1 -u admin -P "$$MQTT_ADMIN_PASSWORD" 2>/dev/null || echo "N/A"'
+	@echo "==================================="
+
+mqtt-status: ## Affiche le statut du broker MQTT
 	@echo "Statistiques MQTT..."
-	@docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t '$$SYS/broker/clients/connected' -m '' -u admin -P "${MQTT_ADMIN_PASSWORD}" || true
+	@bash -c 'source .env && docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t "$$SYS/broker/clients/connected" -m "" -u admin -P "$$MQTT_ADMIN_PASSWORD"' || true
 
 mqtt-certs-regen: ## Régénère les certificats TLS
 	@echo "Régénération des certificats TLS..."

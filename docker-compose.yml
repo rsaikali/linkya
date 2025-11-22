@@ -108,7 +108,8 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities:
+                - gpu
 
   nilm-beat:
     container_name: nilm-beat
@@ -204,8 +205,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - '8883:8883'
-      - '9002:9002'
+      - 192.168.1.253:8883:8883
+      - 192.168.1.253:9002:9002
     volumes:
       - mosquitto_data:/mosquitto/data
       - mosquitto_certs:/mosquitto/certs
