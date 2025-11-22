@@ -72,3 +72,11 @@ temp/
 .data/
 .docs/
 
+# Certificates (security)
+*.crt
+*.key
+*.pem
+*.p12
+*.pfx
+mosquitto-service/certs/*.crt
+mosquitto-service/certs/*.key
