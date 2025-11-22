@@ -198,31 +198,6 @@ services:
     networks:
       - linkya-network
 
-  mosquitto:
-    container_name: mosquitto
-    build:
-      context: ./mosquitto-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - 192.168.1.253:8883:8883
-      - 192.168.1.253:9002:9002
-    volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_certs:/mosquitto/certs
-      - mosquitto_logs:/mosquitto/log
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - nc -z localhost 8883 || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   pgweb:
     container_name: pgweb
     image: sosedoff/pgweb:latest
@@ -243,9 +218,6 @@ volumes:
   timescaledb_data: null
   redis_data: null
   nilm_uv_cache: null
-  mosquitto_data: null
-  mosquitto_certs: null
-  mosquitto_logs: null
 
 networks:
   linkya-network:
