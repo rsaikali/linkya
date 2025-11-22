@@ -102,7 +102,13 @@ services:
     networks:
       - linkya-network
     command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
-    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   nilm-beat:
     container_name: nilm-beat
