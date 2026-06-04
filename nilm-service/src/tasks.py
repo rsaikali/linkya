@@ -424,10 +424,12 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                         """
                         INSERT INTO nilm_detections
                         (appliance_id, start_time, end_time,
+                         avg_power, energy_consumed,
                          confidence_score, prediction_class,
                          features, created_at)
                         VALUES
                         (:appliance_id, :start_time, :end_time,
+                         :avg_power, :energy_consumed,
                          :confidence_score, :prediction_class,
                          :features, NOW())
                         RETURNING id
@@ -440,6 +442,8 @@ def detect_nilm_appliances(hours=None, min_confidence=0.3):
                             "appliance_id": appliance_id,
                             "start_time": event["start_time"],
                             "end_time": event["end_time"],
+                            "avg_power": event.get("avg_power"),
+                            "energy_consumed": event.get("energy_wh", event.get("energy_consumed")),
                             "confidence_score": event["confidence_score"],
                             "prediction_class": event.get("prediction_class"),
                             "features": json.dumps(features_data),
@@ -570,11 +574,24 @@ def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative
 
         logger.info(f"Signature {signature_id} ajoutée avec succès")
 
-        # Déclencher un réentraînement si assez de signatures
-        signatures = db_manager.get_all_signatures()
-        if len(signatures) >= 10 and len(signatures) % 5 == 0:
-            train_nilm_model.delay()
-            logger.info("Réentraînement du modèle déclenché")
+        # Auto-train: only on positive signatures, minimum 2, every 5th addition.
+        # Pi-friendly (training can take minutes): avoids retraining on every click.
+        if not is_negative:
+            positive_count = db_manager.count_positive_signatures()
+            if positive_count >= 2 and (positive_count - 2) % 5 == 0:
+                generation = 0
+                if redis_client:
+                    try:
+                        generation = redis_client.incr("nilm:training:generation")
+                    except Exception:
+                        pass
+                celery_app.send_task(
+                    "train_nilm_model",
+                    args=[2, generation],
+                    queue="nilm",
+                    routing_key="nilm.train_nilm_model",
+                )
+                logger.info(f"Auto-train déclenché ({positive_count} signatures positives)")
 
         return {
             "status": "success",
@@ -589,12 +606,12 @@ def add_nilm_signature(appliance_name, start_time_str, end_time_str, is_negative
         return {"status": "error", "message": str(e)}
 
 
-# Configuration des tâches périodiques
+# Training: manual only, or auto-triggered after add_nilm_signature (see task below).
+# Detection: every NILM_DETECTION_INTERVAL_MINUTES on a rolling 2h window.
 celery_app.conf.beat_schedule = {
-    "train-nilm-model": {"task": "train_nilm_model", "schedule": crontab(hour=f"*/{settings.nilm_training_interval_hours}", minute=0)},
     "detect-nilm-appliances": {
         "task": "detect_nilm_appliances",
         "schedule": settings.nilm_detection_interval_minutes * 60.0,
-        "kwargs": {"hours": 2, "min_confidence": 0.6},  # Analyse 2h pour couvrir les cycles HC/HP
+        "kwargs": {"hours": 2, "min_confidence": 0.25},
     },
 }

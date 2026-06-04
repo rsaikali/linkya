@@ -37,6 +37,8 @@ class DatabaseManager:
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
             Column("name", String(255), nullable=False),
+            Column("ha_publish", Boolean, nullable=False, server_default="false"),
+            Column("ha_entity_id", String(255), nullable=True),
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
             Column("updated_at", DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index("idx_nilm_appliances_name", "name"),
@@ -403,6 +405,18 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de la récupération des signatures: {e}")
             return []
+
+    def count_positive_signatures(self):
+        """Count of positive (non-negative) signatures across all appliances."""
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(
+                    text("SELECT COUNT(*) FROM nilm_signatures WHERE is_negative = FALSE")
+                )
+                return result.scalar() or 0
+        except SQLAlchemyError as e:
+            logger.error(f"Erreur count_positive_signatures: {e}")
+            return 0
 
 
 # Instance globale du gestionnaire de base de données

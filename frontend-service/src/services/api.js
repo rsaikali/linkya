@@ -150,6 +150,17 @@ export const apiService = {
     }
   },
 
+  // Toggle HA publishing for an appliance
+  toggleHaPublish: async (applianceId, enabled) => {
+    try {
+      const response = await api.patch(`/api/appliances/${applianceId}/ha-publish`, { enabled });
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors du toggle HA publish:', error);
+      throw error;
+    }
+  },
+
   // Delete all AI models (database and files)
   deleteAllModels: async () => {
     try {

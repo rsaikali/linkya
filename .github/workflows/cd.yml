@@ -1,0 +1,26 @@
+name: CD
+
+# Fires after CI passes on main, or manually.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Raspberry Pi
+    runs-on: [self-hosted, linux, arm64, linkya]
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      # Deploys from a persistent clone on the Pi that holds .env (secrets +
+      # host config, never in git). First-time setup on the Pi:
+      #   git clone <repo> ~/linkya
+      #   cp .env.example ~/linkya/.env  (then fill HA_URL, HA_TOKEN, MQTT creds)
+      - name: Pull and deploy
+        run: |
+          cd ~/linkya
+          git fetch origin main
+          git reset --hard origin/main
+          make deploy

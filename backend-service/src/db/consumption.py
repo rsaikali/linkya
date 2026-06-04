@@ -12,7 +12,7 @@ class ConsumptionRepository(DatabaseBase):
         """Retrieves the latest consumption value."""
         query = text(
             """
-            SELECT time, papp, hchp, hchc, temperature, libelle_tarif
+            SELECT time, papp
             FROM linky_realtime
             ORDER BY time DESC
             LIMIT 1
@@ -25,10 +25,6 @@ class ConsumptionRepository(DatabaseBase):
                 return {
                     "time": format_datetime(result[0]),
                     "papp": result[1],
-                    "hchp": result[2],
-                    "hchc": result[3],
-                    "temperature": result[4],
-                    "libelle_tarif": result[5],
                 }
             return None
 
@@ -72,8 +68,7 @@ class ConsumptionRepository(DatabaseBase):
                     time,
                     papp as avg_papp,
                     papp as max_papp,
-                    papp as min_papp,
-                    temperature as avg_temperature
+                    papp as min_papp
                 FROM linky_realtime
                 WHERE time >= :start_time AND time <= :end_time
                 ORDER BY time ASC
@@ -86,8 +81,7 @@ class ConsumptionRepository(DatabaseBase):
                     time_bucket(:interval, time) AS bucket,
                     AVG(papp) as avg_papp,
                     MAX(papp) as max_papp,
-                    MIN(papp) as min_papp,
-                    AVG(temperature) as avg_temperature
+                    MIN(papp) as min_papp
                 FROM linky_realtime
                 WHERE time >= :start_time AND time <= :end_time
                 GROUP BY bucket
@@ -113,7 +107,6 @@ class ConsumptionRepository(DatabaseBase):
                     "avg_papp": float(row[1]) if row[1] is not None else None,
                     "max_papp": float(row[2]) if row[2] is not None else None,
                     "min_papp": float(row[3]) if row[3] is not None else None,
-                    "avg_temperature": (float(row[4]) if row[4] is not None else None),
                 }
                 for row in result
             ]

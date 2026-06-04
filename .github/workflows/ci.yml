@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (flake8 + isort)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install linters
+        run: uv pip install --system flake8 isort
+
+      - name: flake8
+        run: |
+          flake8 backend-service/src/ \
+                 nilm-service/src/ \
+                 ha-ingest-service/src/ \
+                 ha-publish-service/src/
+
+      - name: isort --check
+        run: |
+          isort --check-only \
+                backend-service/src/ \
+                nilm-service/src/ \
+                ha-ingest-service/src/ \
+                ha-publish-service/src/
+
+  docker-build:
+    name: Docker build (backend + ha services)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend-service
+          file: ./backend-service/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build ha-ingest
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ha-ingest-service
+          file: ./ha-ingest-service/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build ha-publish
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ha-publish-service
+          file: ./ha-publish-service/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # nilm-service skipped in CI: tensorflow base image is multi-GB
+      # and would exceed free runner limits. Validated locally + on deploy.

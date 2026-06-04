@@ -21,7 +21,6 @@ class Settings:
         self.celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 
         # Configuration NILM
-        self.nilm_training_interval_hours = int(os.getenv("NILM_TRAINING_INTERVAL_HOURS", "24"))
         self.nilm_detection_interval_minutes = int(os.getenv("NILM_DETECTION_INTERVAL_MINUTES", "5"))
         # Période analysée (None=tout, ou nombre d'heures)
         period_hours = os.getenv("NILM_DETECTION_PERIOD_HOURS")

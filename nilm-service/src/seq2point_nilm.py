@@ -236,12 +236,7 @@ class Seq2PointNILMManager:
                             WHERE time >= cs.start_time
                               AND time <= cs.end_time
                         ) as avg_power,
-                        (
-                            SELECT SUM(papp) / 3600.0
-                            FROM linky_realtime
-                            WHERE time >= cs.start_time
-                              AND time <= cs.end_time
-                        ) as energy_wh
+                        EXTRACT(EPOCH FROM (cs.end_time - cs.start_time)) as duration_s
                     FROM nilm_signatures cs
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
@@ -251,8 +246,11 @@ class Seq2PointNILMManager:
                 result = conn.execute(query)
 
                 for row in result:
-                    sig_id, app_id, start_t, end_t, avg_pwr, energy = row
-                    duration = int((end_t - start_t).total_seconds())
+                    sig_id, app_id, start_t, end_t, avg_pwr, duration_s = row
+                    duration = int(float(duration_s)) if duration_s else int((end_t - start_t).total_seconds())
+                    avg_power = float(avg_pwr) if avg_pwr else 0.0
+                    # energy = avg_power * real_duration / 3600  (same formula as PATH A)
+                    energy = avg_power * duration / 3600.0
 
                     if app_id not in negative_sigs:
                         negative_sigs[app_id] = []
@@ -261,8 +259,8 @@ class Seq2PointNILMManager:
                         {
                             "id": sig_id,
                             "duration_seconds": duration,
-                            "avg_power": float(avg_pwr) if avg_pwr else 0.0,
-                            "energy_wh": float(energy) if energy else 0.0,
+                            "avg_power": avg_power,
+                            "energy_wh": energy,
                         }
                     )
 
@@ -481,71 +479,186 @@ class Seq2PointNILMManager:
                 logger.warning("Aucun change point détecté")
                 return []
 
-            # Étape 2 : Extraire les patterns entre les change points
-            patterns = self.change_point_detector.extract_patterns(aggregate_power, change_points)
+            # Étape 2 : Extraire les patterns (timestamps → durée en vraies secondes)
+            patterns = self.change_point_detector.extract_patterns(
+                aggregate_power, change_points, timestamps=timestamps
+            )
 
-            if not patterns:
-                logger.warning("Aucun pattern extrait")
-                return []
+            # ─── PATH A : Change Point + Pattern Matching ────────────────────
+            path_a_detections = []
+            if patterns:
+                for pattern_data in patterns:
+                    match_result = self.change_point_detector.match_pattern(
+                        pattern_data, pattern_morphology=pattern_data.get("morphology")
+                    )
+                    if match_result:
+                        (appliance_id, appliance_name, matched_signature_id, confidence) = match_result
+                        start_idx = pattern_data["start_idx"]
+                        end_idx = pattern_data["end_idx"]
+                        if start_idx < len(timestamps) and end_idx <= len(timestamps):
+                            det = {
+                                "appliance_id": appliance_id,
+                                "appliance_name": appliance_name,
+                                "signature_id": matched_signature_id,
+                                "start_time": timestamps[start_idx],
+                                "end_time": timestamps[min(end_idx, len(timestamps) - 1)],
+                                "duration_seconds": pattern_data["duration"],  # vraies secondes
+                                "avg_power": pattern_data["avg_power"],
+                                "max_power": pattern_data["max_power"],
+                                "energy_wh": pattern_data["energy_wh"],
+                                "confidence_score": float(confidence),
+                                "features": {
+                                    "detection_method": "change_point_pattern_matching",
+                                    "change_point_based": True,
+                                },
+                            }
+                            if matched_signature_id is not None:
+                                det["features"]["matched_signature_id"] = int(matched_signature_id)
+                                det["features"]["matching"] = {
+                                    "score": float(confidence),
+                                    "method": "energy_duration_power_shape",
+                                }
+                            path_a_detections.append(det)
+                            logger.info(
+                                f"PATH A match: {appliance_name} "
+                                f"{pattern_data['duration']:.0f}s "
+                                f"{pattern_data['avg_power']:.0f}W "
+                                f"{pattern_data['energy_wh']:.2f}Wh "
+                                f"conf={confidence:.2%}"
+                            )
+            else:
+                logger.info("PATH A: aucun pattern extrait (pas de change points nets)")
 
-            # Étape 3 : Matcher chaque pattern avec les profiles de signatures
-            detections = []
-            for pattern_data in patterns:
-                match_result = self.change_point_detector.match_pattern(pattern_data, pattern_morphology=pattern_data.get("morphology"))
+            logger.info(f"PATH A: {len(path_a_detections)} détections")
 
-                if match_result:
-                    (appliance_id, appliance_name, matched_signature_id, confidence) = match_result
+            # ─── PATH B : Seq2Point Sliding Window Inference ─────────────────
+            # Détecte les cycles complexes (lave-linge, frigo, four) que les
+            # change points ne capturent pas bien.
+            path_b_detections = []
+            try:
+                # Intervalle d'échantillonnage estimé
+                if len(timestamps) > 1:
+                    sample_interval = (timestamps[-1] - timestamps[0]).total_seconds() / (len(timestamps) - 1)
+                else:
+                    sample_interval = 8.0
+                min_duration_samples = max(1, int(settings.nilm_min_duration_seconds / sample_interval))
 
-                    # Mapper les indices vers les timestamps
-                    start_idx = pattern_data["start_idx"]
-                    end_idx = pattern_data["end_idx"]
+                # Stride adaptatif : plus grand = plus rapide sur Pi, moins précis
+                stride = max(1, min(10, len(aggregate_power) // 5000))
+                logger.info(f"PATH B: inférence Seq2Point stride={stride} ({len(aggregate_power)} pts)")
 
-                    if start_idx < len(timestamps) and end_idx <= len(timestamps):
-                        detection = {
-                            "appliance_id": appliance_id,
-                            "appliance_name": appliance_name,
-                            "signature_id": matched_signature_id,
-                            "start_time": timestamps[start_idx],
-                            "end_time": timestamps[min(end_idx, len(timestamps) - 1)],
-                            "duration_seconds": pattern_data["duration"],
-                            "avg_power": pattern_data["avg_power"],
-                            "max_power": pattern_data["max_power"],
-                            "energy_wh": pattern_data["energy_wh"],
-                            "confidence_score": float(confidence),
-                            "features": {"detection_method": ("change_point_pattern_matching"), "change_point_based": True},
+                predictions_dict = self.multioutput_model.predict(aggregate_power, stride=stride)
+
+                for app_id, signal in predictions_dict.items():
+                    # Nom et puissance attendue depuis les profiles de signatures
+                    app_name = f"appliance_{app_id}"
+                    expected_power = None
+                    for aid, pdata in self.change_point_detector.signature_profiles.items():
+                        if aid == app_id:
+                            app_name = pdata["name"]
+                            powers = [p["avg_power"] for p in pdata["profiles"]]
+                            if powers:
+                                expected_power = float(np.median(powers))
+                            break
+
+                    # Seuil adaptatif : 30% de la puissance attendue, min 50 W
+                    threshold_w = max(50.0, (expected_power or settings.nilm_min_power_threshold) * 0.30)
+
+                    # Lissage anti-bruit (fenêtre = ~1/4 de la durée min)
+                    smooth_w = max(3, min_duration_samples // 4)
+                    signal_smooth = np.convolve(signal, np.ones(smooth_w) / smooth_w, mode="same")
+                    signal_smooth = np.maximum(signal_smooth, 0)
+
+                    active_mask = signal_smooth > threshold_w
+                    segments = self._find_active_segments(
+                        active_mask, timestamps, signal_smooth, min_duration_samples
+                    )
+
+                    for seg in segments:
+                        seg["appliance_id"] = app_id
+                        seg["appliance_name"] = app_name
+                        seg["features"] = {
+                            "detection_method": "seq2point_inference",
+                            "change_point_based": False,
                         }
-                        if matched_signature_id is not None:
-                            detection["features"]["matched_signature_id"] = int(matched_signature_id)
-                            detection["features"]["matching"] = {"score": float(confidence), "method": "duration_power_shape_combined"}
-                        detections.append(detection)
+                        path_b_detections.append(seg)
 
-                        logger.info(
-                            f"Pattern matché: {appliance_name} - "
-                            f"{pattern_data['duration']}s - "
-                            f"{pattern_data['avg_power']:.1f}W - "
-                            f"confiance {confidence:.2%}"
-                        )
+                    if segments:
+                        logger.info(f"PATH B: {app_name} → {len(segments)} segments")
 
-            logger.info(f"Total détections avant filtrage: {len(detections)}")
+            except Exception as e:
+                logger.warning(f"PATH B échoué (non bloquant): {e}", exc_info=True)
 
-            #  NOUVEAU: Filtrer contre les signatures négatives
-            detections = self._filter_against_negative_signatures(detections)
+            logger.info(f"PATH B: {len(path_b_detections)} détections")
 
-            #  NOUVEAU: Filtrer par seuil de confiance minimum
-            min_confidence = 0.40  # 40% de confiance minimum (assoupli)
-            before_conf_filter = len(detections)
-            detections = [d for d in detections if d.get("confidence_score", 0) >= min_confidence]
-            if before_conf_filter > len(detections):
-                logger.info(
-                    f"Filtrage confiance: " f"{before_conf_filter - len(detections)} " f"détections rejetées (confiance < {min_confidence:.0%})"
-                )
+            # ─── FUSION + DEDUP ───────────────────────────────────────────────
+            all_detections = path_a_detections + path_b_detections
+            all_detections = self._dedup_detections(all_detections)
 
-            logger.info(f"Total détections après filtrage: {len(detections)}")
-            return detections
+            logger.info(f"Total après fusion/dedup: {len(all_detections)}")
+
+            # Filtrer signatures négatives
+            all_detections = self._filter_against_negative_signatures(all_detections)
+
+            # Seuil de confiance abaissé (l'utilisateur valide dans l'UI)
+            min_confidence = 0.25
+            before = len(all_detections)
+            all_detections = [d for d in all_detections if d.get("confidence_score", 0) >= min_confidence]
+            if before > len(all_detections):
+                logger.info(f"Filtrage confiance: {before - len(all_detections)} rejetées (<{min_confidence:.0%})")
+
+            logger.info(f"Total détections finales: {len(all_detections)}")
+            return all_detections
 
         except Exception as e:
             logger.error(f"Erreur désagrégation: {e}", exc_info=True)
             return []
+
+    def _dedup_detections(self, detections):
+        """
+        Fusionne les détections doublons entre PATH A et PATH B.
+
+        Deux détections du même appareil qui se chevauchent à plus de 50%
+        de la durée de la plus courte sont considérées comme le même événement.
+        On garde celle avec le score de confiance le plus élevé.
+        """
+        if not detections:
+            return []
+
+        # Grouper par appliance_id
+        by_appliance = {}
+        for d in detections:
+            app_id = d["appliance_id"]
+            by_appliance.setdefault(app_id, []).append(d)
+
+        merged = []
+        for app_id, dets in by_appliance.items():
+            # Trier par start_time
+            sorted_dets = sorted(dets, key=lambda d: d["start_time"])
+            kept = []
+            for d in sorted_dets:
+                duplicate = False
+                for k in kept:
+                    latest_start = max(d["start_time"], k["start_time"])
+                    earliest_end = min(d["end_time"], k["end_time"])
+                    if latest_start >= earliest_end:
+                        continue
+                    overlap_s = (earliest_end - latest_start).total_seconds()
+                    dur_d = (d["end_time"] - d["start_time"]).total_seconds()
+                    dur_k = (k["end_time"] - k["start_time"]).total_seconds()
+                    shorter = min(dur_d, dur_k)
+                    if shorter > 0 and overlap_s / shorter > 0.50:
+                        # Doublon — garder le meilleur score
+                        if d.get("confidence_score", 0) > k.get("confidence_score", 0):
+                            kept.remove(k)
+                            kept.append(d)
+                        duplicate = True
+                        break
+                if not duplicate:
+                    kept.append(d)
+            merged.extend(kept)
+
+        return sorted(merged, key=lambda d: d["start_time"])
 
     def _merge_consecutive_cycles(self, cycles, max_gap_seconds=120):
         """

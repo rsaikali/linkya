@@ -9,6 +9,11 @@ help: ## Affiche l'aide
 build: ## Construit les images Docker
 	@DOCKER_BUILDKIT=1 docker-compose build
 
+deploy: ## Deploy on Pi (CD): prod build + restart (uses docker-compose.prod.yml)
+	@DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml -f docker-compose.prod.yml build
+	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps
+
 up: ## Démarre tous les services
 	docker-compose up -d
 
@@ -27,27 +32,6 @@ restart: ## Redémarre tous les services
 clean: ## Supprime tous les containers et volumes
 	docker-compose down -v
 
-###############################################
-## MQTT Service Management
-###############################################
-mqtt-test: ## Test la connexion MQTT avec le broker
-	@echo "Test de connexion MQTT..."
-	@docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t "test/connection" -m "Hello from Linkya" -u admin -P "${MQTT_ADMIN_PASSWORD}"
-
-mqtt-logs: ## Affiche les logs du broker MQTT
-	@docker-compose logs -f mosquitto
-
-mqtt-status: ## Affiche les statistiques du broker MQTT
-	@echo "Statistiques MQTT..."
-	@docker-compose exec mosquitto mosquitto_pub -h localhost -p 1883 -t '$$SYS/broker/clients/connected' -m '' -u admin -P "${MQTT_ADMIN_PASSWORD}" || true
-
-mqtt-certs-regen: ## Régénère les certificats TLS
-	@echo "Régénération des certificats TLS..."
-	@docker-compose exec mosquitto /mosquitto/scripts/generate-certs.sh
-
-mqtt-passwords-regen: ## Régénère le fichier de mots de passe
-	@echo "Régénération des mots de passe..."
-	@docker-compose exec mosquitto /mosquitto/scripts/generate-passwords.sh
 
 ###############################################
 ## NILM Service Management via API
@@ -66,28 +50,22 @@ detect: ## Lance la détection NILM via l'API
 code-quality-check: ## Check Python code quality (Flake8 + isort)
 	@echo "Checking with Flake8..."
 	@backend-service/.venv/bin/flake8 backend-service/src/ || true
-	@sync-service/.venv/bin/flake8 sync-service/src/ || true
 	@nilm-service/.venv/bin/flake8 nilm-service/src/ || true
 	@echo "--------------------------------"
 	@echo "Checking import order with isort..."
 	@backend-service/.venv/bin/isort --check-only --diff backend-service/src/ || true
-	@sync-service/.venv/bin/isort --check-only --diff sync-service/src/ || true
 	@nilm-service/.venv/bin/isort --check-only --diff nilm-service/src/ || true
-	@echo "--------------------------------"
 	@echo "✓ Code quality check completed!"
 
 code-quality-fix: ## Fix Python code quality issues (Black + isort + trailing whitespace)
 	@echo "Sorting imports with isort..."
 	@backend-service/.venv/bin/isort backend-service/src/
-	@sync-service/.venv/bin/isort sync-service/src/
 	@nilm-service/.venv/bin/isort nilm-service/src/
 	@echo "--------------------------------"
 	@echo "Formatting code with Black..."
 	@backend-service/.venv/bin/black backend-service/src/
-	@sync-service/.venv/bin/black sync-service/src/
 	@nilm-service/.venv/bin/black nilm-service/src/
 	@echo "--------------------------------"
 	@echo "Removing trailing whitespace..."
-	@find backend-service/src sync-service/src nilm-service/src -name "*.py" -type f -exec sed -i 's/[[:space:]]*$$//' {} +
-	@echo "--------------------------------"
+	@find backend-service/src nilm-service/src -name "*.py" -type f -exec sed -i 's/[[:space:]]*$$//' {} +
 	@echo "✓ Code quality fix completed!"

@@ -1,0 +1,50 @@
+# Production overrides for Raspberry Pi deployment.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Changes from dev:
+#   - All ports bind to 127.0.0.1 or LAN IP — never 0.0.0.0
+#   - react-dev replaced by production nginx (static React build)
+#   - Frontend on 127.0.0.1:8082 → proxied by NPM at linkya.local / linkya.saikali.fr
+#   - timescaledb, redis, backend: no external port (LAN-internal only)
+#   - pgweb: 127.0.0.1:8081 (debug, LAN only)
+
+services:
+  timescaledb:
+    ports: []    # internal only — accessed by Docker network
+
+  redis:
+    ports: []    # internal only
+
+  backend:
+    ports: []    # nginx handles routing — no direct exposure needed
+    volumes:
+      - ./backend-service/src:/app/src
+      - ./.data/models:/app/models
+
+  # Drop dev server: nginx serves the static React build instead
+  react-dev:
+    profiles: [dev]   # excluded from prod
+
+  frontend:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile.prod
+    ports:
+      - "127.0.0.1:8082:80"   # NPM → http://127.0.0.1:8082
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  pgweb:
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  nilm-worker:
+    volumes:
+      - ./nilm-service/src:/app/src
+      - ./.data/models:/app/models
+
+  nilm-beat:
+    volumes:
+      - ./nilm-service/src:/app/src
+      - ./.data/models:/app/models

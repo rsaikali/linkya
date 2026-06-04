@@ -17,6 +17,7 @@ import {
   Box,
   TextField,
   Chip,
+  Switch,
   Menu,
   MenuItem,
   ListItemIcon,
@@ -28,6 +29,7 @@ import {
 import { Edit, Close } from '@mui/icons-material';
 import ElectricalServicesIcon from '@mui/icons-material/ElectricalServices';
 import api from '../services/api';
+import { apiService } from '../services/api';
 import { useData } from '../context/DataContext';
 import { useApplianceColors } from '../context/ApplianceColorsContext';
 import MaterialIcon from './common/MaterialIcon';
@@ -69,6 +71,7 @@ function AppliancesList() {
   
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [togglingHa, setTogglingHa] = useState(null); // applianceId being toggled
   
   // Menu state
   const [styleMenuAnchor, setStyleMenuAnchor] = useState(null);
@@ -113,6 +116,19 @@ function AppliancesList() {
     } catch (err) {
       console.error('Error updating appliance:', err);
       // Error is already in context, no need to set it locally
+    }
+  };
+
+  const handleHaPublishToggle = async (appliance) => {
+    const newValue = !appliance.ha_publish;
+    setTogglingHa(appliance.id);
+    try {
+      await apiService.toggleHaPublish(appliance.id, newValue);
+      await refreshAppliances();
+    } catch (err) {
+      console.error('Erreur toggle HA publish:', err);
+    } finally {
+      setTogglingHa(null);
     }
   };
 
@@ -190,7 +206,10 @@ function AppliancesList() {
                     Signatures
                   </TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600 }}>
-                    Detections
+                    Détections
+                  </TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600 }}>
+                    Home Assistant
                   </TableCell>
                 </TableRow>
               </TableHead>
@@ -303,6 +322,39 @@ function AppliancesList() {
                         size="small"
                         variant="outlined"
                       />
+                    </TableCell>
+                    <TableCell align="center">
+                      <Tooltip
+                        title={
+                          appliance.ha_publish
+                            ? `Publié dans HA : ${appliance.ha_entity_id}`
+                            : 'Activer pour créer un capteur dans Home Assistant'
+                        }
+                        arrow
+                      >
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                          <Switch
+                            size="small"
+                            checked={Boolean(appliance.ha_publish)}
+                            disabled={togglingHa === appliance.id}
+                            onChange={() => handleHaPublishToggle(appliance)}
+                            color="success"
+                          />
+                          {appliance.ha_publish && appliance.ha_entity_id && (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: 'success.main',
+                                fontSize: '0.6rem',
+                                fontFamily: 'monospace',
+                                lineHeight: 1,
+                              }}
+                            >
+                              {appliance.ha_entity_id}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))}

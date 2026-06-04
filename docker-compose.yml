@@ -3,7 +3,7 @@ services:
     container_name: timescaledb
     image: timescale/timescaledb:latest-pg16
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
     environment:
@@ -42,10 +42,10 @@ services:
       timeout: 3s
       retries: 5
 
-  sync-worker:
-    container_name: sync-worker
+  ha-ingest:
+    container_name: ha-ingest
     build:
-      context: ./sync-service
+      context: ./ha-ingest-service
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
@@ -54,31 +54,11 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./sync-service/src:/app/src
+      - ./ha-ingest-service/src:/app/src
     env_file:
       - .env
     networks:
       - linkya-network
-    command: celery -A src.tasks.celery_app worker --loglevel=info
-
-  sync-beat:
-    container_name: sync-beat
-    build:
-      context: ./sync-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./sync-service/src:/app/src
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-    command: /app/scripts/entrypoint-beat.sh
 
   nilm-worker:
     container_name: nilm-worker
@@ -91,7 +71,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      sync-worker:
+      ha-ingest:
         condition: service_started
     volumes:
       - ./nilm-service/src:/app/src
@@ -102,7 +82,6 @@ services:
     networks:
       - linkya-network
     command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
-    runtime: nvidia
 
   nilm-beat:
     container_name: nilm-beat
@@ -115,7 +94,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      sync-beat:
+      ha-ingest:
         condition: service_started
     volumes:
       - ./nilm-service/src:/app/src
@@ -137,10 +116,10 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
-      sync-worker:
+      ha-ingest:
         condition: service_started
     ports:
-      - '8000:8000'
+      - '8001:8000'
     volumes:
       - ./backend-service/src:/app/src
       - ./.data/models:/app/models
@@ -184,39 +163,28 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-      react-dev:
-        condition: service_started
     ports:
       - '80:80'
     networks:
       - linkya-network
 
-  mosquitto:
-    container_name: mosquitto
+  ha-publish:
+    container_name: ha-publish
     build:
-      context: ./mosquitto-service
+      context: ./ha-publish-service
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - '1883:1883'
-      - '8883:8883'
-      - '9001:9001'
-      - '9002:9002'
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      nilm-worker:
+        condition: service_started
     volumes:
-      - mosquitto_data:/mosquitto/data
-      - mosquitto_certs:/mosquitto/certs
-      - mosquitto_logs:/mosquitto/log
+      - ./ha-publish-service/src:/app/src
     env_file:
       - .env
     networks:
       - linkya-network
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - nc -z localhost 1883 || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   pgweb:
     container_name: pgweb
@@ -238,9 +206,6 @@ volumes:
   timescaledb_data: null
   redis_data: null
   nilm_uv_cache: null
-  mosquitto_data: null
-  mosquitto_certs: null
-  mosquitto_logs: null
 
 networks:
   linkya-network:

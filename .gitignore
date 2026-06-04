@@ -72,3 +72,8 @@ temp/
 .data/
 .docs/
 
+# Tooling — not for public repo
+.agent/
+.claude/
+.code-review-graph/
+

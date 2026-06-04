@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from ..db import db_manager
+from ..models import HaPublishUpdate
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,25 @@ async def get_all_appliances():
         return {"total": len(appliances), "appliances": appliances}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
+@router.patch("/{appliance_id}/ha-publish")
+async def toggle_ha_publish(appliance_id: int, body: HaPublishUpdate):
+    """
+    Enables or disables HA publishing for an appliance.
+    When enabled, generates ha_entity_id (sensor.nilm_<slug>) and
+    ha-publish service will create a MQTT discovery entry in HA.
+    """
+    try:
+        result = db_manager.update_ha_publish(appliance_id=appliance_id, enabled=body.enabled)
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Appliance {appliance_id} not found")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling ha_publish for appliance {appliance_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
 @router.patch("/{appliance_id}")

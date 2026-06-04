@@ -57,6 +57,10 @@ class DatabaseManager:
         """Get or create appliance."""
         return self.appliances.get_or_create_appliance(appliance_name)
 
+    def update_ha_publish(self, appliance_id: int, enabled: bool):
+        """Toggle HA publishing for an appliance."""
+        return self.appliances.update_ha_publish(appliance_id, enabled)
+
     # Signature methods
     def get_appliance_signatures(self, appliance_id):
         """Get appliance signatures."""

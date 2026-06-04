@@ -41,8 +41,8 @@ async def websocket_consumption_updates(websocket: WebSocket):
     """
     WebSocket endpoint for real-time consumption data updates.
 
-    Clients connect to receive live consumption data as it arrives from sync-service.
-    Events include: new_consumption with latest PAPP, temperature, counters.
+    Clients connect to receive live consumption data as it arrives from ha-ingest.
+    Events include: new_consumption with latest PAPP.
     """
     await consumption_updates_manager.connect(websocket)
     try:

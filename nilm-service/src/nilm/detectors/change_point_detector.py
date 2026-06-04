@@ -66,9 +66,11 @@ class ChangePointPatternDetector:
                 profile = {
                     "signature_id": signature_id,
                     "pattern": normalized,
-                    "duration": duration,
+                    "duration": duration,  # seconds
                     "avg_power": float(np.mean(power_sequence)),
                     "max_power": float(profile_max),
+                    # energy_wh from signature: avg_power * duration(s) / 3600
+                    "energy_wh": float(np.mean(power_sequence)) * duration / 3600.0,
                 }
 
                 # Ajouter features morphologiques si available
@@ -131,13 +133,16 @@ class ChangePointPatternDetector:
         logger.info(f"Change points détectés: {len(change_points)}")
         return change_points
 
-    def extract_patterns(self, aggregate_power, change_points):
+    def extract_patterns(self, aggregate_power, change_points, timestamps=None):
         """
         Extrait les patterns entre les change points.
 
         Args:
             aggregate_power: Consommation agrégée
             change_points: Change points détectés
+            timestamps: Liste de timestamps correspondant à aggregate_power (optionnel)
+                        Quand fourni, la durée est calculée en vraies secondes.
+                        Quand absent, estimation depuis le taux d'échantillonnage.
 
         Returns:
             Liste de patterns avec séquences et métadonnées
@@ -146,6 +151,17 @@ class ChangePointPatternDetector:
 
         if len(change_points) < 2:
             return []
+
+        # Estimer l'intervalle d'échantillonnage (secondes/sample)
+        if timestamps and len(timestamps) > 1:
+            total_seconds = (timestamps[-1] - timestamps[0]).total_seconds()
+            sample_interval = total_seconds / max(len(timestamps) - 1, 1)
+        else:
+            # Fallback: hypothèse 8s/sample (HA Linky typique)
+            sample_interval = 8.0
+
+        # min_duration est en secondes → convertir en samples pour le filtre initial
+        min_duration_samples = max(1, int(self.min_duration / sample_interval))
 
         patterns = []
         analyzer = MorphologyAnalyzer()
@@ -166,35 +182,37 @@ class ChangePointPatternDetector:
                 if end_idx is not None:
                     start = cp["index"]
                     end = change_points[end_idx]["index"]
-                    duration = end - start
+                    duration_samples = end - start
 
-                    if duration >= self.min_duration:
-                        # Extraire la séquence
+                    # Durée en vraies secondes (corrige le bug unité)
+                    if timestamps and start < len(timestamps) and end < len(timestamps):
+                        duration_seconds = (timestamps[end] - timestamps[start]).total_seconds()
+                    else:
+                        duration_seconds = duration_samples * sample_interval
+
+                    if duration_samples >= min_duration_samples:
                         pattern = aggregate_power[start:end]
 
-                        # Note: On ne soustrait PAS la baseline car les
-                        # profiles de signature sont stockés avec les
-                        # valeurs originales (incluant la baseline).
-                        # Le change point detection isole déjà les
-                        # périodes d'activation.
-
                         if len(pattern) > 0 and np.max(pattern) > self.min_power_change:
-                            # Calculer morphologie du pattern détecté
                             try:
                                 morphology = analyzer.analyze(pattern.tolist(), start_time=None)
                             except Exception as e:
                                 logger.warning(f"Erreur calcul morphologie pattern: {e}")
                                 morphology = None
 
+                            # Énergie correcte : puissance_moyenne × durée_réelle / 3600
+                            energy_wh = float(np.mean(pattern)) * duration_seconds / 3600.0
+
                             patterns.append(
                                 {
                                     "start_idx": start,
                                     "end_idx": end,
-                                    "duration": duration,
+                                    "duration": duration_seconds,   # secondes (corrigé)
+                                    "duration_samples": duration_samples,
                                     "pattern": pattern,
                                     "avg_power": float(np.mean(pattern)),
                                     "max_power": float(np.max(pattern)),
-                                    "energy_wh": float(np.sum(pattern) / 3600),
+                                    "energy_wh": energy_wh,
                                     "morphology": morphology,
                                 }
                             )
@@ -205,7 +223,7 @@ class ChangePointPatternDetector:
             else:
                 i += 1
 
-        logger.info(f"Patterns extraits: {len(patterns)}")
+        logger.info(f"Patterns extraits: {len(patterns)} (intervalle ~{sample_interval:.1f}s/pt)")
         return patterns
 
     def match_pattern(self, pattern_data, pattern_morphology=None):
@@ -224,8 +242,9 @@ class ChangePointPatternDetector:
             return None
 
         pattern = pattern_data["pattern"]
-        pattern_duration = pattern_data["duration"]
+        pattern_duration = pattern_data["duration"]    # secondes (corrigé)
         pattern_power = pattern_data["avg_power"]
+        pattern_energy = pattern_data.get("energy_wh", 0.0)
 
         # Normaliser le pattern (0-1)
         pattern_max = np.max(pattern)
@@ -239,27 +258,42 @@ class ChangePointPatternDetector:
         for appliance_id, data in self.signature_profiles.items():
             appliance_name = data["name"]
             logger.info(
-                f"Comparaison pattern ({pattern_duration}s, " f"{pattern_power:.0f}W) avec {len(data['profiles'])} " f"profiles de {appliance_name}"
+                f"Comparaison pattern ({pattern_duration:.0f}s, {pattern_power:.0f}W, "
+                f"{pattern_energy:.2f}Wh) avec {len(data['profiles'])} profiles de {appliance_name}"
             )
 
             for i, profile in enumerate(data["profiles"]):
-                # Vérifier cohérence durée (±50%)
+                # --- Filtre durée : ±75% (large pour gérer lave-linge/ballon variables) ---
+                if profile["duration"] <= 0:
+                    continue
                 duration_ratio = pattern_duration / profile["duration"]
-                if duration_ratio < 0.5 or duration_ratio > 2.0:
+                if duration_ratio < 0.25 or duration_ratio > 4.0:
                     continue
 
-                # Vérifier cohérence puissance (±30%)
+                # --- Filtre puissance : ±40% ---
+                if profile["avg_power"] <= 0:
+                    continue
                 power_ratio = pattern_power / profile["avg_power"]
-                if power_ratio < 0.7 or power_ratio > 1.3:
+                if power_ratio < 0.60 or power_ratio > 1.40:
                     continue
 
-                # Comparer formes avec corrélation
+                # --- Score durée et puissance ---
+                duration_score = max(0.0, 1.0 - abs(1.0 - duration_ratio) / 2.0)
+                power_score = max(0.0, 1.0 - abs(1.0 - power_ratio))
+
+                # --- Score énergie (plus stable que puissance seule) ---
+                profile_energy = profile.get("energy_wh", 0.0)
+                if profile_energy > 0 and pattern_energy > 0:
+                    energy_ratio = pattern_energy / profile_energy
+                    energy_score = max(0.0, 1.0 - abs(1.0 - energy_ratio) / 2.0)
+                else:
+                    energy_score = 0.5  # neutre si pas de données énergie
+
+                # --- Corrélation de forme ---
                 target_len = min(len(pattern_normalized), len(profile["pattern"]))
-
-                if target_len < 10:
+                if target_len < 5:
                     continue
 
-                # Sous-échantillonner
                 pattern_resampled = np.interp(
                     np.linspace(0, len(pattern_normalized) - 1, target_len),
                     np.arange(len(pattern_normalized)),
@@ -271,35 +305,43 @@ class ChangePointPatternDetector:
                     profile["pattern"],
                 )
 
-                # Corrélation de forme
-                correlation = np.corrcoef(pattern_resampled, profile_resampled)[0, 1]
-                abs_correlation = abs(correlation)
+                corr_mat = np.corrcoef(pattern_resampled, profile_resampled)
+                abs_correlation = abs(corr_mat[0, 1]) if not np.isnan(corr_mat[0, 1]) else 0.0
 
-                # Scores de base
-                duration_score = 1.0 - abs(1.0 - duration_ratio)
-                power_score = 1.0 - abs(1.0 - power_ratio)
-
-                # Score morphologique si disponible
+                # --- Score morphologique si disponible ---
                 morphology_score = 0.0
                 has_morphology = pattern_morphology and "morphology" in profile
-
                 if has_morphology:
-                    morphology_score = self._compute_morphology_similarity(pattern_morphology, profile["morphology"])
-                    logger.info(f"Profil#{i}: morphology_score={morphology_score:.3f}")
+                    morphology_score = self._compute_morphology_similarity(
+                        pattern_morphology, profile["morphology"]
+                    )
 
-                # Score combiné avec pondération adaptative
+                # --- Score combiné ---
+                # Énergie = feature la plus stable toutes typologies confondues
+                # Durée  = contrainte forte (bornes larges dans le filtre)
+                # Puissance = contrainte secondaire
+                # Forme = bonus (bruit sur données réelles)
+                # Morphologie = bonus si disponible
                 if has_morphology:
-                    # Avec morphologie: plus de poids sur features avancées
-                    combined_score = abs_correlation * 0.15 + duration_score * 0.25 + power_score * 0.25 + morphology_score * 0.35
+                    combined_score = (
+                        energy_score * 0.35
+                        + duration_score * 0.25
+                        + power_score * 0.20
+                        + abs_correlation * 0.10
+                        + morphology_score * 0.10
+                    )
                 else:
-                    # Sans morphologie: méthode classique
-                    combined_score = abs_correlation * 0.2 + duration_score * 0.4 + power_score * 0.4
+                    combined_score = (
+                        energy_score * 0.40
+                        + duration_score * 0.30
+                        + power_score * 0.20
+                        + abs_correlation * 0.10
+                    )
 
                 logger.info(
-                    f"  Profil#{i}: corr={abs_correlation:.3f}, "
-                    f"dur={duration_score:.3f}, pow={power_score:.3f}, "
-                    f"morpho={morphology_score:.3f}, "
-                    f"combined={combined_score:.3f}"
+                    f"  Profil#{i}: energy={energy_score:.3f}, dur={duration_score:.3f}, "
+                    f"pow={power_score:.3f}, corr={abs_correlation:.3f}, "
+                    f"morpho={morphology_score:.3f} → combined={combined_score:.3f}"
                 )
 
                 if combined_score > best_score:
@@ -310,18 +352,20 @@ class ChangePointPatternDetector:
                         profile.get("signature_id"),
                         combined_score,
                     )
-                    logger.info(f"Profil#{i}: ✓ nouveau meilleur score! " f"({combined_score:.3f})")
 
-        # Seuil adaptatif selon disponibilité morphologie
-        threshold = 0.4 if pattern_morphology else 0.35
+        # Seuil bas : mieux vaut un faux positif qu'un faux négatif (l'utilisateur valide)
+        threshold = 0.25
 
-        logger.info(f"Fin matching: best_score={best_score:.3f}, " f"seuil={threshold}")
+        logger.info(f"Fin matching: best_score={best_score:.3f}, seuil={threshold}")
 
         if best_match and best_match[3] > threshold:
-            logger.info(f"✓ Match trouvé: {best_match[1]} " f"(sig_id={best_match[2]}, confiance={best_match[3]:.3f})")
+            logger.info(
+                f"✓ Match trouvé: {best_match[1]} "
+                f"(sig_id={best_match[2]}, confiance={best_match[3]:.3f})"
+            )
             return best_match
         else:
-            logger.info(f"✗ Aucun match suffisant " f"(best={best_score:.3f} < {threshold})")
+            logger.info(f"✗ Aucun match (best={best_score:.3f} < {threshold})")
             return None
 
     def _compute_morphology_similarity(self, morpho1, morpho2):

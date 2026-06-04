@@ -20,6 +20,8 @@ class ApplianceRepository(DatabaseBase):
             SELECT
                 ca.id,
                 ca.name,
+                ca.ha_publish,
+                ca.ha_entity_id,
                 ca.created_at,
                 ca.updated_at,
                 -- Calculer avg_power depuis linky_realtime
@@ -86,16 +88,18 @@ class ApplianceRepository(DatabaseBase):
                 appliance = {
                     "id": row[0],
                     "name": row[1],
-                    "created_at": format_datetime(row[2]),
-                    "updated_at": format_datetime(row[3]),
-                    "avg_power": float(row[4]) if row[4] is not None else None,
-                    "power_std": float(row[5]) if row[5] is not None else None,
-                    "avg_duration": (float(row[6]) if row[6] is not None else None),
-                    "num_signatures": int(row[7]) if row[7] is not None else 0,
-                    "last_signature_start": format_datetime(row[8]),
-                    "last_signature_end": format_datetime(row[9]),
-                    "signature_count": int(row[7]) if row[7] is not None else 0,
-                    "detection_count": int(row[10]) if row[10] is not None else 0,
+                    "ha_publish": bool(row[2]) if row[2] is not None else False,
+                    "ha_entity_id": row[3],
+                    "created_at": format_datetime(row[4]),
+                    "updated_at": format_datetime(row[5]),
+                    "avg_power": float(row[6]) if row[6] is not None else None,
+                    "power_std": float(row[7]) if row[7] is not None else None,
+                    "avg_duration": (float(row[8]) if row[8] is not None else None),
+                    "num_signatures": int(row[9]) if row[9] is not None else 0,
+                    "last_signature_start": format_datetime(row[10]),
+                    "last_signature_end": format_datetime(row[11]),
+                    "signature_count": int(row[9]) if row[9] is not None else 0,
+                    "detection_count": int(row[12]) if row[12] is not None else 0,
                 }
 
                 appliances_list.append(appliance)
@@ -279,3 +283,52 @@ class ApplianceRepository(DatabaseBase):
             logger.info(f"Appliance created: {appliance_name} (ID: {appliance_id})")
 
             return appliance_id
+
+    def update_ha_publish(self, appliance_id: int, enabled: bool):
+        """
+        Toggles HA publishing for an appliance.
+        Generates ha_entity_id from name when enabling.
+
+        Returns:
+            Updated appliance dict or None if not found
+        """
+        with self.engine.connect() as conn:
+            name_result = conn.execute(
+                text("SELECT name FROM nilm_appliances WHERE id = :id"),
+                {"id": appliance_id},
+            ).fetchone()
+
+            if not name_result:
+                return None
+
+            import re
+            raw = name_result[0].lower()
+            safe = re.sub(r"[^a-z0-9_]", "_", raw)
+            safe = re.sub(r"_+", "_", safe).strip("_")
+            ha_entity_id = f"sensor.nilm_{safe}" if enabled else None
+
+            result = conn.execute(
+                text(
+                    """
+                    UPDATE nilm_appliances
+                    SET ha_publish = :enabled,
+                        ha_entity_id = :ha_entity_id,
+                        updated_at = NOW()
+                    WHERE id = :id
+                    RETURNING id, name, ha_publish, ha_entity_id
+                    """
+                ),
+                {"enabled": enabled, "ha_entity_id": ha_entity_id, "id": appliance_id},
+            ).fetchone()
+
+            conn.commit()
+
+            if not result:
+                return None
+
+            return {
+                "id": result[0],
+                "name": result[1],
+                "ha_publish": bool(result[2]),
+                "ha_entity_id": result[3],
+            }
