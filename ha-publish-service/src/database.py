@@ -1,5 +1,6 @@
-"""Read appliances, current state, and cumulative energy from TimescaleDB."""
+"""Read appliances, current state, cumulative energy, and lab stats."""
 
+import json
 
 from sqlalchemy import create_engine, text
 
@@ -96,6 +97,53 @@ class PublishRepository:
             }
             for r in rows
         ]
+
+    def get_nilm_stats(self) -> dict | None:
+        """Lab diagnostics for HA: active model + detection aggregates.
+        Returns None when no model has been trained yet."""
+        with self.engine.connect() as conn:
+            m = conn.execute(
+                text(
+                    """
+                    SELECT model_name, model_type, training_date, num_signatures,
+                           num_classes, training_duration_seconds, metrics
+                    FROM nilm_models
+                    ORDER BY training_date DESC
+                    LIMIT 1
+                    """
+                )
+            ).fetchone()
+            if not m:
+                return None
+
+            det = conn.execute(
+                text("SELECT COUNT(*), MAX(created_at) FROM nilm_detections")
+            ).fetchone()
+
+        metrics = m[6] if isinstance(m[6], dict) else json.loads(m[6] or "{}")
+        apps = metrics.get("appliances") or []
+        first = apps[0].get("metrics", {}) if apps else {}
+
+        def _iso(dt):
+            return dt.isoformat() if dt else None
+
+        return {
+            "model_version": m[0],
+            "model_type": m[1],
+            "trained_at": _iso(m[2]),
+            "num_signatures": m[3],
+            "num_appliances": m[4],
+            "train_duration_s": m[5],
+            "train_loss": _round(first.get("train_loss")),
+            "val_loss": _round(first.get("val_loss")),
+            "epochs": first.get("epochs_trained"),
+            "detections_total": det[0] if det else 0,
+            "last_detection": _iso(det[1]) if det else None,
+        }
+
+
+def _round(v, n=4):
+    return round(float(v), n) if v is not None else None
 
 
 repo = PublishRepository()

@@ -1,6 +1,7 @@
-"""ha-publish: NILM detections → HA binary_sensor + energy sensor."""
+"""ha-publish: NILM detections → HA binary_sensor + energy sensor + lab stats."""
 
 import asyncio
+import json
 
 import aiomqtt
 from loguru import logger
@@ -8,12 +9,16 @@ from loguru import logger
 from .config import settings
 from .database import repo
 from .discovery import (
+    STATS_SENSORS,
+    STATS_STATE_TOPIC,
     binary_discovery_payload,
     binary_discovery_topic,
     binary_state_topic,
     energy_discovery_payload,
     energy_discovery_topic,
     energy_state_topic,
+    stats_discovery_payload,
+    stats_discovery_topic,
 )
 from .ha_backfill import backfill_appliance
 
@@ -31,8 +36,25 @@ async def publish_loop(client: aiomqtt.Client):
     On first discovery of an appliance, trigger HA historical backfill.
     """
     known: set[str] = set()   # ha_entity_ids with discovery already published
+    stats_announced = False   # lab-diagnostic sensors discovery published once
 
     while True:
+        # ── Lab diagnostics (model + detection stats) ─────────────────────
+        stats = repo.get_nilm_stats()
+        if stats:
+            if not stats_announced:
+                for key, name, opts in STATS_SENSORS:
+                    await client.publish(
+                        stats_discovery_topic(key),
+                        payload=stats_discovery_payload(key, name, opts),
+                        retain=True,
+                    )
+                stats_announced = True
+                logger.info("NILM stats sensors announced")
+            # Drop null keys so HA shows 'unknown' instead of the string "None".
+            clean = {k: v for k, v in stats.items() if v is not None}
+            await client.publish(STATS_STATE_TOPIC, payload=json.dumps(clean), retain=True)
+
         active = repo.get_active_appliances()
         active_ids = {a["ha_entity_id"] for a in active}
 

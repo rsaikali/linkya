@@ -75,3 +75,40 @@ def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
         "icon": "mdi:lightning-bolt",
         "device": _DEVICE,
     })
+
+
+# ── Lab diagnostics (one shared JSON state topic, value_template per sensor) ──
+
+STATS_STATE_TOPIC = f"{STATE_PREFIX}/_stats/state"
+
+# (json_key, friendly name, extra discovery opts)
+STATS_SENSORS = [
+    ("model_version", "NILM Modèle", {"icon": "mdi:tag"}),
+    ("model_type", "NILM Architecture", {"icon": "mdi:chip"}),
+    ("trained_at", "NILM Entraîné le", {"device_class": "timestamp"}),
+    ("train_duration_s", "NILM Durée entraînement", {"unit_of_measurement": "s", "device_class": "duration", "icon": "mdi:timer"}),
+    ("num_signatures", "NILM Signatures", {"icon": "mdi:draw"}),
+    ("num_appliances", "NILM Appareils", {"icon": "mdi:home-lightning-bolt"}),
+    ("epochs", "NILM Epochs", {"icon": "mdi:counter"}),
+    ("train_loss", "NILM Train loss", {"icon": "mdi:chart-line"}),
+    ("val_loss", "NILM Val loss", {"icon": "mdi:chart-line"}),
+    ("detections_total", "NILM Détections total", {"icon": "mdi:magnify"}),
+    ("last_detection", "NILM Dernière détection", {"device_class": "timestamp"}),
+]
+
+
+def stats_discovery_topic(key: str) -> str:
+    return f"{DISCOVERY_PREFIX}/sensor/linkya_nilm_{key}/config"
+
+
+def stats_discovery_payload(key: str, name: str, opts: dict) -> str:
+    payload = {
+        "name": name,
+        "unique_id": f"linkya_nilm_{key}",
+        "state_topic": STATS_STATE_TOPIC,
+        "value_template": f"{{{{ value_json.{key} }}}}",
+        "entity_category": "diagnostic",
+        "device": _DEVICE,
+        **opts,
+    }
+    return json.dumps(payload)
