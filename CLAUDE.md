@@ -40,10 +40,12 @@ Browser ─→ backend (REST + SSE + React) ─→ PostgreSQL ─(HTTP)→ nilm
 
 ## Jobs NILM (plus de Celery)
 
-`nilm-service/src/jobs.py` : `run_training`, `run_detection`, `add_signature`, `delete_models`. Appelés via FastAPI `BackgroundTasks` ou le cron APScheduler (`nilm-service/src/main.py`). Verrou `threading.Lock` — TF non concurrent.
+`nilm-service/src/jobs.py` : `run_training`, `run_detection`, `add_signature`, `delete_models`. Verrou `threading.Lock` — TF non concurrent.
 
 - **Training** : manuel (bouton/API) ou auto après ajout de signature (paliers 2, 7, 12… positives).
-- **Détection** : cron toutes les `NILM_DETECTION_INTERVAL_MINUTES` (fenêtre 2h) + `/detect` full history.
+- **Détection** : cron APScheduler toutes les `NILM_DETECTION_INTERVAL_MINUTES` (fenêtre 2h) + `/detect` full history.
+- **Coalescing** (`request_training` / `request_detection`) : **1 seul train + 1 seul detect en attente** max. Les bursts (import CSV traversant plusieurs paliers, clics répétés) sont fusionnés au lieu de s'empiler sur le Pi. `/train` `/detect` renvoient `already_pending` si déjà en file.
+- **Import CSV** : `add_signature(auto_train=False)` par ligne → un **seul** training déclenché à la fin (pas un par palier).
 
 ## Schéma DB (PostgreSQL pur)
 
@@ -56,6 +58,19 @@ Browser ─→ backend (REST + SSE + React) ─→ PostgreSQL ─(HTTP)→ nilm
 | `nilm_models` | `model_name`, `metrics`, `model_path` | idem |
 
 Bucketing temporel : `to_timestamp(floor(epoch/secs)*secs)` (pas de `time_bucket` TimescaleDB). **Pas de migrations** — `make clean && make up`.
+
+## Publication HA (`ha-publish`)
+
+Par appareil avec `ha_publish=True` :
+
+- **`binary_sensor.nilm_<slug>`** — ON/OFF live (cycle en cours), via MQTT discovery. **Live only** : HA n'upsert pas l'historique d'états → pas de on/off passé rejouable.
+- **Énergie = statistique externe HA** (`linkya:nilm_<slug>_energy`), PAS un sensor live. Poussée via WebSocket `recorder/import_statistics` :
+  - kWh placé à l'**heure réelle de conso** (bucket horaire de la détection), grille complète zéro-fill du 1er au dernier cycle.
+  - **Upsert idempotent** par `(statistic_id, heure)` → re-détection / nouveau modèle ne double-comptent pas.
+  - Re-import au 1er toggle puis toutes les ~5 min (boucle `ha-publish`).
+  - À ajouter dans HA → Énergie → source externe `linkya:...` (s'aligne sur une vraie prise).
+  - Pourquoi pas un sensor live `total_increasing` : un `SUM(détections)` batch est non-monotone (baisse à la re-détection) → HA lit un reset compteur → double-comptage.
+- **Sensors diagnostic** (device `Linkya NILM`, catégorie diagnostic) : version modèle, type, entraîné le, durée, signatures, appareils, epochs, train_loss, val_loss, détections total, dernière détection. 1 topic JSON partagé + `value_template`. **Pas de F1** — Linkya n'a pas de ground-truth.
 
 ## Compose
 
