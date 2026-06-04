@@ -56,7 +56,7 @@ HA_MQTT_PASSWORD=<your mqtt password>
 ```bash
 make build
 make up
-make status   # all 10 services should be Up
+make status   # all 5 services should be Up
 ```
 
 Open **http://localhost** (or your machine's IP).
@@ -123,7 +123,7 @@ Browser ─→ backend (FastAPI: REST + SSE + React build) ─→ PostgreSQL
 | `backend` | FastAPI | REST API, SSE bus, serves the React SPA |
 | `nilm` | FastAPI + TensorFlow (CPU) | train / detect / signature processing + detect cron |
 | `ha-ingest` | asyncio | HA MQTT statestream + History API backfill |
-| `ha-publish` | asyncio | detections → HA MQTT discovery + statistics |
+| `ha-publish` | asyncio | detections → HA MQTT discovery (binary + energy + diagnostics) |
 
 Live UI updates use one SSE endpoint (`GET /api/events`) — no WebSocket.
 
