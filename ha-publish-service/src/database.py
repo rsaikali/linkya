@@ -13,18 +13,25 @@ class PublishRepository:
         self._init_hwm()
 
     def _init_hwm(self):
-        """High-water-mark table: persisted monotonic energy per appliance so the
-        HA total_increasing sensor never decreases (re-detection / restart safe)."""
+        """Per-appliance energy state for the HA total_increasing sensor:
+        - baseline: SUM(detections) at the last reset (sensor = SUM - baseline)
+        - kwh: high-water-mark → published value never decreases.
+        """
         with self.engine.begin() as conn:
             conn.execute(
                 text(
                     """
                     CREATE TABLE IF NOT EXISTS ha_energy_hwm (
                         appliance_id INTEGER PRIMARY KEY,
+                        baseline DOUBLE PRECISION NOT NULL DEFAULT 0,
                         kwh DOUBLE PRECISION NOT NULL DEFAULT 0
                     );
                     """
                 )
+            )
+            # Upgrade older tables that lack the baseline column.
+            conn.execute(
+                text("ALTER TABLE ha_energy_hwm ADD COLUMN IF NOT EXISTS baseline DOUBLE PRECISION NOT NULL DEFAULT 0")
             )
 
     def get_active_appliances(self) -> list[dict]:
@@ -74,9 +81,9 @@ class PublishRepository:
         return row is not None
 
     def get_monotonic_energy_kwh(self, appliance_id: int) -> float:
-        """Cumulative detected energy (kWh), clamped to a persisted high-water-mark
-        so it never decreases — safe for HA total_increasing (no false reset/jump
-        when a re-detection shrinks the raw sum)."""
+        """Energy since last reset (kWh) = SUM(detections) - baseline, clamped to a
+        persisted high-water-mark so it never decreases (re-detection / restart
+        safe → no false meter reset/jump in HA total_increasing)."""
         with self.engine.begin() as conn:
             cur = conn.execute(
                 text(
@@ -88,21 +95,50 @@ class PublishRepository:
                 ),
                 {"id": appliance_id},
             ).scalar() or 0.0
-            prev = conn.execute(
-                text("SELECT kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
+            row = conn.execute(
+                text("SELECT baseline, kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
                 {"id": appliance_id},
-            ).scalar() or 0.0
-            value = max(float(cur), float(prev))
+            ).fetchone()
+            baseline = float(row[0]) if row else 0.0
+            prev = float(row[1]) if row else 0.0
+            value = max(float(cur) - baseline, prev, 0.0)
             conn.execute(
                 text(
                     """
-                    INSERT INTO ha_energy_hwm (appliance_id, kwh) VALUES (:id, :kwh)
+                    INSERT INTO ha_energy_hwm (appliance_id, baseline, kwh)
+                    VALUES (:id, :baseline, :kwh)
                     ON CONFLICT (appliance_id) DO UPDATE SET kwh = EXCLUDED.kwh
                     """
                 ),
-                {"id": appliance_id, "kwh": value},
+                {"id": appliance_id, "baseline": baseline, "kwh": value},
             )
         return round(value, 3)
+
+    def reset_energy(self, appliance_id: int):
+        """Reset the energy sensor to 0: baseline := current SUM(detections),
+        high-water-mark := 0. Detections are kept untouched."""
+        with self.engine.begin() as conn:
+            cur = conn.execute(
+                text(
+                    """
+                    SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
+                    FROM nilm_detections
+                    WHERE appliance_id = :id AND energy_consumed IS NOT NULL
+                    """
+                ),
+                {"id": appliance_id},
+            ).scalar() or 0.0
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO ha_energy_hwm (appliance_id, baseline, kwh)
+                    VALUES (:id, :baseline, 0)
+                    ON CONFLICT (appliance_id) DO UPDATE SET baseline = EXCLUDED.baseline, kwh = 0
+                    """
+                ),
+                {"id": appliance_id, "baseline": float(cur)},
+            )
+        return float(cur)
 
     def get_detections_for_backfill(self, appliance_id: int) -> list[dict]:
         """

@@ -61,6 +61,10 @@ class DatabaseManager:
         """Toggle HA publishing for an appliance."""
         return self.appliances.update_ha_publish(appliance_id, enabled)
 
+    def reset_energy(self, appliance_id: int):
+        """Reset the HA energy sensor to 0 (keeps detections)."""
+        return self.appliances.reset_energy(appliance_id)
+
     # Signature methods
     def get_appliance_signatures(self, appliance_id):
         """Get appliance signatures."""

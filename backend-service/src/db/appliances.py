@@ -284,6 +284,32 @@ class ApplianceRepository(DatabaseBase):
 
             return appliance_id
 
+    def reset_energy(self, appliance_id: int):
+        """Reset the HA energy sensor to 0: baseline := current SUM(detections),
+        high-water-mark := 0. Detections are kept. Returns the baseline (kWh)."""
+        with self.engine.begin() as conn:
+            cur = conn.execute(
+                text(
+                    """
+                    SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
+                    FROM nilm_detections
+                    WHERE appliance_id = :id AND energy_consumed IS NOT NULL
+                    """
+                ),
+                {"id": appliance_id},
+            ).scalar() or 0.0
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO ha_energy_hwm (appliance_id, baseline, kwh)
+                    VALUES (:id, :baseline, 0)
+                    ON CONFLICT (appliance_id) DO UPDATE SET baseline = EXCLUDED.baseline, kwh = 0
+                    """
+                ),
+                {"id": appliance_id, "baseline": float(cur)},
+            )
+        return round(float(cur), 3)
+
     def update_ha_publish(self, appliance_id: int, enabled: bool):
         """
         Toggles HA publishing for an appliance.
