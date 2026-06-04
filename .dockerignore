@@ -1,0 +1,13 @@
+.git
+.data
+**/node_modules
+**/__pycache__
+**/*.pyc
+.venv
+**/.venv
+.claude
+.agent
+.code-review-graph
+*.md
+!README.md
+frontend-service/build

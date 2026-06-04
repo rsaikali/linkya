@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { apiService } from '../services/api';
-import { detectionsWS, importProgressWS } from '../services/websocket';
+import { detectionsWS, importProgressWS } from '../services/sse';
 
 /**
  * Contexte centralisé pour toutes les données de l'application

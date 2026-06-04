@@ -1,146 +1,57 @@
-"""NILM training and detection endpoints."""
+"""NILM endpoints — thin proxy to the nilm service + model reads from DB."""
 
-import glob
 import logging
-import os
 
+import httpx
 from fastapi import APIRouter, HTTPException
 
-from ..config import get_celery_app
+from ..config import settings
 from ..db import db_manager
-from ..utils.redis_client import get_redis_client
-
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/nilm", tags=["NILM"])
 
+_TIMEOUT = 10.0
+
+
+async def _post_nilm(path: str) -> dict:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.post(f"{settings.nilm_url}{path}")
+        r.raise_for_status()
+        return r.json()
+
 
 @router.post("/train")
-async def trigger_nilm_training():
-    """
-    Lance l'entraînement manuel du modèle NILM.
-
-    Annule automatiquement tous les entraînements en cours ou en attente
-    avant de lancer le nouveau.
-
-    Returns:
-        Task ID and status
-    """
+async def trigger_training():
+    """Kick off training in the nilm service (runs in background there)."""
     try:
-        celery_app = get_celery_app()
-        logger.info("Lancement oftraining NILM")
-
-        # Incrémenter un compteur pour marquer ce training comme légitime
-        training_generation = 0
-        redis_client = get_redis_client()
-        if redis_client:
-            try:
-                # Incrémenter atomiquement le compteur de génération
-                training_generation = redis_client.incr("nilm:training:generation")
-                logger.info(f"Nouvelle generation de training: {training_generation}")
-            except Exception as e:
-                logger.warning(f"Unable to increment generation: {e}")
-
-        # Envoyer la nouvelle tâche avec la génération en argument
-        task = celery_app.send_task(
-            "train_nilm_model", args=[2, training_generation], queue="nilm", routing_key="nilm.train_nilm_model"
-        )  # min_signatures, generation
-
-        logger.info(f"Training task created: {task.id}")
-
-        return {"status": "pending", "message": "Entraînement du modèle NILM lancé", "task_id": str(task.id)}
-
-    except Exception as e:
-        logger.error(f"Error during lancement oftraining: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+        return await _post_nilm("/train")
+    except httpx.HTTPError as e:
+        logger.error("nilm /train failed: %s", e)
+        raise HTTPException(status_code=502, detail="Service NILM injoignable")
 
 
 @router.post("/detect")
-async def trigger_nilm_detection():
-    """
-    Lance la détection automatique d'appareils par NILM.
-
-    Returns:
-        Task ID and status
-    """
+async def trigger_detection():
+    """Run detection over the full available history."""
     try:
-        celery_app = get_celery_app()
-        logger.info("Lancement of detection NILM")
-
-        # Envoyer la tâche à la queue NILM
-        task = celery_app.send_task("detect_nilm_appliances", queue="nilm", routing_key="nilm.detect_nilm_appliances")
-
-        logger.info(f"Detection task created: {task.id}")
-
-        return {"status": "pending", "message": "Détection NILM lancée", "task_id": str(task.id)}
-
-    except Exception as e:
-        logger.error(f"Error during lancement of detection: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+        return await _post_nilm("/detect")
+    except httpx.HTTPError as e:
+        logger.error("nilm /detect failed: %s", e)
+        raise HTTPException(status_code=502, detail="Service NILM injoignable")
 
 
 @router.get("/models")
-async def get_nilm_models():
-    """
-    Récupère le dernier modèle NILM entraîné.
-
-    Returns:
-        Le dernier modèle avec ses métriques, ou None si aucun modèle
-    """
-    try:
-        model = db_manager.get_latest_nilm_model()
-
-        if model:
-            return {"models": [model], "total": 1}
-        else:
-            return {"models": [], "total": 0}
-
-    except Exception as e:
-        logger.error(f"Error retrieving models: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+async def get_models():
+    model = db_manager.get_latest_nilm_model()
+    return {"models": [model], "total": 1} if model else {"models": [], "total": 0}
 
 
 @router.delete("/models")
-async def delete_all_nilm_models():
-    """
-    Supprime tous les modèles NILM de la base de données et du filesystem.
-
-    Returns:
-        Confirmation de suppression avec statistiques
-
-    Raises:
-        HTTPException 500: Erreur serveur
-    """
+async def delete_models():
+    """Delete all models (DB rows + .keras files via nilm service)."""
     try:
-        # Supprimer tous les modèles de la base de données
-        deleted_count = db_manager.delete_all_models()
-
-        deleted_files = []
-        errors = []
-
-        # Nettoyer tous les fichiers dans /models
-        models_dir = "/models"
-        if os.path.exists(models_dir):
-            all_files = glob.glob(os.path.join(models_dir, "*.keras"))
-            all_files += glob.glob(os.path.join(models_dir, "*.metadata.json"))
-
-            for file_path in all_files:
-                try:
-                    os.remove(file_path)
-                    deleted_files.append(file_path)
-                    logger.info(f"File deleted: {file_path}")
-                except OSError as e:
-                    errors.append(f"Fichier {file_path}: {str(e)}")
-
-        logger.info(f"Deletion completed: " f"{deleted_count} model(s), {len(deleted_files)} file(s)")
-
-        return {
-            "message": f"{deleted_count} modèle(s) supprimé(s) avec succès",
-            "deleted_count": deleted_count,
-            "deleted_files": deleted_files,
-            "errors": errors if errors else None,
-        }
-
-    except Exception as e:
-        logger.error(f"Error deleting all models: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+        return await _post_nilm("/models/delete")
+    except httpx.HTTPError as e:
+        logger.error("nilm /models/delete failed: %s", e)
+        raise HTTPException(status_code=502, detail="Service NILM injoignable")

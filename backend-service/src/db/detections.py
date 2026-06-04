@@ -226,43 +226,28 @@ class DetectionRepository(DatabaseBase):
             start_time = result[3]
             end_time = result[4]
 
-            # Check if signature already exists (to avoid duplicates)
-            check_signature_query = text(
-                """
-                SELECT COUNT(*) FROM nilm_signatures
-                WHERE appliance_id = :appliance_id
-                  AND start_time = :start_time
-                  AND end_time = :end_time
-                  AND is_negative = :is_negative
-            """
-            )
-
+            # Decide if a signature should be created (dedup check). The actual
+            # creation is delegated to the API layer (calls nilm service).
             existing = conn.execute(
-                check_signature_query, {"appliance_id": result[1], "start_time": start_time, "end_time": end_time, "is_negative": not is_correct}
+                text(
+                    """
+                    SELECT COUNT(*) FROM nilm_signatures
+                    WHERE appliance_id = :appliance_id
+                      AND start_time = :start_time
+                      AND end_time = :end_time
+                      AND is_negative = :is_negative
+                    """
+                ),
+                {"appliance_id": result[1], "start_time": start_time, "end_time": end_time, "is_negative": not is_correct},
             ).scalar()
 
             if existing == 0:
-                # Send Celery task to create signature via nilm-service
-                from ..config import get_celery_app
-
-                celery_app = get_celery_app()
-
-                signature_type = "positive" if is_correct else "negative"
-                logger.info(f"Sending task to create {signature_type} signature " f"for {appliance_name} (detection {detection_id})")
-
-                try:
-                    task = celery_app.send_task(
-                        "add_nilm_signature",
-                        args=[appliance_name, start_time.isoformat(), end_time.isoformat(), not is_correct],
-                        queue="nilm",
-                        routing_key="nilm.add_nilm_signature",  # is_negative
-                    )
-                    logger.info(f"Signature creation task sent: {task.id} " f"({signature_type} for {appliance_name})")
-                except Exception as e:
-                    logger.error(f"Failed to send signature creation task: {e}", exc_info=True)
-            else:
-                signature_type = "positive" if is_correct else "negative"
-                logger.info(f"Signature already exists: {signature_type} " f"for {appliance_name} at {start_time} - {end_time}")
+                detection_info["pending_signature"] = {
+                    "appliance_name": appliance_name,
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "is_negative": not is_correct,
+                }
 
             # Update detection as validated
             update_query = text(
@@ -343,31 +328,14 @@ class DetectionRepository(DatabaseBase):
                 check_positive_query, {"appliance_id": correct_appliance_id, "start_time": start_time, "end_time": end_time}
             ).scalar()
 
+            pending_signature = None
             if existing_positive == 0:
-                # Send Celery task to create positive signature via nilm-service
-                from ..config import get_celery_app
-
-                celery_app = get_celery_app()
-
-                logger.info(f"Sending task to create positive signature " f"for {correct_appliance_name} (detection {detection_id})")
-
-                try:
-                    task = celery_app.send_task(
-                        "add_nilm_signature",
-                        args=[
-                            correct_appliance_name,
-                            start_time.isoformat(),
-                            end_time.isoformat(),
-                            False,
-                        ],  # is_negative = False for positive signature
-                        queue="nilm",
-                        routing_key="nilm.add_nilm_signature",
-                    )
-                    logger.info(f"Positive signature creation task sent: {task.id} " f"for {correct_appliance_name}")
-                except Exception as e:
-                    logger.error(f"Failed to send signature creation task: {e}", exc_info=True)
-            else:
-                logger.info(f"Positive signature already exists for {correct_appliance_name} " f"at {start_time} - {end_time}")
+                pending_signature = {
+                    "appliance_name": correct_appliance_name,
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "is_negative": False,
+                }
 
             # Mark detection as incorrect to hide it from the list
             update_query = text(
@@ -391,4 +359,5 @@ class DetectionRepository(DatabaseBase):
                 "correct_appliance": correct_appliance_name,
                 "start_time": format_datetime(start_time),
                 "end_time": format_datetime(end_time),
+                "pending_signature": pending_signature,
             }

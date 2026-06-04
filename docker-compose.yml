@@ -1,215 +1,76 @@
 services:
-  timescaledb:
-    container_name: timescaledb
-    image: timescale/timescaledb:latest-pg16
-    ports:
-      - '5433:5432'
-    volumes:
-      - timescaledb_data:/var/lib/postgresql/data
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${LOCAL_DB_NAME}
       POSTGRES_USER: ${LOCAL_DB_USER}
       POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD}
-    env_file:
-      - .env
-    networks:
-      - linkya-network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file: [.env]
+    networks: [linkya]
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U postgres
+      test: [CMD-SHELL, "pg_isready -U ${LOCAL_DB_USER} -d ${LOCAL_DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  redis:
-    container_name: redis
-    image: redis:7-alpine
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-    healthcheck:
-      test:
-        - CMD
-        - redis-cli
-        - ping
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  ha-ingest:
-    container_name: ha-ingest
-    build:
-      context: ./ha-ingest-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./ha-ingest-service/src:/app/src
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-
-  nilm-worker:
-    container_name: nilm-worker
-    build:
-      context: ./nilm-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      ha-ingest:
-        condition: service_started
-    volumes:
-      - ./nilm-service/src:/app/src
-      - ./.data/models:/app/models
-      - nilm_uv_cache:/root/.cache/uv
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-    command: celery -A src.tasks.celery_app worker --loglevel=info --pool=solo -Q nilm
-
-  nilm-beat:
-    container_name: nilm-beat
-    build:
-      context: ./nilm-service
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      ha-ingest:
-        condition: service_started
-    volumes:
-      - ./nilm-service/src:/app/src
-      - ./.data/models:/app/models
-    environment:
-      CUDA_VISIBLE_DEVICES: ''
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-    command: /app/scripts/entrypoint-beat.sh
-
   backend:
-    container_name: backend
     build:
-      context: ./backend-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend-service/Dockerfile
     restart: unless-stopped
     depends_on:
-      timescaledb:
+      postgres:
         condition: service_healthy
-      ha-ingest:
+      nilm:
         condition: service_started
     ports:
-      - '8001:8000'
-    volumes:
-      - ./backend-service/src:/app/src
-      - ./.data/models:/app/models
-    env_file:
-      - .env
-    networks:
-      - linkya-network
+      - "${BACKEND_BIND:-192.168.1.111}:80:8000"
+    env_file: [.env]
+    networks: [linkya]
     healthcheck:
-      test:
-        - CMD-SHELL
-        - curl -f http://localhost:8000/health || exit 1
-      interval: 5s
-      timeout: 10s
+      test: [CMD-SHELL, "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
       retries: 3
 
-  react-dev:
-    container_name: react-dev
-    build:
-      context: ./frontend-service
-      dockerfile: Dockerfile.dev
-    restart: unless-stopped
-    volumes:
-      - ./frontend-service/src:/app/src
-      - ./frontend-service/public:/app/public
-      - ./frontend-service/package.json:/app/package.json
-      - /app/node_modules
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-    command: npm start
-    stdin_open: true
-    tty: true
-
-  frontend:
-    container_name: frontend
-    build:
-      context: ./frontend-service
-      dockerfile: Dockerfile.nginx
+  nilm:
+    build: ./nilm-service
     restart: unless-stopped
     depends_on:
-      backend:
+      postgres:
         condition: service_healthy
-    ports:
-      - '80:80'
-    networks:
-      - linkya-network
+    volumes:
+      - models:/app/models
+    env_file: [.env]
+    networks: [linkya]
+
+  ha-ingest:
+    build: ./ha-ingest-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: [.env]
+    networks: [linkya]
 
   ha-publish:
-    container_name: ha-publish
-    build:
-      context: ./ha-publish-service
-      dockerfile: Dockerfile
+    build: ./ha-publish-service
     restart: unless-stopped
     depends_on:
-      timescaledb:
+      postgres:
         condition: service_healthy
-      nilm-worker:
+      nilm:
         condition: service_started
-    volumes:
-      - ./ha-publish-service/src:/app/src
-    env_file:
-      - .env
-    networks:
-      - linkya-network
-
-  pgweb:
-    container_name: pgweb
-    image: sosedoff/pgweb:latest
-    restart: unless-stopped
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-    ports:
-      - '8081:8081'
-    environment:
-      PGWEB_DATABASE_URL: postgres://${LOCAL_DB_USER}:${LOCAL_DB_PASSWORD}@${LOCAL_DB_HOST}:${LOCAL_DB_PORT}/${LOCAL_DB_NAME}?sslmode=disable
-    env_file:
-      - .env
-    networks:
-      - linkya-network
+    env_file: [.env]
+    networks: [linkya]
 
 volumes:
-  timescaledb_data: null
-  redis_data: null
-  nilm_uv_cache: null
+  postgres_data:
+  models:
 
 networks:
-  linkya-network:
+  linkya:
     driver: bridge
-    enable_ipv6: false
-    driver_opts:
-      com.docker.network.enable_ipv6: 'false'

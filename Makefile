@@ -1,71 +1,49 @@
-.PHONY: help build up down logs restart clean init-sync stats start check redis-cli status scale-workers
+.PHONY: help build up down logs restart clean status deploy train detect lint
 
-help: ## Affiche l'aide
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+# docker-compose.yml = PROD. docker-compose.override.yml (dev) is auto-loaded
+# by `docker compose` locally. On the Pi, deploy uses -f to skip the override.
+COMPOSE      = docker compose
+COMPOSE_PROD = docker compose -f docker-compose.yml
 
-###############################################
-## Docker Compose Management
-###############################################
-build: ## Construit les images Docker
-	@DOCKER_BUILDKIT=1 docker-compose build
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-deploy: ## Deploy on Pi (CD): prod build + restart (uses docker-compose.prod.yml)
-	@DOCKER_BUILDKIT=1 docker-compose -f docker-compose.yml -f docker-compose.prod.yml build
-	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps
+# ── Dev (override auto-loaded) ───────────────
+build: ## Build images (dev)
+	@DOCKER_BUILDKIT=1 $(COMPOSE) build
 
-up: ## Démarre tous les services
-	docker-compose up -d
+up: ## Start all services (dev)
+	@$(COMPOSE) up -d
 
-down: ## Arrête tous les services
-	docker-compose down
+down: ## Stop all services
+	@$(COMPOSE) down
 
-status: ## Affiche le statut des services
-	docker-compose ps
+clean: ## Stop + delete volumes (wipes all data)
+	@$(COMPOSE) down -v
 
-logs: ## Affiche les logs de tous les services
-	docker-compose logs -f
+status: ## Container status
+	@$(COMPOSE) ps
 
-restart: ## Redémarre tous les services
-	docker-compose restart
+logs: ## Tail all logs
+	@$(COMPOSE) logs -f
 
-clean: ## Supprime tous les containers et volumes
-	docker-compose down -v
+restart: ## Restart all services
+	@$(COMPOSE) restart
 
+# ── Prod (Pi, CD) ────────────────────────────
+deploy: ## Prod build + restart on the Pi (CD target, no dev override)
+	@DOCKER_BUILDKIT=1 $(COMPOSE_PROD) build
+	@$(COMPOSE_PROD) up -d
+	@$(COMPOSE_PROD) ps
 
-###############################################
-## NILM Service Management via API
-###############################################
-train: ## Lance l'entraînement NILM via l'API (utilise automatiquement les feedbacks utilisateur)
-	@echo "Lancement de l'entraînement via l'API (avec apprentissage par feedback)..."
-	@curl -X POST http://localhost:8000/api/nilm/train | python3 -m json.tool
+# ── NILM ─────────────────────────────────────
+train: ## Trigger training via API
+	@curl -s -X POST http://localhost:8000/api/nilm/train | python3 -m json.tool
 
-detect: ## Lance la détection NILM via l'API
-	@echo "Lancement de la détection via l'API..."
-	@curl -X POST http://localhost:8000/api/nilm/detect | python3 -m json.tool
+detect: ## Trigger detection (full history) via API
+	@curl -s -X POST http://localhost:8000/api/nilm/detect | python3 -m json.tool
 
-###############################################
-## Code Quality
-###############################################
-code-quality-check: ## Check Python code quality (Flake8 + isort)
-	@echo "Checking with Flake8..."
-	@backend-service/.venv/bin/flake8 backend-service/src/ || true
-	@nilm-service/.venv/bin/flake8 nilm-service/src/ || true
-	@echo "--------------------------------"
-	@echo "Checking import order with isort..."
-	@backend-service/.venv/bin/isort --check-only --diff backend-service/src/ || true
-	@nilm-service/.venv/bin/isort --check-only --diff nilm-service/src/ || true
-	@echo "✓ Code quality check completed!"
-
-code-quality-fix: ## Fix Python code quality issues (Black + isort + trailing whitespace)
-	@echo "Sorting imports with isort..."
-	@backend-service/.venv/bin/isort backend-service/src/
-	@nilm-service/.venv/bin/isort nilm-service/src/
-	@echo "--------------------------------"
-	@echo "Formatting code with Black..."
-	@backend-service/.venv/bin/black backend-service/src/
-	@nilm-service/.venv/bin/black nilm-service/src/
-	@echo "--------------------------------"
-	@echo "Removing trailing whitespace..."
-	@find backend-service/src nilm-service/src -name "*.py" -type f -exec sed -i 's/[[:space:]]*$$//' {} +
-	@echo "✓ Code quality fix completed!"
+# ── Quality ──────────────────────────────────
+lint: ## flake8 + isort check
+	@flake8 backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src || true
+	@isort --check-only --diff backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src || true

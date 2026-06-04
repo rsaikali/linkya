@@ -13,13 +13,11 @@ class Settings:
         self.ha_mqtt_user = os.getenv("HA_MQTT_USER", "homeassistant")
         self.ha_mqtt_password = os.getenv("HA_MQTT_PASSWORD", "")
 
-        self.local_db_host = os.getenv("LOCAL_DB_HOST", "timescaledb")
+        self.local_db_host = os.getenv("LOCAL_DB_HOST", "postgres")
         self.local_db_port = int(os.getenv("LOCAL_DB_PORT", "5432"))
         self.local_db_name = os.getenv("LOCAL_DB_NAME", "linkya_db")
         self.local_db_user = os.getenv("LOCAL_DB_USER", "postgres")
         self.local_db_password = os.getenv("LOCAL_DB_PASSWORD", "postgres")
-
-        self.redis_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 
     @property
     def local_db_url(self):

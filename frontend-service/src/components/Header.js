@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { apiService } from "../services/api";
-import { consumptionWS } from "../services/websocket";
+import { consumptionWS } from "../services/sse";
 import { formatFullDateTime, formatTimeWithSeconds } from "../utils/dateUtils";
 
 // Animation de pulsation douce

@@ -1,106 +1,68 @@
-"""Consumption data repository."""
+"""Consumption data repository (plain PostgreSQL, no TimescaleDB)."""
 
 from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
 
+# Map interval label → bucket size in seconds (epoch-floor bucketing).
+_INTERVAL_SECONDS = {
+    "1 minute": 60,
+    "5 minutes": 300,
+    "10 minutes": 600,
+    "15 minutes": 900,
+    "1 hour": 3600,
+}
+
 
 class ConsumptionRepository(DatabaseBase):
-    """Repository for consumption data operations."""
-
     def get_latest_consumption(self):
-        """Retrieves the latest consumption value."""
-        query = text(
-            """
-            SELECT time, papp
-            FROM linky_realtime
-            ORDER BY time DESC
-            LIMIT 1
-        """
-        )
-
+        query = text("SELECT time, papp FROM linky_realtime ORDER BY time DESC LIMIT 1")
         with self.engine.connect() as conn:
-            result = conn.execute(query).fetchone()
-            if result:
-                return {
-                    "time": format_datetime(result[0]),
-                    "papp": result[1],
-                }
-            return None
+            row = conn.execute(query).fetchone()
+            return {"time": format_datetime(row[0]), "papp": row[1]} if row else None
 
     def get_consumption_time_range(self):
-        """
-        Get the min and max timestamps from linky_realtime table.
-
-        Returns:
-            Dictionary with min_time and max_time, or None if no data
-        """
-        query = text(
-            """
-            SELECT MIN(time) as min_time, MAX(time) as max_time
-            FROM linky_realtime
-        """
-        )
-
+        query = text("SELECT MIN(time) AS min_time, MAX(time) AS max_time FROM linky_realtime")
         with self.engine.connect() as conn:
-            result = conn.execute(query).fetchone()
-            if result and result[0] and result[1]:
-                return {"min_time": result[0], "max_time": result[1]}
+            row = conn.execute(query).fetchone()
+            if row and row[0] and row[1]:
+                return {"min_time": row[0], "max_time": row[1]}
             return None
 
     def get_consumption_history(self, start_time, end_time, interval="5 minutes"):
-        """
-        Retrieves consumption history over a period.
+        """Aggregate papp over a period. 'raw' returns every sample.
 
-        Args:
-            start_time: Start date
-            end_time: End date
-            interval: Aggregation interval (e.g., '5 minutes', '1 hour', 'raw' for raw data)
-
-        Returns:
-            List of aggregated or raw consumption points
+        Bucketing uses epoch-floor (works on vanilla PostgreSQL, no TimescaleDB).
         """
-        # If interval is "raw" or "none", return raw data without aggregation
         if interval in ("raw", "none"):
             query = text(
                 """
-                SELECT
-                    time,
-                    papp as avg_papp,
-                    papp as max_papp,
-                    papp as min_papp
+                SELECT time, papp AS avg_papp, papp AS max_papp, papp AS min_papp
                 FROM linky_realtime
                 WHERE time >= :start_time AND time <= :end_time
                 ORDER BY time ASC
-            """
+                """
             )
+            params = {"start_time": start_time, "end_time": end_time}
         else:
+            secs = _INTERVAL_SECONDS.get(interval, 300)
             query = text(
                 """
                 SELECT
-                    time_bucket(:interval, time) AS bucket,
-                    AVG(papp) as avg_papp,
-                    MAX(papp) as max_papp,
-                    MIN(papp) as min_papp
+                    to_timestamp(floor(extract(epoch FROM time) / :secs) * :secs) AS bucket,
+                    AVG(papp) AS avg_papp,
+                    MAX(papp) AS max_papp,
+                    MIN(papp) AS min_papp
                 FROM linky_realtime
                 WHERE time >= :start_time AND time <= :end_time
                 GROUP BY bucket
                 ORDER BY bucket ASC
-            """
+                """
             )
+            params = {"secs": secs, "start_time": start_time, "end_time": end_time}
 
         with self.engine.connect() as conn:
-            if interval in ("raw", "none"):
-                result = conn.execute(query, {"start_time": start_time, "end_time": end_time})
-            else:
-                result = conn.execute(
-                    query,
-                    {
-                        "interval": interval,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                    },
-                )
+            result = conn.execute(query, params)
             return [
                 {
                     "time": format_datetime(row[0]),

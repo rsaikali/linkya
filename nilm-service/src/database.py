@@ -170,19 +170,20 @@ class DatabaseManager:
         """
         try:
             with self.engine.connect() as conn:
+                # Epoch-floor bucketing — plain PostgreSQL (no TimescaleDB).
                 query = text(
                     """
                     SELECT
-                        time_bucket(:interval, time) as bucket_time,
-                        AVG(papp) as avg_papp
+                        to_timestamp(floor(extract(epoch FROM time) / :secs) * :secs) AS bucket_time,
+                        AVG(papp) AS avg_papp
                     FROM linky_realtime
                     WHERE time >= :start_time AND time <= :end_time
                     GROUP BY bucket_time
                     ORDER BY bucket_time ASC
-                """
+                    """
                 )
 
-                result = conn.execute(query, {"interval": f"{resample_seconds} seconds", "start_time": start_time, "end_time": end_time})
+                result = conn.execute(query, {"secs": int(resample_seconds), "start_time": start_time, "end_time": end_time})
 
                 data = [{"time": row.bucket_time, "papp": float(row.avg_papp)} for row in result]
 

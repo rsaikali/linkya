@@ -1,15 +1,19 @@
 [project]
 name = "nilm-service"
-version = "0.1.0"
-description = "Service NILM Sequence-to-Point pour désagrégation d'appareils concurrents"
+version = "1.0.0"
+description = "NILM Seq2Point engine + FastAPI"
 requires-python = ">=3.12"
 dependencies = [
-    "celery[redis]>=5.4.0",
-    "psycopg[binary]>=3.2.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "apscheduler>=3.10.0",
+    "httpx>=0.27.0",
     "psycopg2-binary>=2.9.0",
     "sqlalchemy>=2.0.35",
     "pydantic>=2.9.2",
-    "numpy>=2.0.0",
+    "tensorflow-cpu>=2.16,<2.18; platform_machine == \"x86_64\"",
+    "tensorflow>=2.16,<2.18; platform_machine == \"aarch64\"",
+    "numpy>=1.26,<2.1",
     "pandas>=2.2.0",
     "scikit-learn>=1.5.0",
     "scipy>=1.14.0",

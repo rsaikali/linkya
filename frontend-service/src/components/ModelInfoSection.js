@@ -21,7 +21,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useCallback, useEffect, useState } from "react";
 import api from "../services/api";
-import websocket from "../services/websocket";
+import websocket from "../services/sse";
 import {
   formatDuration,
   formatFullDateTime,

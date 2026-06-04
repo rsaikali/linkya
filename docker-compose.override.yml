@@ -1,0 +1,28 @@
+# Dev overrides — auto-loaded by `docker compose` (no -f needed).
+# Exposes ports on localhost, mounts sources for hot reload.
+services:
+  postgres:
+    ports: ["127.0.0.1:5432:5432"]
+
+  backend:
+    build:
+      target: dev          # skip the React production build stage
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - ./backend-service/src:/app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  nilm:
+    ports: ["127.0.0.1:8001:8001"]
+    volumes:
+      - ./nilm-service/src:/app/src
+      - ./.data/models:/app/models
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
+
+  ha-ingest:
+    volumes:
+      - ./ha-ingest-service/src:/app/src
+
+  ha-publish:
+    volumes:
+      - ./ha-publish-service/src:/app/src

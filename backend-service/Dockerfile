@@ -1,34 +1,31 @@
-# Backend FastAPI with Python 3.12
-FROM python:3.12-slim-bookworm
+# Build context = repo root (see docker-compose.yml). Paths are repo-relative.
 
-# Environment variables for Python
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# ── Stage 1: build the React SPA ────────────────────────────────────────────
+FROM node:20-alpine AS frontend
+WORKDIR /fe
+COPY frontend-service/package*.json ./
+RUN npm ci --silent
+COPY frontend-service/ ./
+RUN npm run build
 
-# Install system dependencies and clean up in a single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Set working directory
+# ── Base python (shared by dev + prod) ──────────────────────────────────────
+FROM python:3.12-slim-bookworm AS base
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+COPY backend-service/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY backend-service/src/ ./src/
 
-# Copy dependency files first for better cache usage
-COPY requirements.txt ./
+# ── Dev target: API only, hot reload (compose mounts src + sets command) ─────
+FROM base AS dev
+ENV STATIC_DIR=/nonexistent
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt \
-    && find /usr/local/lib/python3.12 -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
-    && find /usr/local/lib/python3.12 -type f -name '*.pyc' -delete 2>/dev/null || true
-
-# Copy source code
-COPY src/ ./src/
-
-# Expose FastAPI port
+# ── Prod target: bundle React build, FastAPI serves it ──────────────────────
+FROM base AS prod
+COPY --from=frontend /fe/build /app/static
+ENV STATIC_DIR=/app/static
 EXPOSE 8000
-
-# Start command (uvicorn)
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

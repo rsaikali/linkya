@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from ..db import db_manager
+from ..events import bus
 from ..models import HaPublishUpdate
 
 
@@ -38,6 +39,7 @@ async def toggle_ha_publish(appliance_id: int, body: HaPublishUpdate):
         result = db_manager.update_ha_publish(appliance_id=appliance_id, enabled=body.enabled)
         if not result:
             raise HTTPException(status_code=404, detail=f"Appliance {appliance_id} not found")
+        bus.publish("appliance_updated", {"id": appliance_id, "ha_publish": body.enabled})
         return result
     except HTTPException:
         raise
@@ -69,6 +71,7 @@ async def update_appliance(appliance_id, appliance_data):
         if not updated_appliance:
             raise HTTPException(status_code=404, detail=f"Appliance {appliance_id} not found")
 
+        bus.publish("appliance_updated", {"id": appliance_id, "name": name})
         return updated_appliance
     except HTTPException:
         raise

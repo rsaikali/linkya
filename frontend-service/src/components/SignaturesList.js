@@ -37,7 +37,7 @@ import { useApplianceColors } from "../context/ApplianceColorsContext";
 import { useData } from "../context/DataContext";
 import { useNotification } from "../context/NotificationContext";
 import api, { apiService } from "../services/api";
-import websocket from "../services/websocket";
+import websocket from "../services/sse";
 import {
   formatDateTime,
   formatDurationMinutes,
