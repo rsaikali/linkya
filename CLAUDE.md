@@ -64,12 +64,7 @@ Bucketing temporel : `to_timestamp(floor(epoch/secs)*secs)` (pas de `time_bucket
 Par appareil avec `ha_publish=True` :
 
 - **`binary_sensor.nilm_<slug>`** — ON/OFF live (cycle en cours), via MQTT discovery. **Live only** : HA n'upsert pas l'historique d'états → pas de on/off passé rejouable.
-- **Énergie = statistique externe HA** (`linkya:nilm_<slug>_energy`), PAS un sensor live. Poussée via WebSocket `recorder/import_statistics` :
-  - kWh placé à l'**heure réelle de conso** (bucket horaire de la détection), grille complète zéro-fill du 1er au dernier cycle.
-  - **Upsert idempotent** par `(statistic_id, heure)` → re-détection / nouveau modèle ne double-comptent pas.
-  - Re-import au 1er toggle puis toutes les ~5 min (boucle `ha-publish`).
-  - À ajouter dans HA → Énergie → source externe `linkya:...` (s'aligne sur une vraie prise).
-  - Pourquoi pas un sensor live `total_increasing` : un `SUM(détections)` batch est non-monotone (baisse à la re-détection) → HA lit un reset compteur → double-comptage.
+- **`sensor.nilm_<slug>_energy`** — kWh, `total_increasing` (utilisable direct dans l'Energy Dashboard). Valeur = `SUM(détections)` **clampée à un high-water-mark persisté** (`ha_energy_hwm`, écrit par `ha-publish`) → **jamais décroissante**. C'est le clamp qui élimine le saut : une re-détection qui baisse la somme ne fait plus lire un reset compteur à HA.
 - **Sensors diagnostic** (device `Linkya NILM`, catégorie diagnostic) : version modèle, type, entraîné le, durée, signatures, appareils, epochs, train_loss, val_loss, détections total, dernière détection. 1 topic JSON partagé + `value_template`. **Pas de F1** — Linkya n'a pas de ground-truth.
 
 ## Compose

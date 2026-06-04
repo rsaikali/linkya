@@ -86,7 +86,7 @@ Detection runs automatically every 5 minutes on the last 2 hours. Click **Détec
 In the **Appareils** tab, toggle **Home Assistant** for any appliance you trust. Linkya then exposes, on a `Linkya NILM` device:
 
 - **`binary_sensor.nilm_{appliance}`** — ON while a cycle is running (live, via MQTT discovery). State history starts at toggle time (HA can't backfill past states).
-- **Energy** — a HA **external statistic** `linkya:nilm_{appliance}_energy` (kWh), placed at the real consumption hour and idempotently re-imported. Add it under **Settings → Energy → add consumption** to compare it with a real smart plug. (It is not a live sensor: a batch NILM sum is non-monotonic and would break `total_increasing`.)
+- **`sensor.nilm_{appliance}_energy`** — kWh, `total_increasing`, usable directly in the Energy Dashboard. The value is clamped to a persisted high-water-mark so it never decreases (a re-detection that shrinks the sum won't trigger a false meter reset / jump).
 - **Diagnostic sensors** — model version, type, trained-at, train duration, signatures, epochs, train/val loss, detections total, last detection. No F1 (Linkya has no ground-truth labels).
 
 ### Validate detections
@@ -111,7 +111,7 @@ PostgreSQL ─→ nilm (Seq2Point GRU, FastAPI + APScheduler) ─→ nilm_detect
 
 nilm_detections ─→ ha-publish ─→ HA MQTT discovery
                      ├── binary_sensor.nilm_*            (ON/OFF, live)
-                     └── linkya:nilm_*_energy (kWh)   (external statistic, Energy Dashboard)
+                     └── sensor.nilm_*_energy           (kWh, total_increasing, Energy Dashboard)
 
 Browser ─→ backend (FastAPI: REST + SSE + React build) ─→ PostgreSQL
                      └── proxies train/detect/signatures → nilm
