@@ -171,6 +171,8 @@ def run_training(min_signatures: int = 2) -> dict:
 def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
     """Run disaggregation over a window (hours=None → full history)."""
     with _lock:
+        # Heartbeat: marks each detection run (distinct from last detected cycle).
+        db_manager.set_meta("last_detect_run", datetime.now(timezone.utc).isoformat())
         try:
             with db_manager.engine.connect() as conn:
                 row = conn.execute(text("SELECT model_name FROM nilm_models ORDER BY training_date DESC LIMIT 1")).first()

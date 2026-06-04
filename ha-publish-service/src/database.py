@@ -153,6 +153,9 @@ class PublishRepository:
             det = conn.execute(
                 text("SELECT COUNT(*), MAX(created_at) FROM nilm_detections")
             ).fetchone()
+            last_run = conn.execute(
+                text("SELECT value FROM nilm_meta WHERE key = 'last_detect_run'")
+            ).scalar()
 
         metrics = m[6] if isinstance(m[6], dict) else json.loads(m[6] or "{}")
         apps = metrics.get("appliances") or []
@@ -173,6 +176,7 @@ class PublishRepository:
             "epochs": first.get("epochs_trained"),
             "detections_total": det[0] if det else 0,
             "last_detection": _iso(det[1]) if det else None,
+            "last_detect_run": last_run,
         }
 
 

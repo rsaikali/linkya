@@ -141,6 +141,11 @@ class DatabaseManager:
             with self.engine.connect() as conn:
                 # Créer les tables si elles n'existent pas
                 self.metadata.create_all(self.engine)
+                # Key/value meta (e.g. last_detect_run heartbeat)
+                conn.execute(
+                    text("CREATE TABLE IF NOT EXISTS nilm_meta (key TEXT PRIMARY KEY, value TEXT)")
+                )
+                conn.commit()
                 logger.info("Tables NILM créées avec succès")
 
                 # Vérifier si les tables existent
@@ -406,6 +411,22 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             logger.error(f"Erreur lors de la récupération des signatures: {e}")
             return []
+
+    def set_meta(self, key, value):
+        """Upsert a key/value into nilm_meta (heartbeats, markers)."""
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO nilm_meta (key, value) VALUES (:k, :v)
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                        """
+                    ),
+                    {"k": key, "v": str(value)},
+                )
+        except SQLAlchemyError as e:
+            logger.error(f"set_meta {key} failed: {e}")
 
     def count_positive_signatures(self):
         """Count of positive (non-negative) signatures across all appliances."""

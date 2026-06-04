@@ -92,7 +92,8 @@ STATS_SENSORS = [
     ("train_loss", "NILM Train loss", {"icon": "mdi:chart-line"}),
     ("val_loss", "NILM Val loss", {"icon": "mdi:chart-line"}),
     ("detections_total", "NILM Détections total", {"icon": "mdi:magnify"}),
-    ("last_detection", "NILM Dernière détection", {"device_class": "timestamp"}),
+    ("last_detection", "NILM Dernier cycle détecté", {"device_class": "timestamp"}),
+    ("last_detect_run", "NILM Dernière exécution détection", {"device_class": "timestamp"}),
 ]
 
 
