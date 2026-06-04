@@ -21,6 +21,7 @@ from .discovery import (
     stats_discovery_topic,
 )
 
+
 RECONNECT_DELAY = 10
 
 
