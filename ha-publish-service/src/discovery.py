@@ -51,30 +51,17 @@ def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
 
 # ── Energy sensor (kWh cumulatif, total_increasing) ──────────────────────────
 
-def energy_discovery_topic(ha_entity_id: str) -> str:
-    return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_energy/config"
+# Energy is NOT a live MQTT sensor (a batch NILM sum is non-monotonic and would
+# trip total_increasing's reset logic). Instead it's a long-term EXTERNAL
+# statistic pushed via recorder/import_statistics, placed at real consumption
+# time. statistic_id uses the "linkya:" external source prefix (colon form).
+
+EXTERNAL_SOURCE = "linkya"
 
 
-def energy_state_topic(ha_entity_id: str) -> str:
-    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/energy_state"
-
-
-def energy_entity_id(ha_entity_id: str) -> str:
-    """Full HA entity_id for the energy sensor — used in statistics API."""
-    return f"sensor.{slug(ha_entity_id)}_energy"
-
-
-def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
-    return json.dumps({
-        "name": f"NILM {name} Énergie",
-        "unique_id": f"linkya_{slug(ha_entity_id)}_energy",
-        "state_topic": energy_state_topic(ha_entity_id),
-        "unit_of_measurement": "kWh",
-        "device_class": "energy",
-        "state_class": "total_increasing",
-        "icon": "mdi:lightning-bolt",
-        "device": _DEVICE,
-    })
+def external_stat_id(ha_entity_id: str) -> str:
+    """External statistic id, e.g. linkya:nilm_ballon_d_eau_chaude_energy."""
+    return f"{EXTERNAL_SOURCE}:{slug(ha_entity_id)}_energy"
 
 
 # ── Lab diagnostics (one shared JSON state topic, value_template per sensor) ──

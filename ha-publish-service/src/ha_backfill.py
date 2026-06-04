@@ -19,7 +19,7 @@ import websockets
 
 from .config import settings
 from .database import repo
-from .discovery import energy_entity_id
+from .discovery import EXTERNAL_SOURCE, external_stat_id
 
 
 async def backfill_appliance(appliance: dict) -> bool:
@@ -29,7 +29,7 @@ async def backfill_appliance(appliance: dict) -> bool:
     """
     app_id = appliance["id"]
     app_name = appliance["name"]
-    stat_id = energy_entity_id(appliance["ha_entity_id"])
+    stat_id = external_stat_id(appliance["ha_entity_id"])
 
     detections = repo.get_detections_for_backfill(app_id)
     if not detections:
@@ -92,7 +92,7 @@ async def backfill_appliance(appliance: dict) -> bool:
                     "has_mean": False,
                     "has_sum": True,
                     "name": f"NILM {app_name} Énergie",
-                    "source": "recorder",
+                    "source": EXTERNAL_SOURCE,
                     "statistic_id": stat_id,
                     "unit_of_measurement": "kWh",
                 },
