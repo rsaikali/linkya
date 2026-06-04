@@ -30,14 +30,14 @@ services:
       context: ./frontend-service
       dockerfile: Dockerfile.prod
     ports:
-      - "127.0.0.1:8082:80"   # NPM → http://127.0.0.1:8082
+      - "192.168.1.111:8082:80"   # LAN access + NPM proxy
     depends_on:
       backend:
         condition: service_healthy
 
   pgweb:
     ports:
-      - "127.0.0.1:8081:8081"
+      - "192.168.1.111:8081:8081"
 
   nilm-worker:
     volumes:
