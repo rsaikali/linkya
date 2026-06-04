@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from ..config import settings
 from ..db import db_manager
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/nilm", tags=["NILM"])
 

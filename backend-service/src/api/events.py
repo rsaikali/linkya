@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ..events import bus
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Events"])
 

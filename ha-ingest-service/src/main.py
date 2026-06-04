@@ -10,6 +10,7 @@ from .config import settings
 from .database import db_manager
 from .ha_client import backfill
 
+
 RECONNECT_DELAY = 5  # seconds between MQTT reconnect attempts
 
 

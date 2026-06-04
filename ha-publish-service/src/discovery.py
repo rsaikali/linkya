@@ -3,6 +3,7 @@
 import json
 import re
 
+
 DISCOVERY_PREFIX = "homeassistant"
 STATE_PREFIX = "linkya/nilm"
 

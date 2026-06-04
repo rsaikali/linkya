@@ -9,6 +9,7 @@ from ..config import settings
 from ..db import db_manager
 from ..events import bus
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/detections", tags=["Detections"])
 

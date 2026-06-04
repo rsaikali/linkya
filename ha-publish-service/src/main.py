@@ -17,6 +17,7 @@ from .discovery import (
 )
 from .ha_backfill import backfill_appliance
 
+
 RECONNECT_DELAY = 10
 
 

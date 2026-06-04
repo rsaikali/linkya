@@ -13,12 +13,13 @@ Strategy:
 import json
 from datetime import datetime, timedelta, timezone
 
-import websockets
 from loguru import logger
+
+import websockets
 
 from .config import settings
 from .database import repo
-from .discovery import energy_entity_id, slug
+from .discovery import energy_entity_id
 
 
 async def backfill_appliance(appliance: dict) -> bool:

@@ -1,6 +1,6 @@
 """Read appliances, current state, and cumulative energy from TimescaleDB."""
 
-from loguru import logger
+
 from sqlalchemy import create_engine, text
 
 from .config import settings

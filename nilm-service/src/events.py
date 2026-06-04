@@ -5,6 +5,7 @@ import os
 
 import httpx
 
+
 logger = logging.getLogger(__name__)
 
 _BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")

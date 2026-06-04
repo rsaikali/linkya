@@ -20,6 +20,7 @@ from .config import settings
 from .database import db_manager
 from .seq2point_nilm import Seq2PointNILMManager
 
+
 logger = logging.getLogger(__name__)
 
 LOCAL_TZ = timezone.utc

@@ -14,6 +14,7 @@ from ..db import db_manager
 from ..events import bus
 from ..models import SignatureCreate
 
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/signatures", tags=["Signatures"])
 

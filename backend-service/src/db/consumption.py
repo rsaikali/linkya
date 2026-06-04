@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
 
+
 # Map interval label → bucket size in seconds (epoch-floor bucketing).
 _INTERVAL_SECONDS = {
     "1 minute": 60,
