@@ -31,6 +31,50 @@ nilm_manager = Seq2PointNILMManager()
 # Serialize train/detect — TF is not safe to run concurrently in one process.
 _lock = threading.Lock()
 
+# Coalescing: at most one training and one detection may be pending at a time.
+# Bursts (e.g. CSV import crossing several auto-train thresholds, or rapid UI
+# clicks) collapse to a single queued run instead of piling up on the Pi.
+_pending = {"train": False, "detect": False}
+_pending_lock = threading.Lock()
+
+
+def request_training(min_signatures: int = 2) -> bool:
+    """Queue a training run unless one is already pending. Returns True if queued."""
+    with _pending_lock:
+        if _pending["train"]:
+            logger.info("Training already pending — request coalesced")
+            return False
+        _pending["train"] = True
+
+    def _worker():
+        try:
+            run_training(min_signatures)
+        finally:
+            with _pending_lock:
+                _pending["train"] = False
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True
+
+
+def request_detection(hours=None, min_confidence: float = 0.25) -> bool:
+    """Queue a detection run unless one is already pending. Returns True if queued."""
+    with _pending_lock:
+        if _pending["detect"]:
+            logger.info("Detection already pending — request coalesced")
+            return False
+        _pending["detect"] = True
+
+    def _worker():
+        try:
+            run_detection(hours, min_confidence)
+        finally:
+            with _pending_lock:
+                _pending["detect"] = False
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True
+
 
 def run_training(min_signatures: int = 2) -> dict:
     """Train a fresh model from all signatures. Replaces the previous model."""
@@ -238,8 +282,12 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
             return {"status": "error", "message": str(e)}
 
 
-def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, is_negative: bool = False) -> dict:
-    """Store a user signature (computes power_data + morphology). May auto-train."""
+def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, is_negative: bool = False, auto_train: bool = True) -> dict:
+    """Store a user signature (computes power_data + morphology).
+
+    auto_train=False during bulk CSV import — the caller triggers a single
+    training afterwards instead of one per row.
+    """
     try:
         start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
         end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
@@ -266,11 +314,12 @@ def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, i
             return {"status": "error", "message": "Échec de l'ajout de la signature"}
 
         # Auto-train on positive signatures: at 2, then every 5th (Pi-friendly).
-        if not is_negative:
+        # Coalesced — bursts collapse to one queued run.
+        if auto_train and not is_negative:
             n = db_manager.count_positive_signatures()
             if n >= 2 and (n - 2) % 5 == 0:
-                threading.Thread(target=run_training, daemon=True).start()
-                logger.info("Auto-train triggered (%d positive signatures)", n)
+                if request_training():
+                    logger.info("Auto-train queued (%d positive signatures)", n)
 
         return {"status": "success", "signature_id": signature_id, "appliance_id": appliance_id, "appliance_name": appliance_name}
 

@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/signatures", tags=["Signatures"])
 _TIMEOUT = 30.0
 
 
-async def _nilm_add_signature(appliance_name, start_time, end_time, is_negative):
+async def _nilm_add_signature(appliance_name, start_time, end_time, is_negative, auto_train=True):
     """Ask the nilm service to compute + store a signature."""
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         r = await client.post(
@@ -31,6 +31,7 @@ async def _nilm_add_signature(appliance_name, start_time, end_time, is_negative)
                 "start_time": start_time,
                 "end_time": end_time,
                 "is_negative": is_negative,
+                "auto_train": auto_train,
             },
         )
         r.raise_for_status()
@@ -113,12 +114,21 @@ async def import_signatures(file: UploadFile):
                 raise ValueError("nom vide")
             if datetime.fromisoformat(start) >= datetime.fromisoformat(end):
                 raise ValueError("start_time >= end_time")
-            await _nilm_add_signature(name, start, end, is_neg)
+            # auto_train=False: avoid one training per row; train once at the end.
+            await _nilm_add_signature(name, start, end, is_neg, auto_train=False)
             success += 1
             if success % 5 == 0:
                 bus.publish("import_progress", {"done": success, "total": len(rows)})
         except Exception as e:
             errors.append({"line": line_num, "error": str(e)})
+
+    # Single training after the whole import (coalesced on the nilm side too).
+    if success:
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                await client.post(f"{settings.nilm_url}/train")
+        except httpx.HTTPError as e:
+            logger.warning("post-import train trigger failed: %s", e)
 
     bus.publish("import_complete", {"success": success, "errors": len(errors)})
     return {

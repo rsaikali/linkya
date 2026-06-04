@@ -15,7 +15,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import FastAPI
 from pydantic import BaseModel
 
 from . import jobs
@@ -31,7 +31,7 @@ scheduler = BackgroundScheduler(timezone="UTC")
 
 def _scheduled_detect():
     logger.info("Scheduled detection (rolling 2h)")
-    jobs.run_detection(hours=2, min_confidence=0.25)
+    jobs.request_detection(hours=2, min_confidence=0.25)
 
 
 @asynccontextmanager
@@ -60,6 +60,7 @@ class SignatureIn(BaseModel):
     start_time: str
     end_time: str
     is_negative: bool = False
+    auto_train: bool = True   # False during bulk CSV import
 
 
 @app.get("/healthz")
@@ -68,20 +69,20 @@ def healthz():
 
 
 @app.post("/train")
-def train(background: BackgroundTasks):
-    background.add_task(jobs.run_training)
-    return {"status": "started", "message": "Entraînement lancé"}
+def train():
+    queued = jobs.request_training()
+    return {"status": "started" if queued else "already_pending", "message": "Entraînement lancé"}
 
 
 @app.post("/detect")
-def detect(background: BackgroundTasks):
-    background.add_task(jobs.run_detection, None, 0.25)
-    return {"status": "started", "message": "Détection lancée"}
+def detect():
+    queued = jobs.request_detection(None, 0.25)
+    return {"status": "started" if queued else "already_pending", "message": "Détection lancée"}
 
 
 @app.post("/signatures")
 def add_signature(sig: SignatureIn):
-    return jobs.add_signature(sig.appliance_name, sig.start_time, sig.end_time, sig.is_negative)
+    return jobs.add_signature(sig.appliance_name, sig.start_time, sig.end_time, sig.is_negative, sig.auto_train)
 
 
 @app.post("/models/delete")
