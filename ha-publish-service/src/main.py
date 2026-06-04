@@ -114,7 +114,7 @@ async def cleanup_legacy_energy(client: aiomqtt.Client):
             await client.publish(topic, payload=b"", retain=True)
             n += 1
     if n:
-        logger.info("Cleared %d legacy energy MQTT topics", n)
+        logger.info("Cleared {} legacy energy MQTT topics", n)
 
 
 async def run():
