@@ -99,46 +99,54 @@ In the **Détections** tab, mark detections as correct (✓) or incorrect (✗).
 
 ## Architecture
 
+Five services. No broker, no TimescaleDB, no nginx — the FastAPI backend serves
+the React build and a single SSE stream for live UI updates.
+
 ```
 HA (sensor.linky_sinsts)
-  ├── mqtt_statestream → ha-ingest → TimescaleDB (real-time)
-  └── History API → ha-ingest → TimescaleDB (30d backfill at startup)
+  ├── MQTT statestream ─┐
+  └── History API ──────┴─→ ha-ingest ─→ PostgreSQL (linky_realtime, 30d)
 
-TimescaleDB → nilm-worker (Seq2Point GRU) → nilm_detections
+PostgreSQL ─→ nilm (Seq2Point GRU, FastAPI + APScheduler) ─→ nilm_detections
 
-nilm_detections → ha-publish → HA MQTT
-  ├── binary_sensor.nilm_* (ON/OFF)
-  └── sensor.nilm_*_energy (kWh, Energy Dashboard)
+nilm_detections ─→ ha-publish ─→ HA MQTT discovery
+                     ├── binary_sensor.nilm_*        (ON/OFF, cycle running)
+                     └── sensor.nilm_*_energy        (kWh, Energy Dashboard)
 
-React UI → FastAPI → TimescaleDB
+Browser ─→ backend (FastAPI: REST + SSE + React build) ─→ PostgreSQL
+                     └── proxies train/detect/signatures → nilm
 ```
 
-Services: `timescaledb`, `redis`, `ha-ingest`, `nilm-worker`, `nilm-beat`, `backend`, `react-dev`, `frontend`, `ha-publish`, `pgweb`
+| Service | Stack | Role |
+|---------|-------|------|
+| `postgres` | PostgreSQL 16 | `linky_realtime` + NILM tables |
+| `backend` | FastAPI | REST API, SSE bus, serves the React SPA |
+| `nilm` | FastAPI + TensorFlow (CPU) | train / detect / signature processing + detect cron |
+| `ha-ingest` | asyncio | HA MQTT statestream + History API backfill |
+| `ha-publish` | asyncio | detections → HA MQTT discovery + statistics |
+
+Live UI updates use one SSE endpoint (`GET /api/events`) — no WebSocket.
 
 ---
 
-## Services ports
+## Access
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Frontend | http://localhost | Main UI |
-| API docs | http://localhost/docs | Swagger |
-| pgweb | http://localhost:8081 | DB explorer |
-| Backend | http://localhost:8001 | API (internal) |
+Production: the backend serves everything on one port. Behind a reverse proxy
+(e.g. Nginx Proxy Manager) point a host at `backend:8000`. Dev: http://localhost:8000.
 
 ---
 
 ## Common commands
 
 ```bash
-make build          # Build all images
-make up             # Start all services
-make down           # Stop
-make clean          # Stop + delete volumes (resets all data)
-make status         # Container status
-make logs           # All logs
-make train          # Trigger training manually
-make detect         # Trigger detection on full history
+make up       # dev: start all services (docker-compose.override.yml)
+make down     # stop
+make clean    # stop + delete volumes (resets all data)
+make status   # container status
+make logs     # tail all logs
+make train    # trigger training
+make detect   # trigger detection on full history
+make deploy   # prod build + restart (Pi / CD), skips the dev override
 ```
 
 ---
