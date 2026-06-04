@@ -2,76 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   lint:
-    name: Lint (flake8 + isort)
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-
-      - name: Install linters
-        run: uv pip install --system flake8 isort
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install flake8 isort
       - name: flake8
-        run: |
-          flake8 backend-service/src/ \
-                 nilm-service/src/ \
-                 ha-ingest-service/src/ \
-                 ha-publish-service/src/
+        run: flake8 backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src
+      - name: isort
+        run: isort --check-only backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src
 
-      - name: isort --check
-        run: |
-          isort --check-only \
-                backend-service/src/ \
-                nilm-service/src/ \
-                ha-ingest-service/src/ \
-                ha-publish-service/src/
-
-  docker-build:
-    name: Docker build (backend + ha services)
+  build:
+    name: Docker build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build backend (multistage: React build + FastAPI)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./backend-service/Dockerfile
-          target: prod
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+      - name: Build backend
+        run: docker build -f backend-service/Dockerfile --target prod -t linkya-backend .
       - name: Build ha-ingest
-        uses: docker/build-push-action@v6
-        with:
-          context: ./ha-ingest-service
-          file: ./ha-ingest-service/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+        run: docker build -t linkya-ha-ingest ./ha-ingest-service
       - name: Build ha-publish
-        uses: docker/build-push-action@v6
-        with:
-          context: ./ha-publish-service
-          file: ./ha-publish-service/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # nilm-service skipped in CI: tensorflow base image is multi-GB
-      # and would exceed free runner limits. Validated locally + on deploy.
+        run: docker build -t linkya-ha-publish ./ha-publish-service
