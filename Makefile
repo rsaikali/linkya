@@ -32,8 +32,9 @@ restart: ## Restart all services
 
 # ── Prod (Pi, CD) ────────────────────────────
 deploy: ## Prod build + restart on the Pi (CD target, no dev override)
-	@DOCKER_BUILDKIT=1 $(COMPOSE_PROD) build
-	@$(COMPOSE_PROD) up -d
+	# Classic builder: BuildKit's snapshotter intermittently corrupts on this Pi.
+	@DOCKER_BUILDKIT=0 $(COMPOSE_PROD) build
+	@$(COMPOSE_PROD) up -d --remove-orphans
 	@$(COMPOSE_PROD) ps
 
 # ── NILM ─────────────────────────────────────
