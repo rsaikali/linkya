@@ -14,6 +14,7 @@ from .discovery import (
     binary_discovery_payload,
     binary_discovery_topic,
     binary_state_topic,
+    legacy_energy_topics,
     stats_discovery_payload,
     stats_discovery_topic,
 )
@@ -104,6 +105,18 @@ async def publish_loop(client: aiomqtt.Client):
         await asyncio.sleep(settings.poll_interval)
 
 
+async def cleanup_legacy_energy(client: aiomqtt.Client):
+    """Evict the removed live energy sensor: clear its retained discovery+state
+    (empty retained payload) so HA drops the orphaned non-monotonic entities."""
+    n = 0
+    for name in repo.get_all_appliance_names():
+        for topic in legacy_energy_topics(name):
+            await client.publish(topic, payload=b"", retain=True)
+            n += 1
+    if n:
+        logger.info("Cleared %d legacy energy MQTT topics", n)
+
+
 async def run():
     logger.info(
         f"ha-publish: connecting to {settings.ha_mqtt_host}:{settings.ha_mqtt_port}"
@@ -117,6 +130,7 @@ async def run():
                 password=settings.ha_mqtt_password,
             ) as client:
                 logger.info("ha-publish: MQTT connected")
+                await cleanup_legacy_energy(client)
                 await publish_loop(client)
         except aiomqtt.MqttError as e:
             logger.warning(f"MQTT disconnected: {e} — retry in {RECONNECT_DELAY}s")

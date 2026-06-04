@@ -64,6 +64,19 @@ def external_stat_id(ha_entity_id: str) -> str:
     return f"{EXTERNAL_SOURCE}:{slug(ha_entity_id)}_energy"
 
 
+def legacy_energy_topics(name: str) -> list[str]:
+    """Retained topics from the removed live energy sensor, both historical slug
+    variants (apostrophe-kept and sanitized). Cleared at startup so HA drops the
+    orphaned non-monotonic entities."""
+    sanitized = "nilm_" + re.sub(r"_+", "_", re.sub(r"[^a-z0-9_]", "_", name.lower())).strip("_")
+    apostrophe = "nilm_" + name.lower().replace(" ", "_").replace("-", "_")
+    topics = []
+    for s in {sanitized, apostrophe}:
+        topics.append(f"{DISCOVERY_PREFIX}/sensor/{s}_energy/config")
+        topics.append(f"{STATE_PREFIX}/{s}/energy_state")
+    return topics
+
+
 # ── Lab diagnostics (one shared JSON state topic, value_template per sensor) ──
 
 STATS_STATE_TOPIC = f"{STATE_PREFIX}/_stats/state"

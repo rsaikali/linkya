@@ -26,6 +26,12 @@ class PublishRepository:
             ).fetchall()
         return [{"id": r[0], "name": r[1], "ha_entity_id": r[2]} for r in rows]
 
+    def get_all_appliance_names(self) -> list[str]:
+        """All appliance names (for legacy MQTT topic cleanup)."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("SELECT name FROM nilm_appliances")).fetchall()
+        return [r[0] for r in rows]
+
     def is_currently_active(self, appliance_id: int) -> bool:
         """
         True if the appliance has a detection cycle currently in progress
