@@ -14,39 +14,28 @@ from .discovery import (
     binary_discovery_payload,
     binary_discovery_topic,
     binary_state_topic,
-    legacy_energy_topics,
+    energy_discovery_payload,
+    energy_discovery_topic,
+    energy_state_topic,
     stats_discovery_payload,
     stats_discovery_topic,
 )
-from .ha_backfill import backfill_appliance
-
-
-# Re-import energy statistics every N cycles so fresh detections land in HA at
-# real consumption time (idempotent upsert). 10 × poll_interval (30s) = 5 min.
-_STATS_REIMPORT_EVERY = 10
-
 
 RECONNECT_DELAY = 10
 
 
 async def publish_loop(client: aiomqtt.Client):
     """
-    Every poll_interval seconds:
-    1. Publish lab-diagnostic stats sensors.
-    2. Discovery for newly enabled appliances (binary_sensor only).
-    3. Live binary ON/OFF per active appliance.
-    4. Periodically re-import energy statistics (external stat, real conso time).
-
-    Energy is an external long-term statistic (import_statistics), not a live
-    MQTT sensor — a batch NILM sum is non-monotonic and would break
-    total_increasing. Initial import on first toggle, then every ~5 min.
+    Every poll_interval seconds, per appliance with ha_publish=True:
+    - discovery (binary_sensor + energy sensor) once,
+    - live binary ON/OFF,
+    - energy kWh (total_increasing, monotonic via high-water-mark).
+    Plus lab-diagnostic stats sensors on the Linkya NILM device.
     """
     known: set[str] = set()   # ha_entity_ids with discovery already published
     stats_announced = False   # lab-diagnostic sensors discovery published once
-    cycle = 0
 
     while True:
-        cycle += 1
         # ── Lab diagnostics (model + detection stats) ─────────────────────
         stats = repo.get_nilm_stats()
         if stats:
@@ -72,49 +61,37 @@ async def publish_loop(client: aiomqtt.Client):
             name = appliance["name"]
 
             if eid not in known:
-                # Binary sensor (live ON/OFF). Energy is an external statistic,
-                # not an MQTT sensor — see ha_backfill.
                 await client.publish(
                     binary_discovery_topic(eid),
                     payload=binary_discovery_payload(name, eid),
                     retain=True,
                 )
-                logger.info(f"Discovery published: {eid} (binary)")
+                await client.publish(
+                    energy_discovery_topic(eid),
+                    payload=energy_discovery_payload(name, eid),
+                    retain=True,
+                )
+                logger.info(f"Discovery published: {eid} (binary + energy)")
                 known.add(eid)
-                await asyncio.sleep(2)
-                await backfill_appliance(appliance)   # initial energy import
 
         # ── Remove discovery for disabled appliances ──────────────────────
         for eid in known - active_ids:
             await client.publish(binary_discovery_topic(eid), payload="", retain=True)
+            await client.publish(energy_discovery_topic(eid), payload="", retain=True)
             logger.info(f"Discovery removed: {eid}")
         known &= active_ids
 
-        # ── Live binary state for all active appliances ───────────────────
+        # ── Live state per active appliance ───────────────────────────────
         for appliance in active:
             eid = appliance["ha_entity_id"]
             is_active = repo.is_currently_active(appliance["id"])
             await client.publish(binary_state_topic(eid), payload="ON" if is_active else "OFF")
-            logger.debug(f"{eid} → {'ON' if is_active else 'OFF'}")
-
-        # ── Periodic energy stats re-import (real consumption time) ────────
-        if active and cycle % _STATS_REIMPORT_EVERY == 0:
-            for appliance in active:
-                await backfill_appliance(appliance)
+            # Energy: monotonic kWh (high-water-mark) → total_increasing safe.
+            energy_kwh = repo.get_monotonic_energy_kwh(appliance["id"])
+            await client.publish(energy_state_topic(eid), payload=str(energy_kwh))
+            logger.debug(f"{eid} → {'ON' if is_active else 'OFF'} | {energy_kwh} kWh")
 
         await asyncio.sleep(settings.poll_interval)
-
-
-async def cleanup_legacy_energy(client: aiomqtt.Client):
-    """Evict the removed live energy sensor: clear its retained discovery+state
-    (empty retained payload) so HA drops the orphaned non-monotonic entities."""
-    n = 0
-    for name in repo.get_all_appliance_names():
-        for topic in legacy_energy_topics(name):
-            await client.publish(topic, payload=b"", retain=True)
-            n += 1
-    if n:
-        logger.info("Cleared {} legacy energy MQTT topics", n)
 
 
 async def run():
@@ -130,7 +107,6 @@ async def run():
                 password=settings.ha_mqtt_password,
             ) as client:
                 logger.info("ha-publish: MQTT connected")
-                await cleanup_legacy_energy(client)
                 await publish_loop(client)
         except aiomqtt.MqttError as e:
             logger.warning(f"MQTT disconnected: {e} — retry in {RECONNECT_DELAY}s")

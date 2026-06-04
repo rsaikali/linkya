@@ -51,30 +51,29 @@ def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
 
 # ── Energy sensor (kWh cumulatif, total_increasing) ──────────────────────────
 
-# Energy is NOT a live MQTT sensor (a batch NILM sum is non-monotonic and would
-# trip total_increasing's reset logic). Instead it's a long-term EXTERNAL
-# statistic pushed via recorder/import_statistics, placed at real consumption
-# time. statistic_id uses the "linkya:" external source prefix (colon form).
+# Energy: live total_increasing MQTT sensor. The published value is clamped to a
+# persisted high-water-mark (see database.get_monotonic_energy_kwh) so it never
+# decreases — that was the only cause of the earlier reset-jump.
 
-EXTERNAL_SOURCE = "linkya"
-
-
-def external_stat_id(ha_entity_id: str) -> str:
-    """External statistic id, e.g. linkya:nilm_ballon_d_eau_chaude_energy."""
-    return f"{EXTERNAL_SOURCE}:{slug(ha_entity_id)}_energy"
+def energy_discovery_topic(ha_entity_id: str) -> str:
+    return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_energy/config"
 
 
-def legacy_energy_topics(name: str) -> list[str]:
-    """Retained topics from the removed live energy sensor, both historical slug
-    variants (apostrophe-kept and sanitized). Cleared at startup so HA drops the
-    orphaned non-monotonic entities."""
-    sanitized = "nilm_" + re.sub(r"_+", "_", re.sub(r"[^a-z0-9_]", "_", name.lower())).strip("_")
-    apostrophe = "nilm_" + name.lower().replace(" ", "_").replace("-", "_")
-    topics = []
-    for s in {sanitized, apostrophe}:
-        topics.append(f"{DISCOVERY_PREFIX}/sensor/{s}_energy/config")
-        topics.append(f"{STATE_PREFIX}/{s}/energy_state")
-    return topics
+def energy_state_topic(ha_entity_id: str) -> str:
+    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/energy_state"
+
+
+def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
+    return json.dumps({
+        "name": f"NILM {name} Énergie",
+        "unique_id": f"linkya_{slug(ha_entity_id)}_energy",
+        "state_topic": energy_state_topic(ha_entity_id),
+        "unit_of_measurement": "kWh",
+        "device_class": "energy",
+        "state_class": "total_increasing",
+        "icon": "mdi:lightning-bolt",
+        "device": _DEVICE,
+    })
 
 
 # ── Lab diagnostics (one shared JSON state topic, value_template per sensor) ──

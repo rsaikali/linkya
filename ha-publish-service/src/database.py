@@ -10,6 +10,22 @@ from .config import settings
 class PublishRepository:
     def __init__(self):
         self.engine = create_engine(settings.local_db_url, pool_pre_ping=True, pool_size=3)
+        self._init_hwm()
+
+    def _init_hwm(self):
+        """High-water-mark table: persisted monotonic energy per appliance so the
+        HA total_increasing sensor never decreases (re-detection / restart safe)."""
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ha_energy_hwm (
+                        appliance_id INTEGER PRIMARY KEY,
+                        kwh DOUBLE PRECISION NOT NULL DEFAULT 0
+                    );
+                    """
+                )
+            )
 
     def get_active_appliances(self) -> list[dict]:
         """Return all appliances with ha_publish=True."""
@@ -57,24 +73,36 @@ class PublishRepository:
             ).fetchone()
         return row is not None
 
-    def get_cumulative_energy_kwh(self, appliance_id: int) -> float:
-        """
-        Total energy detected for this appliance since first detection.
-        Cumulative, never-decreasing — suitable for HA total_increasing.
-        """
-        with self.engine.connect() as conn:
-            row = conn.execute(
+    def get_monotonic_energy_kwh(self, appliance_id: int) -> float:
+        """Cumulative detected energy (kWh), clamped to a persisted high-water-mark
+        so it never decreases — safe for HA total_increasing (no false reset/jump
+        when a re-detection shrinks the raw sum)."""
+        with self.engine.begin() as conn:
+            cur = conn.execute(
                 text(
                     """
-                    SELECT COALESCE(SUM(energy_consumed), 0)
+                    SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
                     FROM nilm_detections
-                    WHERE appliance_id = :id
-                      AND energy_consumed IS NOT NULL
+                    WHERE appliance_id = :id AND energy_consumed IS NOT NULL
                     """
                 ),
                 {"id": appliance_id},
-            ).fetchone()
-        return round(float(row[0]) / 1000.0, 3) if row and row[0] else 0.0
+            ).scalar() or 0.0
+            prev = conn.execute(
+                text("SELECT kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
+                {"id": appliance_id},
+            ).scalar() or 0.0
+            value = max(float(cur), float(prev))
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO ha_energy_hwm (appliance_id, kwh) VALUES (:id, :kwh)
+                    ON CONFLICT (appliance_id) DO UPDATE SET kwh = EXCLUDED.kwh
+                    """
+                ),
+                {"id": appliance_id, "kwh": value},
+            )
+        return round(value, 3)
 
     def get_detections_for_backfill(self, appliance_id: int) -> list[dict]:
         """
