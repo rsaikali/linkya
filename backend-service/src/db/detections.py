@@ -122,7 +122,6 @@ class DetectionRepository(DatabaseBase):
                 SELECT COUNT(*)::int AS cnt
                 FROM nilm_signatures
                 WHERE appliance_id = (SELECT id FROM app)
-                  AND is_negative = FALSE
             )
             SELECT
                 (SELECT name FROM app) AS appliance_name,
