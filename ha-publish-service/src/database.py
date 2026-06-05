@@ -101,13 +101,18 @@ class PublishRepository:
             ).fetchone()
             baseline = float(row[0]) if row else 0.0
             prev = float(row[1]) if row else 0.0
-            value = max(float(cur) - baseline, prev, 0.0)
+            cur_f = float(cur)
+            if cur_f < baseline:
+                # Total shrank (re-detection with different values, or deleted detections).
+                # Re-anchor so future detections accumulate correctly.
+                baseline = cur_f
+            value = max(cur_f - baseline, prev, 0.0)
             conn.execute(
                 text(
                     """
                     INSERT INTO ha_energy_hwm (appliance_id, baseline, kwh)
                     VALUES (:id, :baseline, :kwh)
-                    ON CONFLICT (appliance_id) DO UPDATE SET kwh = EXCLUDED.kwh
+                    ON CONFLICT (appliance_id) DO UPDATE SET baseline = EXCLUDED.baseline, kwh = EXCLUDED.kwh
                     """
                 ),
                 {"id": appliance_id, "baseline": baseline, "kwh": value},

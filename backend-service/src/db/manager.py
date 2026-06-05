@@ -115,6 +115,10 @@ class DatabaseManager:
         """Reassign detection to correct appliance."""
         return self.detections.reassign_detection(detection_id, correct_appliance_name)
 
+    def get_detections_for_backfill(self, appliance_id: int) -> list[dict]:
+        """All detections for HA statistics backfill."""
+        return self.detections.get_detections_for_backfill(appliance_id)
+
     # Model methods
     def get_latest_nilm_model(self):
         """Get latest NILM model."""

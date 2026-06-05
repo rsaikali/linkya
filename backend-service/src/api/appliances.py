@@ -4,8 +4,10 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from ..config import settings
 from ..db import db_manager
 from ..events import bus
+from ..ha_backfill import run_ha_backfill
 from ..models import HaPublishUpdate
 
 
@@ -59,6 +61,31 @@ async def reset_energy(appliance_id: int):
     except Exception as e:
         logger.error(f"Error resetting energy for appliance {appliance_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+@router.post("/{appliance_id}/ha-backfill")
+async def ha_backfill(appliance_id: int):
+    """Inject all NILM detections as historical energy statistics into HA (recorder/import_statistics)."""
+    appliances = db_manager.get_all_appliances()
+    appliance = next((a for a in appliances if a["id"] == appliance_id), None)
+    if not appliance:
+        raise HTTPException(status_code=404, detail=f"Appliance {appliance_id} not found")
+    if not appliance.get("ha_publish") or not appliance.get("ha_entity_id"):
+        raise HTTPException(status_code=400, detail="ha_publish disabled or ha_entity_id missing")
+    if not settings.ha_token:
+        raise HTTPException(status_code=503, detail="HA_TOKEN not configured")
+
+    detections = db_manager.get_detections_for_backfill(appliance_id)
+    if not detections:
+        return {"status": "no_detections"}
+
+    try:
+        result = await run_ha_backfill(settings.ha_url, settings.ha_token, appliance, detections)
+    except Exception as e:
+        logger.error(f"HA backfill failed for appliance {appliance_id}: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return result
 
 
 @router.patch("/{appliance_id}")

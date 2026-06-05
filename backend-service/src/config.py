@@ -15,6 +15,10 @@ class Settings:
         self.api_version = "1.0.0"
         self.api_description = "NILM for Home Assistant — REST API + SSE"
 
+        # Home Assistant
+        self.ha_url = os.getenv("HA_URL", "http://homeassistant.local:8123")
+        self.ha_token = os.getenv("HA_TOKEN", "")
+
         # Internal nilm service (train / detect / signature processing)
         self.nilm_url = os.getenv("NILM_URL", "http://nilm:8001")
 

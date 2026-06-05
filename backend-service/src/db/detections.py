@@ -522,3 +522,21 @@ class DetectionRepository(DatabaseBase):
                 "end_time": format_datetime(end_time),
                 "pending_signature": pending_signature,
             }
+
+    def get_detections_for_backfill(self, appliance_id: int) -> list[dict]:
+        """All validated detections for HA statistics backfill, ordered chronologically."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT start_time, end_time, energy_consumed
+                    FROM nilm_detections
+                    WHERE appliance_id = :id
+                      AND energy_consumed IS NOT NULL
+                      AND energy_consumed > 0
+                    ORDER BY start_time ASC
+                    """
+                ),
+                {"id": appliance_id},
+            ).fetchall()
+        return [{"start_time": r[0], "end_time": r[1], "energy_wh": float(r[2])} for r in rows]
