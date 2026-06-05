@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from collections import defaultdict
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 import websockets
 
@@ -20,29 +20,48 @@ def _ha_entity_slug(ha_entity_id: str) -> str:
     return s.strip("_")
 
 
-def _build_hourly_stats(detections: list[dict]) -> list[dict]:
+def _build_full_hourly_stats(detections: list[dict]) -> list[dict]:
     """
-    Group detections by hour of start_time.
-    Returns [{start: ISO, state: cumulative_kwh, sum: cumulative_kwh}] sorted by hour.
+    Build hourly stats with carry-forward between detections.
+
+    Every hour from the first detection to now is included so HA never sees
+    the cumulative sum reset to 0 between detection hours (which causes spikes).
+    Hours without detections carry the previous cumulative sum forward.
+
+    Returns [{start: ISO, state: cum_kwh, sum: cum_kwh}].
     """
-    hourly: dict = defaultdict(float)
+    hourly_add: dict = defaultdict(float)
     for det in detections:
         st = det["start_time"]
         if hasattr(st, "tzinfo") and st.tzinfo is None:
             st = st.replace(tzinfo=timezone.utc)
         hour = st.replace(minute=0, second=0, microsecond=0)
-        hourly[hour] += det["energy_wh"] / 1000.0
+        hourly_add[hour] += det["energy_wh"] / 1000.0
 
-    cum = 0.0
+    if not hourly_add:
+        return []
+
+    first_hour = min(hourly_add.keys())
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
     stats = []
-    for hour in sorted(hourly.keys()):
-        cum += hourly[hour]
+    cum = 0.0
+    hour = first_hour
+    while hour <= now:
+        cum += hourly_add.get(hour, 0.0)
         stats.append({
             "start": hour.isoformat(),
             "state": round(cum, 4),
             "sum": round(cum, 4),
         })
+        hour += timedelta(hours=1)
+
     return stats
+
+
+async def _ws_send_recv(ws, payload: dict) -> dict:
+    await ws.send(json.dumps(payload))
+    return json.loads(await ws.recv())
 
 
 async def run_ha_backfill(
@@ -52,16 +71,19 @@ async def run_ha_backfill(
     detections: list[dict],
 ) -> dict:
     """
-    Import NILM energy history into HA via recorder/import_statistics.
+    Inject NILM energy history into HA via recorder/import_statistics.
 
-    Looks up the actual HA entity_id by unique_id from the entity registry,
-    then injects hourly cumulative kWh statistics.
+    Steps:
+    1. Auth
+    2. Resolve HA entity_id from entity registry (by unique_id)
+    3. Clear existing statistics (avoids conflicts with past 0.0 states)
+    4. Inject all hourly entries with carry-forward (monotonic, no gaps)
     """
     slug = _ha_entity_slug(appliance["ha_entity_id"])
     energy_unique_id = f"linkya_{slug}_energy"
     energy_name = f"NILM {appliance['name']} Énergie"
 
-    stats = _build_hourly_stats(detections)
+    stats = _build_full_hourly_stats(detections)
     if not stats:
         return {"status": "no_detections"}
 
@@ -75,36 +97,37 @@ async def run_ha_backfill(
 
     async with websockets.connect(ws_url) as ws:
         # Auth
-        raw = await ws.recv()
-        msg = json.loads(raw)
-        if msg.get("type") != "auth_required":
-            raise RuntimeError(f"Unexpected HA WS message: {msg}")
+        raw = json.loads(await ws.recv())
+        if raw.get("type") != "auth_required":
+            raise RuntimeError(f"Unexpected HA WS greeting: {raw}")
 
-        await ws.send(json.dumps({"type": "auth", "access_token": ha_token}))
-        raw = await ws.recv()
-        msg = json.loads(raw)
-        if msg.get("type") != "auth_ok":
-            raise RuntimeError(f"HA auth failed: {msg}")
+        auth_resp = await _ws_send_recv(ws, {"type": "auth", "access_token": ha_token})
+        if auth_resp.get("type") != "auth_ok":
+            raise RuntimeError(f"HA auth failed: {auth_resp}")
 
-        # Resolve entity_id from registry
-        eid = next_id()
-        await ws.send(json.dumps({"id": eid, "type": "config/entity_registry/list"}))
-        raw = await ws.recv()
-        msg = json.loads(raw)
-        entities = msg.get("result") or []
+        # Resolve entity_id from registry by unique_id
+        reg_resp = await _ws_send_recv(ws, {"id": next_id(), "type": "config/entity_registry/list"})
+        entities = reg_resp.get("result") or []
         entity = next((e for e in entities if e.get("unique_id") == energy_unique_id), None)
         if not entity:
             raise RuntimeError(
                 f"No HA entity with unique_id '{energy_unique_id}'. "
-                "Make sure ha-publish has announced discovery at least once."
+                "Run ha-publish first to announce MQTT discovery."
             )
         statistic_id = entity["entity_id"]
-        logger.info(f"Backfill target: {statistic_id} ({len(stats)} hourly buckets, {stats[-1]['sum']} kWh total)")
 
-        # Import statistics
-        eid = next_id()
-        await ws.send(json.dumps({
-            "id": eid,
+        # Clear existing statistics to avoid conflicts with past 0.0 states
+        clear_resp = await _ws_send_recv(ws, {
+            "id": next_id(),
+            "type": "recorder/clear_statistics",
+            "statistic_ids": [statistic_id],
+        })
+        logger.info(f"Cleared statistics for {statistic_id}: {clear_resp.get('success')}")
+
+        # Inject full hourly history (carry-forward, no gaps)
+        logger.info(f"Injecting {len(stats)} hourly buckets → {stats[-1]['sum']} kWh total")
+        import_resp = await _ws_send_recv(ws, {
+            "id": next_id(),
             "type": "recorder/import_statistics",
             "metadata": {
                 "has_mean": False,
@@ -115,15 +138,12 @@ async def run_ha_backfill(
                 "unit_of_measurement": "kWh",
             },
             "stats": stats,
-        }))
-        raw = await ws.recv()
-        msg = json.loads(raw)
+        })
 
     return {
-        "status": "ok" if msg.get("success") else "error",
+        "status": "ok" if import_resp.get("success") else "error",
         "entity_id": statistic_id,
-        "buckets": len(stats),
-        "total_kwh": stats[-1]["sum"] if stats else 0,
-        "ws_result": msg.get("result"),
-        "ws_error": msg.get("error"),
+        "hours_injected": len(stats),
+        "total_kwh": stats[-1]["sum"],
+        "ws_error": import_resp.get("error"),
     }
