@@ -3,7 +3,7 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..config import settings
 from ..db import db_manager
@@ -46,6 +46,42 @@ async def trigger_detection():
 async def get_models():
     model = db_manager.get_latest_nilm_model()
     return {"models": [model], "total": 1} if model else {"models": [], "total": 0}
+
+
+@router.get("/scorecard")
+async def get_scorecard(
+    appliance: str = Query(..., description="Appliance name"),
+    window_days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
+):
+    """Per-appliance NILM scorecard: kWh, cycles, confidence, recovered share."""
+    result = db_manager.get_scorecard(appliance, window_days)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Appliance '{appliance}' not found")
+    return result
+
+
+@router.get("/history")
+async def get_history(
+    appliance: str = Query(..., description="Appliance name"),
+    days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
+):
+    """Daily kWh series — one float per day, zeros for quiet days, oldest first."""
+    result = db_manager.get_history(appliance, days)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Appliance '{appliance}' not found")
+    return result
+
+
+@router.get("/cycles")
+async def get_cycles(
+    appliance: str = Query(..., description="Appliance name"),
+    limit: int = Query(60, ge=1, le=500, description="Max number of cycles to return"),
+):
+    """Recent detection cycles (hour + duration_min) and computed peak_hours."""
+    result = db_manager.get_cycles(appliance, limit)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Appliance '{appliance}' not found")
+    return result
 
 
 @router.delete("/models")

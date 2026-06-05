@@ -83,6 +83,18 @@ class DatabaseManager:
         return self.signatures.get_all_signatures_with_appliance()
 
     # Detection methods
+    def get_scorecard(self, appliance_name: str, window_days: int = 30):
+        """Per-appliance NILM scorecard over the last N days."""
+        return self.detections.get_scorecard(appliance_name, window_days)
+
+    def get_history(self, appliance_name: str, days: int = 30):
+        """Daily kWh series for the last N days."""
+        return self.detections.get_history(appliance_name, days)
+
+    def get_cycles(self, appliance_name: str, limit: int = 60):
+        """Last N detection cycles with hour and duration, plus peak_hours."""
+        return self.detections.get_cycles(appliance_name, limit)
+
     def get_detected_appliances(self, start_time=None, end_time=None):
         """Get detected appliances."""
         return self.detections.get_detected_appliances(start_time, end_time)

@@ -94,6 +94,167 @@ class DetectionRepository(DatabaseBase):
 
             return detections
 
+    def get_scorecard(self, appliance_name: str, window_days: int = 30) -> dict | None:
+        """
+        Per-appliance NILM scorecard over the last N days.
+        Returns None if the appliance is unknown.
+        """
+        query = text(
+            """
+            WITH app AS (
+                SELECT id, name FROM nilm_appliances WHERE name = :appliance_name
+            ),
+            det_stats AS (
+                SELECT
+                    COUNT(*)::int AS cycles,
+                    COALESCE(SUM(d.energy_consumed) / 1000.0, 0.0) AS kwh,
+                    AVG(d.confidence_score) AS confidence_avg
+                FROM nilm_detections d
+                WHERE d.appliance_id = (SELECT id FROM app)
+                  AND d.start_time >= NOW() - make_interval(days => :window_days)
+            ),
+            total_consumption AS (
+                SELECT COALESCE(SUM(papp) / 3600000.0, 0.0) AS total_kwh
+                FROM linky_realtime
+                WHERE time >= NOW() - make_interval(days => :window_days)
+            ),
+            sig_count AS (
+                SELECT COUNT(*)::int AS cnt
+                FROM nilm_signatures
+                WHERE appliance_id = (SELECT id FROM app)
+                  AND is_negative = FALSE
+            )
+            SELECT
+                (SELECT name FROM app) AS appliance_name,
+                (SELECT id FROM app) AS appliance_id,
+                d.cycles,
+                ROUND(d.kwh::numeric, 3) AS kwh,
+                ROUND(d.confidence_avg::numeric, 3) AS confidence_avg,
+                ROUND(t.total_kwh::numeric, 3) AS total_kwh,
+                s.cnt AS signatures_count,
+                (SELECT training_date FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS trained_at
+            FROM det_stats d, total_consumption t, sig_count s
+            """
+        )
+
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                query, {"appliance_name": appliance_name, "window_days": window_days}
+            ).fetchone()
+
+        if not row or row[1] is None:
+            return None
+
+        m = row._mapping
+        kwh = float(m["kwh"]) if m["kwh"] is not None else 0.0
+        total_kwh = float(m["total_kwh"]) if m["total_kwh"] is not None else 0.0
+        recovered_share = round(kwh / total_kwh, 3) if total_kwh > 0 else None
+
+        return {
+            "appliance": m["appliance_name"],
+            "window_days": window_days,
+            "kwh": kwh,
+            "total_kwh": total_kwh,
+            "recovered_share": recovered_share,
+            "cycles": int(m["cycles"]) if m["cycles"] is not None else 0,
+            "confidence_avg": (float(m["confidence_avg"]) if m["confidence_avg"] is not None else None),
+            "signatures_count": int(m["signatures_count"]) if m["signatures_count"] is not None else 0,
+            "trained_at": format_datetime(m["trained_at"]),
+        }
+
+    def get_history(self, appliance_name: str, days: int = 30) -> dict | None:
+        """Daily kWh per day for the last N days (zeros included for quiet days)."""
+        query = text(
+            """
+            WITH app AS (
+                SELECT id FROM nilm_appliances WHERE name = :appliance_name
+            ),
+            date_series AS (
+                SELECT generate_series(
+                    (NOW() - make_interval(days => :days))::date,
+                    (NOW())::date,
+                    '1 day'::interval
+                )::date AS day
+            ),
+            daily_kwh AS (
+                SELECT
+                    DATE(d.start_time) AS day,
+                    COALESCE(SUM(d.energy_consumed) / 1000.0, 0.0) AS kwh
+                FROM nilm_detections d
+                WHERE d.appliance_id = (SELECT id FROM app)
+                  AND d.start_time >= NOW() - make_interval(days => :days)
+                  AND (d.user_validated IS NULL OR d.is_correct = TRUE)
+                GROUP BY DATE(d.start_time)
+            )
+            SELECT ds.day, COALESCE(dk.kwh, 0.0) AS kwh
+            FROM date_series ds
+            LEFT JOIN daily_kwh dk ON ds.day = dk.day
+            ORDER BY ds.day
+            """
+        )
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                query, {"appliance_name": appliance_name, "days": days}
+            ).fetchall()
+
+        if not rows:
+            return None
+
+        return {
+            "appliance": appliance_name,
+            "days": [round(float(r._mapping["kwh"]), 3) for r in rows],
+        }
+
+    def get_cycles(self, appliance_name: str, limit: int = 60) -> dict | None:
+        """
+        Last N detection cycles with decimal hour and duration_min.
+        Also computes peak_hours: the 2 most frequent hour buckets (integer).
+        """
+        query = text(
+            """
+            SELECT
+                EXTRACT(HOUR FROM d.start_time) +
+                EXTRACT(MINUTE FROM d.start_time) / 60.0 AS hour,
+                GREATEST(
+                    EXTRACT(EPOCH FROM (d.end_time - d.start_time)) / 60.0,
+                    1.0
+                ) AS duration_min
+            FROM nilm_detections d
+            JOIN nilm_appliances a ON d.appliance_id = a.id
+            WHERE a.name = :appliance_name
+              AND (d.user_validated IS NULL OR d.is_correct = TRUE)
+            ORDER BY d.start_time DESC
+            LIMIT :limit
+            """
+        )
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                query, {"appliance_name": appliance_name, "limit": limit}
+            ).fetchall()
+
+        if not rows:
+            return None
+
+        cycles = [
+            {
+                "hour": round(float(r._mapping["hour"]), 2),
+                "duration_min": round(float(r._mapping["duration_min"])),
+            }
+            for r in rows
+        ]
+
+        # Top-2 hour buckets by frequency (integer hour bins)
+        from collections import Counter
+        hour_counts = Counter(int(c["hour"]) for c in cycles)
+        peak_hours = [h for h, _ in hour_counts.most_common(2)]
+        peak_hours.sort()
+
+        return {
+            "appliance": appliance_name,
+            "peak_hours": peak_hours,
+            "cycles": cycles,
+        }
+
     def delete_detection(self, detection_id):
         """
         Deletes a specific detection from the database.
