@@ -113,6 +113,11 @@ class DetectionRepository(DatabaseBase):
                 WHERE d.appliance_id = (SELECT id FROM app)
                   AND d.start_time >= NOW() - make_interval(days => :window_days)
             ),
+            det_total AS (
+                SELECT COUNT(*)::int AS total_cycles
+                FROM nilm_detections d
+                WHERE d.appliance_id = (SELECT id FROM app)
+            ),
             total_consumption AS (
                 SELECT COALESCE(SUM(papp) / 3600000.0, 0.0) AS total_kwh
                 FROM linky_realtime
@@ -127,12 +132,13 @@ class DetectionRepository(DatabaseBase):
                 (SELECT name FROM app) AS appliance_name,
                 (SELECT id FROM app) AS appliance_id,
                 d.cycles,
+                dt.total_cycles,
                 ROUND(d.kwh::numeric, 3) AS kwh,
                 ROUND(d.confidence_avg::numeric, 3) AS confidence_avg,
                 ROUND(t.total_kwh::numeric, 3) AS total_kwh,
                 s.cnt AS signatures_count,
                 (SELECT training_date FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS trained_at
-            FROM det_stats d, total_consumption t, sig_count s
+            FROM det_stats d, det_total dt, total_consumption t, sig_count s
             """
         )
 
@@ -155,7 +161,7 @@ class DetectionRepository(DatabaseBase):
             "kwh": kwh,
             "total_kwh": total_kwh,
             "recovered_share": recovered_share,
-            "cycles": int(m["cycles"]) if m["cycles"] is not None else 0,
+            "cycles": int(m["total_cycles"]) if m["total_cycles"] is not None else 0,
             "confidence_avg": (float(m["confidence_avg"]) if m["confidence_avg"] is not None else None),
             "signatures_count": int(m["signatures_count"]) if m["signatures_count"] is not None else 0,
             "trained_at": format_datetime(m["trained_at"]),
