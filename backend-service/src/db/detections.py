@@ -163,7 +163,11 @@ class DetectionRepository(DatabaseBase):
         }
 
     def get_history(self, appliance_name: str, days: int = 30) -> dict | None:
-        """Daily kWh per day for the last N days (zeros included for quiet days)."""
+        """Daily kWh per day for the last N days (zeros included for quiet days).
+
+        Returns both NILM-detected kWh (days) and total meter kWh (total_days)
+        so the caller can overlay them and compute a meaningful % share.
+        """
         query = text(
             """
             WITH app AS (
@@ -185,10 +189,21 @@ class DetectionRepository(DatabaseBase):
                   AND d.start_time >= NOW() - make_interval(days => :days)
                   AND (d.user_validated IS NULL OR d.is_correct = TRUE)
                 GROUP BY DATE(d.start_time)
+            ),
+            total_daily AS (
+                SELECT
+                    DATE(time) AS day,
+                    COALESCE(SUM(papp) / 3600000.0, 0.0) AS kwh
+                FROM linky_realtime
+                WHERE time >= NOW() - make_interval(days => :days)
+                GROUP BY DATE(time)
             )
-            SELECT ds.day, COALESCE(dk.kwh, 0.0) AS kwh
+            SELECT ds.day,
+                COALESCE(dk.kwh, 0.0)  AS kwh,
+                COALESCE(td.kwh, 0.0)  AS total_kwh
             FROM date_series ds
-            LEFT JOIN daily_kwh dk ON ds.day = dk.day
+            LEFT JOIN daily_kwh dk    ON ds.day = dk.day
+            LEFT JOIN total_daily td  ON ds.day = td.day
             ORDER BY ds.day
             """
         )
@@ -203,6 +218,7 @@ class DetectionRepository(DatabaseBase):
         return {
             "appliance": appliance_name,
             "days": [round(float(r._mapping["kwh"]), 3) for r in rows],
+            "total_days": [round(float(r._mapping["total_kwh"]), 3) for r in rows],
         }
 
     def get_cycles(self, appliance_name: str, limit: int = 60) -> dict | None:
