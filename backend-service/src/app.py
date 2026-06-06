@@ -5,6 +5,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -22,6 +23,9 @@ def create_app() -> FastAPI:
         version=settings.api_version,
         description=settings.api_description,
     )
+
+    # Compress responses >= 1KB (JSON history payload is ~3MB uncompressed).
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     # Same-origin in prod (nginx-less: backend serves the SPA). CORS open for dev.
     app.add_middleware(
