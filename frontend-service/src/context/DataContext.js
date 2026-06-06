@@ -152,7 +152,7 @@ export const DataProvider = ({ children }) => {
     refreshAll();
   }, [refreshAll]);
 
-  // ===== WebSocket pour les détections =====
+  // ===== WebSocket pour les détections + signatures =====
   useEffect(() => {
     const handleNewDetection = (detection) => {
       setDetections(prev => [...prev, detection]);
@@ -166,17 +166,48 @@ export const DataProvider = ({ children }) => {
       setDetections([]);
     };
 
+    const handleDetectionValidated = () => {
+      refreshDetections();
+    };
+
+    const handleDetectionReassigned = () => {
+      refreshDetections();
+      refreshSignatures();
+    };
+
+    const handleSignatureAdded = () => {
+      refreshSignatures();
+    };
+
+    const handleSignatureDeleted = () => {
+      refreshSignatures();
+    };
+
+    const handleSignaturesCleared = () => {
+      setSignatures([]);
+    };
+
     detectionsWS.on('new_detection', handleNewDetection);
     detectionsWS.on('detection_complete', handleDetectionComplete);
     detectionsWS.on('detections_cleared', handleDetectionsCleared);
+    detectionsWS.on('detection_validated', handleDetectionValidated);
+    detectionsWS.on('detection_reassigned', handleDetectionReassigned);
+    detectionsWS.on('signature_added', handleSignatureAdded);
+    detectionsWS.on('signature_deleted', handleSignatureDeleted);
+    detectionsWS.on('signatures_cleared', handleSignaturesCleared);
     detectionsWS.connect();
 
     return () => {
       detectionsWS.off('new_detection', handleNewDetection);
       detectionsWS.off('detection_complete', handleDetectionComplete);
       detectionsWS.off('detections_cleared', handleDetectionsCleared);
+      detectionsWS.off('detection_validated', handleDetectionValidated);
+      detectionsWS.off('detection_reassigned', handleDetectionReassigned);
+      detectionsWS.off('signature_added', handleSignatureAdded);
+      detectionsWS.off('signature_deleted', handleSignatureDeleted);
+      detectionsWS.off('signatures_cleared', handleSignaturesCleared);
     };
-  }, [refreshDetections]);
+  }, [refreshDetections, refreshSignatures]);
 
   // ===== WebSocket pour l'import de signatures =====
   useEffect(() => {

@@ -1,4 +1,5 @@
-import { Box } from "@mui/material";
+import { Check, Close, SwapHoriz } from "@mui/icons-material";
+import { Box, ListItemIcon, ListItemText, Menu, MenuItem } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import {
   CategoryScale,
@@ -20,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Line } from "react-chartjs-2";
 import { useApplianceColors } from "../context/ApplianceColorsContext";
 import { useData } from "../context/DataContext";
+import MaterialIcon from "./common/MaterialIcon";
 import {
   formatDateFull,
   formatDateTime,
@@ -50,6 +52,10 @@ const CombinedChart = ({
   signatures,
   onSignatureModalOpen,
   isModalOpen,
+  onDeleteSignature,
+  onValidateDetection,
+  onInvalidateDetection,
+  onReassignDetection,
 }) => {
   const theme = useTheme();
   const chartRef = useRef(null);
@@ -61,6 +67,8 @@ const CombinedChart = ({
   const selectionRef = useRef({ isSelecting: false, startX: null, endX: null });
   const isUpdatingZoomRef = useRef(false);
   const tooltipRef = useRef(null);
+  const [annotationMenu, setAnnotationMenu] = useState({ open: false, x: 0, y: 0, item: null });
+  const leftClickStartRef = useRef(null);
 
   // Custom plugin to draw horizontal Y-axis labels
   const horizontalYLabelsPlugin = useMemo(
@@ -326,6 +334,67 @@ const CombinedChart = ({
     }
   }, [isModalOpen]);
 
+  // Helper: find annotation under canvas coordinates
+  const getAnnotationAtPixel = useCallback((chart, x, y) => {
+    const annotations = chart.config?.options?.plugins?.annotation?.annotations;
+    if (!annotations) return null;
+    for (const key in annotations) {
+      const annotation = annotations[key];
+      if (annotation.type === "box" && annotation.tooltipData) {
+        const xScale = chart.scales.x;
+        const yScale = chart.scales[annotation.yScaleID];
+        if (xScale && yScale) {
+          const xMin = xScale.getPixelForValue(annotation.xMin);
+          const xMax = xScale.getPixelForValue(annotation.xMax);
+          const yMin = yScale.getPixelForValue(annotation.yMax);
+          const yMax = yScale.getPixelForValue(annotation.yMin);
+          if (x >= xMin && x <= xMax && y >= yMin && y <= yMax) {
+            return annotation.tooltipData;
+          }
+        }
+      }
+    }
+    return null;
+  }, []);
+
+  // Click on annotation → context menu
+  useEffect(() => {
+    const canvas = chartRef.current?.canvas;
+    if (!canvas) return;
+
+    const handleMouseDown = (e) => {
+      if (e.button !== 0) return;
+      leftClickStartRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleClick = (e) => {
+      if (!leftClickStartRef.current) return;
+      const dx = e.clientX - leftClickStartRef.current.x;
+      const dy = e.clientY - leftClickStartRef.current.y;
+      leftClickStartRef.current = null;
+      if (Math.sqrt(dx * dx + dy * dy) > 8) return;
+
+      const chart = chartRef.current;
+      if (!chart) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const item = getAnnotationAtPixel(chart, x, y);
+      if (item) {
+        e.stopPropagation();
+        if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
+        setAnnotationMenu({ open: true, x: e.clientX, y: e.clientY, item });
+      }
+    };
+
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("click", handleClick);
+    return () => {
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("click", handleClick);
+    };
+  }, [getAnnotationAtPixel]);
+
   // Synchronize zoom from context
   useEffect(() => {
     if (!chartRef.current || isUpdatingZoomRef.current) return;
@@ -435,6 +504,9 @@ const CombinedChart = ({
         const durationSeconds = Math.round((endTime - startTime) / 1000);
         const confidenceScore = d.confidence_score || 0;
 
+        const isValidated = d.user_validated === true && d.is_correct === true;
+        const isInvalidated = d.user_validated === true && d.is_correct === false;
+
         annotations[`detection-${d.id}`] = {
           type: "box",
           xMin: d.startIndex,
@@ -447,14 +519,17 @@ const CombinedChart = ({
           borderWidth: 5,
           borderRadius: 10,
           drawTime: "beforeDatasetsDraw",
-          // Store tooltip data
           tooltipData: {
             type: "detection",
+            id: d.id,
             name: d.name || "Inconnu",
+            applianceId: d.appliance_id,
             startTime,
             endTime,
             durationSeconds,
             confidenceScore,
+            isValidated,
+            isInvalidated,
             color,
             icon,
           },
@@ -528,10 +603,11 @@ const CombinedChart = ({
           borderWidth: isNegative ? 3 : 5,
           borderRadius: 10,
           drawTime: "beforeDatasetsDraw",
-          // Store tooltip data
           tooltipData: {
             type: "signature",
+            id: s.id,
             name: s.appliance_name,
+            applianceName: s.appliance_name,
             startTime,
             endTime,
             durationSeconds,
@@ -909,6 +985,9 @@ const CombinedChart = ({
 
   if (!rawData || !chartData) return null;
 
+  const closeAnnotationMenu = () =>
+    setAnnotationMenu((prev) => ({ ...prev, open: false }));
+
   return (
     <Box
       sx={{ height: 600, position: "relative" }}
@@ -938,6 +1017,89 @@ const CombinedChart = ({
           }}
         />
       )}
+
+      {/* Context menu for annotation clicks */}
+      <Menu
+        open={annotationMenu.open}
+        onClose={closeAnnotationMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          annotationMenu.open
+            ? { top: annotationMenu.y, left: annotationMenu.x }
+            : undefined
+        }
+      >
+        {annotationMenu.item?.type === "signature" && (
+          <MenuItem
+            onClick={() => {
+              closeAnnotationMenu();
+              onDeleteSignature && onDeleteSignature(annotationMenu.item);
+            }}
+          >
+            <ListItemIcon>
+              <MaterialIcon style={{ fontSize: "20px", color: theme.palette.error.dark }}>
+                delete
+              </MaterialIcon>
+            </ListItemIcon>
+            <ListItemText>Supprimer cette signature</ListItemText>
+          </MenuItem>
+        )}
+
+        {annotationMenu.item?.type === "detection" && [
+          <MenuItem
+            key="validate"
+            onClick={() => {
+              closeAnnotationMenu();
+              onValidateDetection && onValidateDetection(annotationMenu.item);
+            }}
+            disabled={annotationMenu.item.isValidated}
+          >
+            <ListItemIcon>
+              <Check
+                fontSize="small"
+                color={annotationMenu.item.isValidated ? "disabled" : "success"}
+              />
+            </ListItemIcon>
+            <ListItemText>
+              {annotationMenu.item.isValidated
+                ? "Déjà validée"
+                : "Cette détection est correcte"}
+            </ListItemText>
+          </MenuItem>,
+          <MenuItem
+            key="invalidate"
+            onClick={() => {
+              closeAnnotationMenu();
+              onInvalidateDetection && onInvalidateDetection(annotationMenu.item);
+            }}
+            disabled={annotationMenu.item.isInvalidated}
+          >
+            <ListItemIcon>
+              <Close
+                fontSize="small"
+                color={annotationMenu.item.isInvalidated ? "disabled" : "error"}
+              />
+            </ListItemIcon>
+            <ListItemText>
+              {annotationMenu.item.isInvalidated
+                ? "Déjà invalidée"
+                : "Cette détection est incorrecte"}
+            </ListItemText>
+          </MenuItem>,
+          <MenuItem
+            key="reassign"
+            onClick={() => {
+              closeAnnotationMenu();
+              onReassignDetection && onReassignDetection(annotationMenu.item);
+            }}
+          >
+            <ListItemIcon>
+              <SwapHoriz fontSize="small" color="primary" />
+            </ListItemIcon>
+            <ListItemText>Ce n'est pas le bon appareil</ListItemText>
+          </MenuItem>,
+        ]}
+      </Menu>
     </Box>
   );
 };

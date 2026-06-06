@@ -450,6 +450,7 @@ function DetectionsList() {
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
+  const { refreshDetections, refreshSignatures } = useData();
   const { showNotification } = useNotification();
   const [anchorEl, setAnchorEl] = useState(null);
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
@@ -514,8 +515,8 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
       showNotification(`Détection réassignée à ${applianceName}`, "success");
       setReassignDialogOpen(false);
       setApplianceName("");
-      // Refresh the detection list
-      window.location.reload();
+      refreshDetections();
+      refreshSignatures();
     } catch (err) {
       showNotification("Erreur lors de la réassignation", "error");
     } finally {

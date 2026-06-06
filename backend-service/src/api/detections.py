@@ -44,7 +44,10 @@ async def validate_detection(detection_id):
     result = db_manager.validate_detection(detection_id, is_correct=True)
     if not result:
         raise HTTPException(status_code=404, detail="Détection non trouvée")
-    await _create_signature(result.get("pending_signature"))
+    pending = result.get("pending_signature")
+    await _create_signature(pending)
+    if pending:
+        bus.publish("signature_added", {"appliance_name": pending.get("appliance_name", "")})
     bus.publish("detection_validated", {"id": detection_id, "correct": True})
     return {"status": "success", "detection": result}
 
@@ -54,7 +57,10 @@ async def invalidate_detection(detection_id):
     result = db_manager.validate_detection(detection_id, is_correct=False)
     if not result:
         raise HTTPException(status_code=404, detail="Détection non trouvée")
-    await _create_signature(result.get("pending_signature"))
+    pending = result.get("pending_signature")
+    await _create_signature(pending)
+    if pending:
+        bus.publish("signature_added", {"appliance_name": pending.get("appliance_name", ""), "is_negative": True})
     bus.publish("detection_validated", {"id": detection_id, "correct": False})
     return {"status": "success", "detection": result}
 
@@ -67,6 +73,9 @@ async def reassign_detection(detection_id, request: dict):
     result = db_manager.reassign_detection(detection_id, appliance_name)
     if not result:
         raise HTTPException(status_code=404, detail="Détection non trouvée")
-    await _create_signature(result.get("pending_signature"))
+    pending = result.get("pending_signature")
+    await _create_signature(pending)
+    if pending:
+        bus.publish("signature_added", {"appliance_name": pending.get("appliance_name", appliance_name)})
     bus.publish("detection_reassigned", {"id": detection_id, "appliance": appliance_name})
     return {"status": "success", "reassignment": result}
