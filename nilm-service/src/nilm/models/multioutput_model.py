@@ -187,7 +187,11 @@ class Seq2PointMultiOutputModel:
                     if sig.get("is_negative", False):
                         appliance_power = np.zeros(len(aggregate_power), dtype=np.float32)
                     else:
-                        appliance_power = aggregate_power.copy()
+                        # Subtract standby load (p10 = background: fridge, router, etc.)
+                        # so the target represents the net appliance contribution,
+                        # not the full aggregate.
+                        _standby = float(np.percentile(aggregate_power, 10))
+                        appliance_power = np.maximum(aggregate_power - _standby, 0.0)
                 else:
                     # Fallback (ne devrait plus arriver souvent)
                     aggregate_power, appliance_power = self._load_signature_data_static(sig)
@@ -345,14 +349,17 @@ class Seq2PointMultiOutputModel:
             "class_weights": {self.appliance_names[idx]: float(class_weights[idx]) for idx in range(self.num_appliances)},
         }
 
-        # Métriques par appareil
+        # Per-appliance metrics from Keras per-output history keys.
         for idx, (app_id, app_name) in enumerate(zip(self.appliance_ids, self.appliance_names)):
-            # Utiliser l'ID de l'appareil pour retrouver les métriques
             output_name = f"output_appliance_{app_id}"
             mae_key = f"{output_name}_mae"
+            loss_key = f"{output_name}_loss"
             if mae_key in self.history.history:
                 metrics[f"{app_name}_train_mae"] = float(self.history.history[mae_key][-1])
                 metrics[f"{app_name}_val_mae"] = float(self.history.history[f"val_{mae_key}"][-1])
+            if loss_key in self.history.history:
+                metrics[f"{app_name}_train_loss"] = float(self.history.history[loss_key][-1])
+                metrics[f"{app_name}_val_loss"] = float(self.history.history[f"val_{loss_key}"][-1])
 
         return metrics
 

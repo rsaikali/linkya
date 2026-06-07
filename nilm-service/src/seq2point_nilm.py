@@ -185,12 +185,10 @@ class Seq2PointNILMManager:
                         "name": appliance_names[i],
                         "num_signatures": len(all_signatures[appliance_ids[i]]),
                         "metrics": {
-                            "train_mae": metrics.get("train_mae"),
-                            "val_mae": metrics.get("val_mae"),
-                            "train_mse": metrics.get("train_mae", 0) ** 2,
-                            "val_mse": metrics.get("val_mae", 0) ** 2,
-                            "train_loss": metrics.get("train_loss"),
-                            "val_loss": metrics.get("val_loss"),
+                            "train_mae": metrics.get(f"{appliance_names[i]}_train_mae"),
+                            "val_mae": metrics.get(f"{appliance_names[i]}_val_mae"),
+                            "train_loss": metrics.get(f"{appliance_names[i]}_train_loss", metrics.get("train_loss")),
+                            "val_loss": metrics.get(f"{appliance_names[i]}_val_loss", metrics.get("val_loss")),
                             "epochs_trained": metrics.get("epochs_trained"),
                         },
                     }
