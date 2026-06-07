@@ -234,7 +234,7 @@ class PublishRepository:
             avg_conf = conn.execute(
                 text(
                     """
-                    SELECT ROUND(AVG(confidence_score) * 100, 1)
+                    SELECT ROUND(AVG(confidence_score)::numeric * 100, 1)
                     FROM nilm_detections
                     WHERE created_at >= NOW() - INTERVAL '30 days'
                     """
