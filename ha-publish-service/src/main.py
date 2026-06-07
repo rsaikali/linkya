@@ -8,6 +8,7 @@ from loguru import logger
 
 from .config import settings
 from .database import repo
+from .stats_injector import discover_statistic_ids, inject_for_new_detections
 from .discovery import (
     STATS_SENSORS,
     STATS_STATE_TOPIC,
@@ -42,7 +43,20 @@ async def publish_loop(client: aiomqtt.Client):
     stats_announced = False   # lab-diagnostic sensors discovery published once
     binary_cleared = False    # legacy binary_sensor retained topics cleared once
 
+    # numeric stats injection — discovered on first poll, tracked per appliance
+    statistic_ids: dict[str, str] = {}          # ha_entity_id → HA statistic_id
+    last_detection_id: dict[int, int] = {}      # appliance_id → last processed detection id
+    statistic_ids_discovered = False
+
     while True:
+        # ── One-time: discover HA statistic_ids for numeric sensors ──────────
+        if not statistic_ids_discovered:
+            active_now = repo.get_active_appliances()
+            statistic_ids = await discover_statistic_ids(active_now)
+            for a in active_now:
+                last_detection_id.setdefault(a["id"], 0)
+            statistic_ids_discovered = True
+
         # ── One-time cleanup: remove legacy binary_sensor retained topics ─────
         if not binary_cleared:
             for appliance in repo.get_active_appliances():
@@ -124,6 +138,18 @@ async def publish_loop(client: aiomqtt.Client):
             if conf is not None:
                 await client.publish(confidence_state_topic(eid), payload=str(conf))
             logger.debug(f"{eid} | {energy_kwh} kWh | conf={conf}%{' (frozen)' if paused else ''}")
+
+        # ── Inject numeric stats for new detections ───────────────────────
+        for appliance in active:
+            aid = appliance["id"]
+            eid = appliance["ha_entity_id"]
+            sid = statistic_ids.get(eid)
+            if not sid:
+                continue
+            new_dets = repo.get_new_detections(aid, last_detection_id.get(aid, 0))
+            if new_dets:
+                await inject_for_new_detections(aid, eid, sid, new_dets, repo)
+                last_detection_id[aid] = new_dets[-1]["id"]
 
         await asyncio.sleep(settings.poll_interval)
 

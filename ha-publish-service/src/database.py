@@ -1,6 +1,7 @@
 """Read appliances, current state, cumulative energy, and lab stats."""
 
 import json
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
@@ -184,6 +185,47 @@ class PublishRepository:
                 {"id": appliance_id},
             ).scalar()
         return float(val) if val is not None else None
+
+    def get_new_detections(self, appliance_id: int, since_id: int) -> list[dict]:
+        """Detections with id > since_id, ordered chronologically."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, start_time, end_time FROM nilm_detections
+                    WHERE appliance_id = :id AND id > :since_id
+                    ORDER BY id
+                    """
+                ),
+                {"id": appliance_id, "since_id": since_id},
+            ).fetchall()
+
+        def _utc(dt):
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+        return [{"id": r[0], "start": _utc(r[1]), "end": _utc(r[2])} for r in rows]
+
+    def get_detections_in_hour(
+        self, appliance_id: int, h_start: datetime, h_end: datetime
+    ) -> list[tuple[datetime, datetime]]:
+        """All detections overlapping [h_start, h_end) for computing hourly fraction."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT start_time, end_time FROM nilm_detections
+                    WHERE appliance_id = :id
+                      AND start_time < :h_end
+                      AND end_time   > :h_start
+                    """
+                ),
+                {"id": appliance_id, "h_start": h_start, "h_end": h_end},
+            ).fetchall()
+
+        def _utc(dt):
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+        return [(_utc(r[0]), _utc(r[1])) for r in rows]
 
     def get_detections_for_backfill(self, appliance_id: int) -> list[dict]:
         """
