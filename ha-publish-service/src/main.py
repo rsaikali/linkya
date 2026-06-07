@@ -8,7 +8,6 @@ from loguru import logger
 
 from .config import settings
 from .database import repo
-from .stats_injector import discover_statistic_ids, inject_for_new_detections
 from .discovery import (
     STATS_SENSORS,
     STATS_STATE_TOPIC,
@@ -25,6 +24,7 @@ from .discovery import (
     stats_discovery_payload,
     stats_discovery_topic,
 )
+from .stats_injector import discover_statistic_ids, inject_for_new_detections
 
 
 RECONNECT_DELAY = 10
