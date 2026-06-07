@@ -116,6 +116,7 @@ class PublishRepository:
                 text("SELECT baseline, kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
                 {"id": appliance_id},
             ).fetchone()
+            cur_f = float(cur)
             if row is None:
                 # First time: anchor baseline to current sum so MQTT starts at 0.
                 # Historical data must be injected via ha-backfill.
@@ -124,7 +125,6 @@ class PublishRepository:
             else:
                 baseline = float(row[0])
                 prev = float(row[1])
-            cur_f = float(cur)
             if cur_f < baseline:
                 # Total shrank (re-detection with different values, or deleted detections).
                 # Re-anchor so future detections accumulate correctly.
