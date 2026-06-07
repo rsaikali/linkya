@@ -568,6 +568,24 @@ class Seq2PointMultiOutputModel:
         if metadata:
             meta.update(metadata)
 
+        # Persist scaler state so PATH B works after model reload.
+        if self.preprocessor.fitted:
+            meta["scaler_input"] = {
+                "mean_": self.preprocessor.input_scaler.mean_.tolist(),
+                "scale_": self.preprocessor.input_scaler.scale_.tolist(),
+                "var_": self.preprocessor.input_scaler.var_.tolist(),
+                "n_features_in_": int(self.preprocessor.input_scaler.n_features_in_),
+            }
+            meta["scaler_target"] = {
+                "scale_": self.preprocessor.target_scaler.scale_.tolist(),
+                "min_": self.preprocessor.target_scaler.min_.tolist(),
+                "data_min_": self.preprocessor.target_scaler.data_min_.tolist(),
+                "data_max_": self.preprocessor.target_scaler.data_max_.tolist(),
+                "data_range_": self.preprocessor.target_scaler.data_range_.tolist(),
+                "feature_range": list(self.preprocessor.target_scaler.feature_range),
+                "n_features_in_": int(self.preprocessor.target_scaler.n_features_in_),
+            }
+
         meta_path = filepath.replace(".keras", ".metadata.json")
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
@@ -594,3 +612,23 @@ class Seq2PointMultiOutputModel:
             self.appliance_id_to_idx = {int(k): v for k, v in meta["appliance_id_to_idx"].items()}
             self.appliance_idx_to_id = {v: int(k) for k, v in self.appliance_id_to_idx.items()}
             logger.info(f"📋 Métadonnées chargées: {self.num_appliances} appliances")
+
+            # Restore scaler state so PATH B works without re-training.
+            if "scaler_input" in meta:
+                si = meta["scaler_input"]
+                self.preprocessor.input_scaler.mean_ = np.array(si["mean_"])
+                self.preprocessor.input_scaler.scale_ = np.array(si["scale_"])
+                self.preprocessor.input_scaler.var_ = np.array(si["var_"])
+                self.preprocessor.input_scaler.n_features_in_ = si["n_features_in_"]
+                self.preprocessor.input_scaler.n_samples_seen_ = 1
+
+                st = meta["scaler_target"]
+                self.preprocessor.target_scaler.scale_ = np.array(st["scale_"])
+                self.preprocessor.target_scaler.min_ = np.array(st["min_"])
+                self.preprocessor.target_scaler.data_min_ = np.array(st["data_min_"])
+                self.preprocessor.target_scaler.data_max_ = np.array(st["data_max_"])
+                self.preprocessor.target_scaler.data_range_ = np.array(st["data_range_"])
+                self.preprocessor.target_scaler.feature_range = tuple(st["feature_range"])
+                self.preprocessor.target_scaler.n_features_in_ = st["n_features_in_"]
+                self.preprocessor.fitted = True
+                logger.info("Scalers restaurés depuis metadata")
