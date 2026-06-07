@@ -28,6 +28,7 @@ class HAStatesInjector:
         self._meta: dict[str, int] = {}               # entity_id → metadata_id (positive only)
         self._attrs: dict[str, int | None] = {}       # entity_id → attributes_id
         self._has_last_reported: bool | None = None
+        self._last_id: dict[int, int] = {}            # appliance_id → last processed detection id
 
     # ── SQLite helpers ────────────────────────────────────────────────────
 
