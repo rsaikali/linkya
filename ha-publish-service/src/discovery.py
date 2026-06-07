@@ -1,4 +1,4 @@
-"""MQTT discovery payloads for HA — two entities per NILM appliance."""
+"""MQTT discovery payloads for HA — energy + numeric history + confidence per appliance."""
 
 import json
 import re
@@ -26,27 +26,9 @@ def slug(ha_entity_id: str) -> str:
     return s.strip("_")
 
 
-# ── Binary sensor (ON/OFF cycle en cours) ────────────────────────────────────
-
 def binary_discovery_topic(ha_entity_id: str) -> str:
+    """Kept only to publish empty payload on startup (remove legacy retained topic)."""
     return f"{DISCOVERY_PREFIX}/binary_sensor/{slug(ha_entity_id)}/config"
-
-
-def binary_state_topic(ha_entity_id: str) -> str:
-    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/binary_state"
-
-
-def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
-    return json.dumps({
-        "name": f"NILM {name}",
-        "unique_id": f"linkya_{slug(ha_entity_id)}_binary",
-        "state_topic": binary_state_topic(ha_entity_id),
-        "payload_on": "ON",
-        "payload_off": "OFF",
-        "device_class": "running",
-        "icon": "mdi:home-lightning-bolt",
-        "device": _DEVICE,
-    })
 
 
 # ── Energy sensor (kWh cumulatif, total_increasing) ──────────────────────────
