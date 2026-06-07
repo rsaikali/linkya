@@ -3,10 +3,11 @@
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 
 from ..config import settings
 from ..db import db_manager
+from ..ha_backfill import run_ha_backfill
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,38 @@ async def trigger_detection():
     except httpx.HTTPError as e:
         logger.error("nilm /detect failed: %s", e)
         raise HTTPException(status_code=502, detail="Service NILM injoignable")
+
+
+@router.post("/publish")
+async def trigger_publish(background_tasks: BackgroundTasks):
+    """Backfill all NILM detections into HA as historical energy statistics."""
+    if not settings.ha_token:
+        raise HTTPException(status_code=503, detail="HA_TOKEN non configuré")
+
+    appliances = db_manager.get_all_appliances()
+    targets = [a for a in appliances if a.get("ha_publish") and a.get("ha_entity_id")]
+    if not targets:
+        return {"status": "skipped", "reason": "Aucun appareil avec ha_publish actif"}
+
+    async def _do_publish():
+        results = []
+        for appliance in targets:
+            detections = db_manager.get_detections_for_backfill(appliance["id"])
+            if not detections:
+                results.append({"name": appliance["name"], "status": "no_detections"})
+                continue
+            try:
+                result = await run_ha_backfill(settings.ha_url, settings.ha_token, appliance, detections)
+                logger.info("publish %s: %d h → %.3f kWh", appliance["name"],
+                            result.get("hours_injected", 0), result.get("total_kwh", 0.0))
+                results.append({"name": appliance["name"], **result})
+            except Exception as e:
+                logger.error("publish %s failed: %s", appliance["name"], e)
+                results.append({"name": appliance["name"], "status": "error", "error": str(e)})
+        return results
+
+    background_tasks.add_task(_do_publish)
+    return {"status": "started", "appliances": len(targets)}
 
 
 @router.get("/models")

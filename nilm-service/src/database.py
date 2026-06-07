@@ -79,15 +79,15 @@ class DatabaseManager:
             Column("start_time", DateTime(timezone=True), nullable=False),
             Column("end_time", DateTime(timezone=True), nullable=False),
             Column("avg_power", Float),
-            Column("energy_consumed", Float),  # Énergie désagrégée (Wh)
-            Column("confidence_score", Float),  # Score de confiance [0-1]
-            Column("prediction_class", Integer),  # Classe prédite
-            Column("features", JSON),  # Features de la détection
+            Column("energy_consumed", Float),
+            Column("confidence_score", Float),
+            Column("prediction_class", Integer),
+            Column("features", JSON),
+            Column("model_name", String(255), nullable=True),  # model that produced this detection
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
-            # Champs de validation utilisateur pour apprentissage par feedback
-            Column("user_validated", Boolean, default=None, nullable=True),  # NULL = pas encore validée
-            Column("is_correct", Boolean, default=None, nullable=True),  # True = correcte, False = incorrecte
-            Column("validated_at", DateTime(timezone=True), nullable=True),  # Timestamp de validation
+            Column("user_validated", Boolean, default=None, nullable=True),
+            Column("is_correct", Boolean, default=None, nullable=True),
+            Column("validated_at", DateTime(timezone=True), nullable=True),
             Index("idx_nilm_detections_appliance", "appliance_id"),
             Index("idx_nilm_detections_time", "start_time", "end_time"),
             Index("idx_nilm_detections_validation", "user_validated", "is_correct"),
@@ -147,6 +147,9 @@ class DatabaseManager:
                 )
                 conn.execute(
                     text("ALTER TABLE nilm_models ADD COLUMN IF NOT EXISTS is_champion BOOLEAN NOT NULL DEFAULT FALSE")
+                )
+                conn.execute(
+                    text("ALTER TABLE nilm_detections ADD COLUMN IF NOT EXISTS model_name TEXT")
                 )
                 conn.commit()
                 logger.info("Tables NILM créées avec succès")

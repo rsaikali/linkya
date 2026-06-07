@@ -206,88 +206,79 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
             else:
                 start_time = end_time - timedelta(hours=hours)
 
+            full_detect = hours is None
+
             events.emit("detection_start", {"model_name": active_model})
             events_list = nilm_manager.disaggregate(start_time, end_time)
-            if not events_list:
-                events.emit("detection_complete", {"num_detections": 0})
-                return {"status": "success", "num_detections": 0}
 
-            num_saved = num_updated = num_skipped = 0
+            num_saved = num_skipped = 0
             with db_manager.get_session() as session:
+                # Wipe existing detections for the window, then insert fresh ones.
+                # Full detect: wipe ALL detections + reset energy HWM (fresh slate).
+                # Cron: wipe only the time window (don't touch older history).
+                if full_detect:
+                    session.execute(text("DELETE FROM nilm_detections"))
+                    session.execute(text("DELETE FROM ha_energy_hwm"))
+                    logger.info("Full detect: wiped all detections and energy HWM")
+                else:
+                    session.execute(
+                        text("""
+                            DELETE FROM nilm_detections
+                            WHERE start_time < :end AND end_time > :start
+                        """),
+                        {"start": start_time, "end": end_time},
+                    )
+                    logger.info("Cron detect: wiped detections in window [%s, %s]", start_time, end_time)
+
                 for ev in events_list:
                     appliance_id = ev.get("appliance_id")
                     if not appliance_id:
-                        r = session.execute(text("SELECT id FROM nilm_appliances WHERE name = :n LIMIT 1"), {"n": ev["appliance_name"]}).first()
+                        r = session.execute(
+                            text("SELECT id FROM nilm_appliances WHERE name = :n LIMIT 1"),
+                            {"n": ev["appliance_name"]},
+                        ).first()
                         appliance_id = r.id if r else None
                     if not appliance_id:
                         num_skipped += 1
                         continue
 
-                    existing = session.execute(
-                        text(
-                            """
-                            SELECT id, confidence_score FROM nilm_detections
-                            WHERE appliance_id = :aid
-                              AND (:start <= end_time AND :end >= start_time)
-                            ORDER BY confidence_score DESC LIMIT 1
-                            """
-                        ),
-                        {"aid": appliance_id, "start": ev["start_time"], "end": ev["end_time"]},
-                    ).first()
-
-                    features = ev.get("features", {})
-                    if existing:
-                        if float(ev["confidence_score"]) > float(existing.confidence_score):
-                            session.execute(
-                                text(
-                                    """
-                                    UPDATE nilm_detections
-                                    SET start_time=:start, end_time=:end, avg_power=:avg,
-                                        energy_consumed=:energy, confidence_score=:conf,
-                                        prediction_class=:cls, features=:feat, created_at=NOW()
-                                    WHERE id=:id
-                                    """
-                                ),
-                                {
-                                    "id": existing.id, "start": ev["start_time"], "end": ev["end_time"],
-                                    "avg": ev.get("avg_power"), "energy": ev.get("energy_wh", ev.get("energy_consumed")),
-                                    "conf": ev["confidence_score"], "cls": ev.get("prediction_class"),
-                                    "feat": json.dumps(features),
-                                },
-                            )
-                            num_updated += 1
-                        else:
-                            num_skipped += 1
-                    else:
-                        det_id = session.execute(
-                            text(
-                                """
-                                INSERT INTO nilm_detections
-                                (appliance_id, start_time, end_time, avg_power, energy_consumed,
-                                 confidence_score, prediction_class, features, created_at)
-                                VALUES (:aid, :start, :end, :avg, :energy, :conf, :cls, :feat, NOW())
-                                RETURNING id
-                                """
-                            ),
-                            {
-                                "aid": appliance_id, "start": ev["start_time"], "end": ev["end_time"],
-                                "avg": ev.get("avg_power"), "energy": ev.get("energy_wh", ev.get("energy_consumed")),
-                                "conf": ev["confidence_score"], "cls": ev.get("prediction_class"),
-                                "feat": json.dumps(features),
-                            },
-                        ).scalar()
-                        num_saved += 1
-                        events.emit("detection_new", {
-                            "id": det_id, "name": ev["appliance_name"],
-                            "avg_power": ev.get("avg_power"), "confidence_score": ev["confidence_score"],
-                        })
+                    det_id = session.execute(
+                        text("""
+                            INSERT INTO nilm_detections
+                            (appliance_id, start_time, end_time, avg_power, energy_consumed,
+                             confidence_score, prediction_class, features, model_name, created_at)
+                            VALUES (:aid, :start, :end, :avg, :energy, :conf, :cls, :feat, :model, NOW())
+                            RETURNING id
+                        """),
+                        {
+                            "aid": appliance_id,
+                            "start": ev["start_time"],
+                            "end": ev["end_time"],
+                            "avg": ev.get("avg_power"),
+                            "energy": ev.get("energy_wh", ev.get("energy_consumed")),
+                            "conf": ev["confidence_score"],
+                            "cls": ev.get("prediction_class"),
+                            "feat": json.dumps(ev.get("features", {})),
+                            "model": active_model,
+                        },
+                    ).scalar()
+                    num_saved += 1
+                    events.emit("detection_new", {
+                        "id": det_id,
+                        "name": ev["appliance_name"],
+                        "avg_power": ev.get("avg_power"),
+                        "confidence_score": ev["confidence_score"],
+                    })
 
             result = {
-                "status": "success", "num_detections": num_saved, "num_updated": num_updated,
-                "num_skipped": num_skipped, "model_name": active_model,
+                "status": "success",
+                "num_detections": num_saved,
+                "num_skipped": num_skipped,
+                "model_name": active_model,
+                "full_detect": full_detect,
             }
             events.emit("detection_complete", result)
-            logger.info("Detection: %d new, %d updated, %d skipped", num_saved, num_updated, num_skipped)
+            logger.info("Detection: %d saved, %d skipped (full=%s)", num_saved, num_skipped, full_detect)
             return result
 
         except Exception as e:

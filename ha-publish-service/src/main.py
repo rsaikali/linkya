@@ -1,4 +1,4 @@
-"""ha-publish: NILM detections → HA energy + numeric history + confidence sensors + lab stats."""
+"""ha-publish: NILM detections → HA energy + confidence sensors + lab stats."""
 
 import asyncio
 import json
@@ -18,13 +18,10 @@ from .discovery import (
     energy_discovery_payload,
     energy_discovery_topic,
     energy_state_topic,
-    numeric_state_discovery_payload,
     numeric_state_discovery_topic,
-    numeric_state_topic,
     stats_discovery_payload,
     stats_discovery_topic,
 )
-from .stats_injector import discover_statistic_ids, inject_for_new_detections
 
 
 RECONNECT_DELAY = 10
@@ -33,40 +30,28 @@ RECONNECT_DELAY = 10
 async def publish_loop(client: aiomqtt.Client):
     """
     Every poll_interval seconds, per appliance with ha_publish=True:
-    - discovery (energy + numeric history + confidence) once,
+    - discovery (energy + confidence) once,
     - energy kWh (total_increasing, monotonic via high-water-mark),
-    - confidence of last detection,
-    - numeric state fixed at 0 (history via recorder.import_statistics only).
+    - confidence of last detection.
     Plus lab-diagnostic stats sensors on the Linkya NILM device.
+
+    Historical energy backfill is handled by the backend service via WebSocket
+    (recorder/import_statistics) after each full detection run.
     """
     known: set[str] = set()   # ha_entity_ids with discovery already published
     stats_announced = False   # lab-diagnostic sensors discovery published once
-    binary_cleared = False    # legacy binary_sensor retained topics cleared once
-
-    # numeric stats injection — discovered on first poll, tracked per appliance
-    statistic_ids: dict[str, str] = {}          # ha_entity_id → HA statistic_id
-    last_detection_id: dict[int, int] = {}      # appliance_id → last processed detection id
-    statistic_ids_discovered = False
+    legacy_cleared = False    # legacy retained topics cleared once
 
     while True:
-        # ── One-time: discover HA statistic_ids for numeric sensors ──────────
-        if not statistic_ids_discovered:
-            active_now = repo.get_active_appliances()
-            statistic_ids = await discover_statistic_ids(active_now)
-            for a in active_now:
-                last_detection_id.setdefault(a["id"], 0)
-            statistic_ids_discovered = True
-
-        # ── One-time cleanup: remove legacy binary_sensor retained topics ─────
-        if not binary_cleared:
+        # ── One-time cleanup: remove legacy binary_sensor + numeric retained topics ──
+        if not legacy_cleared:
             for appliance in repo.get_active_appliances():
-                await client.publish(
-                    binary_discovery_topic(appliance["ha_entity_id"]),
-                    payload="",
-                    retain=True,
-                )
-            binary_cleared = True
-            logger.info("Legacy binary_sensor discovery topics cleared")
+                eid = appliance["ha_entity_id"]
+                await client.publish(binary_discovery_topic(eid), payload="", retain=True)
+                await client.publish(numeric_state_discovery_topic(eid), payload="", retain=True)
+            legacy_cleared = True
+            logger.info("Legacy binary_sensor and numeric_state discovery topics cleared")
+
         # ── Lab diagnostics (model + detection stats) ─────────────────────
         stats = repo.get_nilm_stats()
         if stats:
@@ -79,7 +64,6 @@ async def publish_loop(client: aiomqtt.Client):
                     )
                 stats_announced = True
                 logger.info("NILM stats sensors announced")
-            # Drop null keys so HA shows 'unknown' instead of the string "None".
             clean = {k: v for k, v in stats.items() if v is not None}
             await client.publish(STATS_STATE_TOPIC, payload=json.dumps(clean), retain=True)
 
@@ -102,19 +86,13 @@ async def publish_loop(client: aiomqtt.Client):
                     payload=confidence_discovery_payload(name, eid),
                     retain=True,
                 )
-                await client.publish(
-                    numeric_state_discovery_topic(eid),
-                    payload=numeric_state_discovery_payload(name, eid),
-                    retain=True,
-                )
-                logger.info(f"Discovery published: {eid} (energy + confidence + numeric)")
+                logger.info(f"Discovery published: {eid} (energy + confidence)")
                 known.add(eid)
 
         # ── Remove discovery for disabled appliances ──────────────────────
         for eid in known - active_ids:
             await client.publish(energy_discovery_topic(eid), payload="", retain=True)
             await client.publish(confidence_discovery_topic(eid), payload="", retain=True)
-            await client.publish(numeric_state_discovery_topic(eid), payload="", retain=True)
             logger.info(f"Discovery removed: {eid}")
         known &= active_ids
 
@@ -126,30 +104,14 @@ async def publish_loop(client: aiomqtt.Client):
         for appliance in active:
             eid = appliance["ha_entity_id"]
             if paused:
-                # Freeze energy at the current HWM — do NOT update it while the user
-                # is experimenting with signatures/detect cycles.  This prevents
-                # artificial detections from inflating the HA Energy Dashboard.
                 energy_kwh = repo.get_frozen_energy_kwh(appliance["id"])
             else:
                 energy_kwh = repo.get_monotonic_energy_kwh(appliance["id"])
             await client.publish(energy_state_topic(eid), payload=str(energy_kwh))
-            await client.publish(numeric_state_topic(eid), payload="0")
             conf = repo.get_last_confidence(appliance["id"])
             if conf is not None:
                 await client.publish(confidence_state_topic(eid), payload=str(conf))
             logger.debug(f"{eid} | {energy_kwh} kWh | conf={conf}%{' (frozen)' if paused else ''}")
-
-        # ── Inject numeric stats for new detections ───────────────────────
-        for appliance in active:
-            aid = appliance["id"]
-            eid = appliance["ha_entity_id"]
-            sid = statistic_ids.get(eid)
-            if not sid:
-                continue
-            new_dets = repo.get_new_detections(aid, last_detection_id.get(aid, 0))
-            if new_dets:
-                await inject_for_new_detections(aid, eid, sid, new_dets, repo)
-                last_detection_id[aid] = new_dets[-1]["id"]
 
         await asyncio.sleep(settings.poll_interval)
 

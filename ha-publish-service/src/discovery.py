@@ -1,4 +1,4 @@
-"""MQTT discovery payloads for HA — energy + numeric history + confidence per appliance."""
+"""MQTT discovery payloads for HA — energy + confidence per appliance."""
 
 import json
 import re
@@ -54,26 +54,10 @@ def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
     })
 
 
-# ── Numeric state sensor per appliance (0/1 — plottable curve) ───────────────
+# ── Legacy: numeric state sensor discovery topic (kept only to clear retained MQTT message) ──
 
 def numeric_state_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_numeric/config"
-
-
-def numeric_state_topic(ha_entity_id: str) -> str:
-    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/numeric_state"
-
-
-def numeric_state_discovery_payload(name: str, ha_entity_id: str) -> str:
-    return json.dumps({
-        "name": f"NILM {name} État",
-        "unique_id": f"linkya_{slug(ha_entity_id)}_numeric",
-        "state_topic": numeric_state_topic(ha_entity_id),
-        "unit_of_measurement": "",
-        "state_class": "measurement",
-        "icon": "mdi:power",
-        "device": _DEVICE,
-    })
 
 
 # ── Confidence sensor per appliance (last detection) ─────────────────────────

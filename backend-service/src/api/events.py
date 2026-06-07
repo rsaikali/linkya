@@ -86,7 +86,8 @@ async def push_event(evt: InternalEvent, background_tasks: BackgroundTasks):
     """
     bus.publish(evt.type, evt.data)
 
-    if evt.type == "detection_complete":
+    # Backfill only after a full detection run (not cron 2h window).
+    if evt.type == "detection_complete" and evt.data.get("full_detect"):
         background_tasks.add_task(_auto_ha_backfill)
 
     return {"ok": True}
