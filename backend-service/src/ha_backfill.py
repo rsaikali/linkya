@@ -33,10 +33,27 @@ def _build_full_hourly_stats(detections: list[dict]) -> list[dict]:
     hourly_add: dict = defaultdict(float)
     for det in detections:
         st = det["start_time"]
+        en = det["end_time"]
         if hasattr(st, "tzinfo") and st.tzinfo is None:
             st = st.replace(tzinfo=timezone.utc)
-        hour = st.replace(minute=0, second=0, microsecond=0)
-        hourly_add[hour] += det["energy_wh"] / 1000.0
+        if hasattr(en, "tzinfo") and en.tzinfo is None:
+            en = en.replace(tzinfo=timezone.utc)
+
+        total_secs = (en - st).total_seconds()
+        energy_kwh = det["energy_wh"] / 1000.0
+
+        if total_secs <= 0:
+            hourly_add[st.replace(minute=0, second=0, microsecond=0)] += energy_kwh
+            continue
+
+        # Split energy proportionally across every hour boundary the cycle spans.
+        cur = st
+        while cur < en:
+            hour_start = cur.replace(minute=0, second=0, microsecond=0)
+            overlap_end = min(en, hour_start + timedelta(hours=1))
+            overlap_secs = (overlap_end - cur).total_seconds()
+            hourly_add[hour_start] += energy_kwh * overlap_secs / total_secs
+            cur = hour_start + timedelta(hours=1)
 
     if not hourly_add:
         return []
