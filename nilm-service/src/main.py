@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from . import jobs
 from .config import settings
