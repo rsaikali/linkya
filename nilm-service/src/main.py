@@ -85,6 +85,42 @@ def add_signature(sig: SignatureIn):
     return jobs.add_signature(sig.appliance_name, sig.start_time, sig.end_time, sig.is_negative, sig.auto_train)
 
 
+@app.get("/models")
+def list_models():
+    with db_manager.engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, model_name, model_type, training_date,
+                       num_signatures, num_classes, metrics,
+                       training_duration_seconds, is_champion
+                FROM nilm_models ORDER BY training_date DESC
+                """
+            )
+        ).fetchall()
+    return {
+        "models": [
+            {
+                "id": r.id,
+                "model_name": r.model_name,
+                "model_type": r.model_type,
+                "training_date": r.training_date.isoformat() if r.training_date else None,
+                "num_signatures": r.num_signatures,
+                "num_classes": r.num_classes,
+                "metrics": r.metrics,
+                "training_duration_seconds": r.training_duration_seconds,
+                "is_champion": bool(r.is_champion),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.post("/models/{model_id}/promote")
+def promote_model(model_id: int):
+    return jobs.promote_model(model_id)
+
+
 @app.post("/models/delete")
 def delete_models():
     return jobs.delete_models()

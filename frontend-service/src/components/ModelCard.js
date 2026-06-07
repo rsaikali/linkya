@@ -1,52 +1,64 @@
 import {
   ModelTraining,
   CheckCircle,
+  EmojiEvents,
 } from "@mui/icons-material";
 import {
   Box,
+  Button,
   Card,
   CardContent,
   CardHeader,
   Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   LinearProgress,
-  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Tooltip,
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
 import api from "../services/api";
-import websocket from "../services/sse";
-import {
-  formatDuration,
-  formatHumanizedDate,
-} from "../utils/dateUtils";
+import websocket, { detectionsWS } from "../services/sse";
+import { formatHumanizedDate } from "../utils/dateUtils";
 import MaterialIcon from "./common/MaterialIcon";
 
 function ModelCard() {
-  const [model, setModel] = useState(null);
+  const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [currentEpoch, setCurrentEpoch] = useState(0);
   const [totalEpochs, setTotalEpochs] = useState(0);
+  const [promoteDialog, setPromoteDialog] = useState({ open: false, model: null });
+  const [promoting, setPromoting] = useState(false);
 
-  const loadModel = useCallback(async () => {
+  const loadModels = useCallback(async () => {
     try {
       const res = await api.get("/api/nilm/models");
-      setModel(res.data.models.length > 0 ? res.data.models[0] : null);
+      setModels(res.data.models || []);
     } catch {
-      setModel(null);
+      setModels([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadModel();
-    const onDeleted = () => loadModel();
+    loadModels();
+    const onDeleted = () => { setModels([]); setLoading(false); };
     window.addEventListener("models-deleted", onDeleted);
     return () => window.removeEventListener("models-deleted", onDeleted);
-  }, [loadModel]);
+  }, [loadModels]);
 
   useEffect(() => {
     const onStart = (data) => {
@@ -63,7 +75,7 @@ function ModelCard() {
     const onComplete = () => {
       setIsTraining(false);
       setTrainingProgress(100);
-      setTimeout(loadModel, 2000);
+      setTimeout(loadModels, 2000);
     };
     websocket.on("training_start", onStart);
     websocket.on("epoch_end", onEpoch);
@@ -73,176 +85,212 @@ function ModelCard() {
       websocket.off("epoch_end", onEpoch);
       websocket.off("training_complete", onComplete);
     };
-  }, [loadModel]);
+  }, [loadModels]);
 
-  const getMetrics = (metricsData) => {
-    if (!metricsData) return null;
+  // Refresh after backfill (detect run) in case a new model was trained
+  useEffect(() => {
+    const onBackfill = () => loadModels();
+    detectionsWS.on("ha_backfill_complete", onBackfill);
+    return () => detectionsWS.off("ha_backfill_complete", onBackfill);
+  }, [loadModels]);
+
+  const champion = models.find((m) => m.is_champion);
+
+  const handlePromote = async () => {
+    if (!promoteDialog.model) return;
+    setPromoting(true);
     try {
-      const parsed = typeof metricsData === "string" ? JSON.parse(metricsData) : metricsData;
-      if (parsed.appliances?.length > 0) {
-        const valLosses = parsed.appliances.map((a) => a.metrics?.val_loss).filter((v) => v != null);
-        const epochs = parsed.appliances.map((a) => a.metrics?.epochs_trained).filter((v) => v != null);
-        return {
-          val_loss: valLosses.length ? valLosses.reduce((s, v) => s + v, 0) / valLosses.length : null,
-          epochs: epochs.length ? Math.max(...epochs) : null,
-        };
-      }
-      return parsed;
+      await api.post(`/api/nilm/models/${promoteDialog.model.id}/promote`);
+      setPromoteDialog({ open: false, model: null });
+      await loadModels();
+    } catch (err) {
+      console.error("promote failed", err);
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  const getMetricsSummary = (model) => {
+    if (!model?.metrics) return null;
+    try {
+      const m = typeof model.metrics === "string" ? JSON.parse(model.metrics) : model.metrics;
+      const apps = m.appliances || [];
+      const valLosses = apps.map((a) => a.metrics?.val_loss).filter((v) => v != null);
+      const epochs = apps.map((a) => a.metrics?.epochs_trained).filter((v) => v != null);
+      return {
+        val_loss: valLosses.length ? (valLosses.reduce((s, v) => s + v, 0) / valLosses.length).toFixed(4) : null,
+        epochs: epochs.length ? Math.max(...epochs) : null,
+      };
     } catch {
       return null;
     }
   };
 
-  const metrics = model ? getMetrics(model.metrics) : null;
-
-  const statusBadge = isTraining ? (
-    <Tooltip title="Entraînement en cours">
-      <Chip
-        icon={<ModelTraining sx={{ fontSize: 14 }} />}
-        label={`${currentEpoch}/${totalEpochs} époques`}
-        size="small"
-        color="primary"
-        sx={{ height: 22, fontSize: "0.7rem" }}
-      />
-    </Tooltip>
-  ) : model ? (
-    <Tooltip title="Modèle actif">
-      <Chip
-        icon={<CheckCircle sx={{ fontSize: 14 }} />}
-        label="Actif"
-        size="small"
-        color="success"
-        sx={{ height: 22, fontSize: "0.7rem" }}
-      />
-    </Tooltip>
-  ) : (
+  const statusChip = isTraining ? (
     <Chip
-      icon={<MaterialIcon sx={{ fontSize: 14 }}>error</MaterialIcon>}
-      label="Aucun modèle"
+      icon={<ModelTraining sx={{ fontSize: 14 }} />}
+      label={`${currentEpoch}/${totalEpochs}`}
       size="small"
-      color="warning"
+      color="primary"
       sx={{ height: 22, fontSize: "0.7rem" }}
     />
+  ) : champion ? (
+    <Chip
+      icon={<CheckCircle sx={{ fontSize: 14 }} />}
+      label="Champion actif"
+      size="small"
+      color="success"
+      sx={{ height: 22, fontSize: "0.7rem" }}
+    />
+  ) : (
+    <Chip label="Aucun modèle" size="small" color="warning" sx={{ height: 22, fontSize: "0.7rem" }} />
   );
 
   return (
-    <Card>
-      <CardHeader
-        avatar={
-          <MaterialIcon sx={{ fontSize: 20, color: "primary.main" }}>
-            cognition
-          </MaterialIcon>
-        }
-        title="Modèle IA"
-        titleTypographyProps={{ variant: "subtitle1", fontWeight: 600 }}
-        subheader={
-          model && !isTraining
-            ? `entraîné ${formatHumanizedDate(model.training_date)}`
-            : isTraining
-            ? "Entraînement en cours..."
-            : "Aucun modèle entraîné"
-        }
-        action={<Box sx={{ pt: 1, pr: 1 }}>{statusBadge}</Box>}
-        sx={{ pb: 0 }}
-      />
+    <>
+      <Card>
+        <CardHeader
+          avatar={
+            <MaterialIcon sx={{ fontSize: 20, color: "primary.main" }}>cognition</MaterialIcon>
+          }
+          title="Modèle IA"
+          titleTypographyProps={{ variant: "subtitle1", fontWeight: 600 }}
+          subheader={
+            isTraining
+              ? `Entraînement en cours — ${Math.round(trainingProgress)}%`
+              : champion
+              ? `Champion : ${champion.model_name} · entraîné ${formatHumanizedDate(champion.training_date)}`
+              : "Aucun modèle entraîné"
+          }
+          action={<Box sx={{ pt: 1, pr: 1 }}>{statusChip}</Box>}
+          sx={{ pb: 0 }}
+        />
 
-      {isTraining && (
-        <Box sx={{ px: 2, pt: 1 }}>
-          <LinearProgress
-            variant="determinate"
-            value={trainingProgress}
-            sx={{ height: 6, borderRadius: 1 }}
-          />
-          <Typography variant="caption" color="primary.main" sx={{ mt: 0.5, display: "block" }}>
-            {Math.round(trainingProgress)}% — époque {currentEpoch}/{totalEpochs}
-          </Typography>
-        </Box>
-      )}
-
-      <CardContent sx={{ pt: 1, pb: "12px !important" }}>
-        {loading && (
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Skeleton variant="rounded" width={80} height={24} />
-            <Skeleton variant="rounded" width={80} height={24} />
-            <Skeleton variant="rounded" width={80} height={24} />
+        {isTraining && (
+          <Box sx={{ px: 2, pt: 1 }}>
+            <LinearProgress
+              variant="determinate"
+              value={trainingProgress}
+              sx={{ height: 6, borderRadius: 1 }}
+            />
+            <Typography variant="caption" color="primary.main" sx={{ mt: 0.5, display: "block" }}>
+              époque {currentEpoch}/{totalEpochs}
+            </Typography>
           </Box>
         )}
 
-        {!loading && !model && !isTraining && (
-          <Typography variant="body2" color="text.secondary">
-            Entraîner le modèle depuis l'onglet Signatures.
-          </Typography>
-        )}
+        <CardContent sx={{ pt: 1, pb: "8px !important" }}>
+          {loading && (
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <CircularProgress size={16} />
+              <Typography variant="caption" color="text.secondary">Chargement…</Typography>
+            </Box>
+          )}
 
-        {!loading && model && (
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-            <StatChip
-              icon="devices"
-              label={`${model.num_classes ?? "?"} appareil${(model.num_classes ?? 0) > 1 ? "s" : ""}`}
-              tooltip="Appareils dans le modèle"
-            />
-            <StatChip
-              icon="database"
-              label={`${model.num_signatures ?? "?"} signatures`}
-              tooltip="Signatures d'entraînement"
-            />
-            {metrics?.val_loss != null && (
-              <StatChip
-                icon="trending_down"
-                label={`val_loss ${metrics.val_loss.toFixed(4)}`}
-                tooltip="Loss de validation (plus bas = meilleur)"
-              />
-            )}
-            {metrics?.epochs != null && (
-              <StatChip
-                icon="autorenew"
-                label={`${metrics.epochs} époques`}
-                tooltip="Époques d'entraînement"
-              />
-            )}
-            {model.training_duration_seconds != null && (
-              <StatChip
-                icon="timer"
-                label={formatDuration(model.training_duration_seconds)}
-                tooltip="Durée d'entraînement"
-              />
-            )}
-            {model.model_type && (
-              <StatChip
-                icon="chip"
-                label={model.model_type}
-                tooltip="Architecture"
-              />
-            )}
-          </Box>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+          {!loading && models.length === 0 && !isTraining && (
+            <Typography variant="body2" color="text.secondary">
+              Entraîner le modèle depuis les Signatures.
+            </Typography>
+          )}
 
-function StatChip({ icon, label, tooltip }) {
-  return (
-    <Tooltip title={tooltip}>
-      <Box
-        sx={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 0.4,
-          px: 0.75,
-          py: 0.25,
-          borderRadius: 1,
-          bgcolor: "action.hover",
-          border: "1px solid",
-          borderColor: "divider",
-        }}
+          {!loading && models.length > 0 && (
+            <TableContainer>
+              <Table size="small" sx={{ "& td, & th": { py: 0.5, px: 1, fontSize: "0.72rem" } }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Modèle</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 600 }}>Appareils</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 600 }}>Sigs</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 600 }}>val_loss</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 600 }}>Époques</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 600 }}>Entraîné</TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {models.map((model) => {
+                    const ms = getMetricsSummary(model);
+                    return (
+                      <TableRow
+                        key={model.id}
+                        sx={{
+                          bgcolor: model.is_champion ? "success.main" : "transparent",
+                          "& td": { color: model.is_champion ? "success.contrastText" : "inherit" },
+                          opacity: model.is_champion ? 1 : 0.75,
+                        }}
+                      >
+                        <TableCell>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                            {model.is_champion && (
+                              <Tooltip title="Champion — modèle utilisé pour la détection">
+                                <EmojiEvents sx={{ fontSize: 14 }} />
+                              </Tooltip>
+                            )}
+                            <Typography variant="caption" sx={{ fontFamily: "monospace", fontSize: "0.68rem" }}>
+                              {model.model_name.replace("linkya_model_", "")}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="center">{model.num_classes ?? "—"}</TableCell>
+                        <TableCell align="center">{model.num_signatures ?? "—"}</TableCell>
+                        <TableCell align="center">{ms?.val_loss ?? "—"}</TableCell>
+                        <TableCell align="center">{ms?.epochs ?? "—"}</TableCell>
+                        <TableCell align="center">{formatHumanizedDate(model.training_date)}</TableCell>
+                        <TableCell align="right">
+                          {!model.is_champion && (
+                            <Tooltip title="Promouvoir comme champion">
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="warning"
+                                sx={{ py: 0, px: 0.75, minWidth: 0, fontSize: "0.65rem", textTransform: "none" }}
+                                onClick={() => setPromoteDialog({ open: true, model })}
+                              >
+                                Promouvoir
+                              </Button>
+                            </Tooltip>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={promoteDialog.open}
+        onClose={() => !promoting && setPromoteDialog({ open: false, model: null })}
+        maxWidth="xs"
+        fullWidth
       >
-        <MaterialIcon sx={{ fontSize: 13, color: "text.secondary" }}>{icon}</MaterialIcon>
-        <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.7rem", lineHeight: 1.4 }}>
-          {label}
-        </Typography>
-      </Box>
-    </Tooltip>
+        <DialogTitle>Promouvoir ce modèle ?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            <strong>{promoteDialog.model?.model_name}</strong> deviendra le champion.
+            La détection utilisera ce modèle immédiatement.{" "}
+            {champion && <>Le champion actuel (<strong>{champion.model_name}</strong>) sera rétrogradé.</>}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPromoteDialog({ open: false, model: null })} disabled={promoting}>
+            Annuler
+          </Button>
+          <Button
+            onClick={handlePromote}
+            variant="contained"
+            color="warning"
+            disabled={promoting}
+            startIcon={promoting ? <CircularProgress size={16} /> : <EmojiEvents />}
+          >
+            {promoting ? "Promotion…" : "Promouvoir"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 

@@ -93,20 +93,20 @@ class DatabaseManager:
             Index("idx_nilm_detections_validation", "user_validated", "is_correct"),
         )
 
-        # Table des modèles NILM (un seul modèle actif à la fois)
         self.nilm_models = Table(
             "nilm_models",
             self.metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("model_name", String(255), unique=True, nullable=False),  # Format: linkya_model_<timestamp>
+            Column("model_name", String(255), unique=True, nullable=False),
             Column("model_type", String(100), default="CNN1D"),
-            Column("architecture", JSON),  # Architecture du modèle
+            Column("architecture", JSON),
             Column("training_date", DateTime(timezone=True), default=datetime.utcnow),
-            Column("num_signatures", Integer),  # Nombre de signatures d'entraînement
-            Column("num_classes", Integer),  # Nombre de classes
-            Column("metrics", JSON),  # Métriques de performance (accuracy, loss, etc.)
+            Column("num_signatures", Integer),
+            Column("num_classes", Integer),
+            Column("metrics", JSON),
             Column("model_path", String(500)),
-            Column("training_duration_seconds", Integer),  # Durée d'entraînement (secondes)
+            Column("training_duration_seconds", Integer),
+            Column("is_champion", Boolean, nullable=False, server_default="false"),
             Index("idx_nilm_models_name", "model_name"),
         )
 
@@ -144,6 +144,9 @@ class DatabaseManager:
                 # Key/value meta (e.g. last_detect_run heartbeat)
                 conn.execute(
                     text("CREATE TABLE IF NOT EXISTS nilm_meta (key TEXT PRIMARY KEY, value TEXT)")
+                )
+                conn.execute(
+                    text("ALTER TABLE nilm_models ADD COLUMN IF NOT EXISTS is_champion BOOLEAN NOT NULL DEFAULT FALSE")
                 )
                 conn.commit()
                 logger.info("Tables NILM créées avec succès")

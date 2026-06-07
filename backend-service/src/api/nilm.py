@@ -44,8 +44,34 @@ async def trigger_detection():
 
 @router.get("/models")
 async def get_models():
-    model = db_manager.get_latest_nilm_model()
-    return {"models": [model], "total": 1} if model else {"models": [], "total": 0}
+    """All trained models, newest first. is_champion flags the active detection model."""
+    try:
+        result = await _get_nilm("/models")
+        return result
+    except httpx.HTTPError:
+        # Fallback to DB if nilm service is down.
+        model = db_manager.get_latest_nilm_model()
+        return {"models": [model] if model else [], "total": 1 if model else 0}
+
+
+@router.post("/models/{model_id}/promote")
+async def promote_model(model_id: int):
+    """Promote a challenger model to champion. Detection uses it immediately."""
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.post(f"{settings.nilm_url}/models/{model_id}/promote")
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.error("nilm /models/%d/promote failed: %s", model_id, e)
+        raise HTTPException(status_code=502, detail="Service NILM injoignable")
+
+
+async def _get_nilm(path: str) -> dict:
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.get(f"{settings.nilm_url}{path}")
+        r.raise_for_status()
+        return r.json()
 
 
 @router.get("/scorecard")

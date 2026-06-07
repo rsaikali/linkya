@@ -28,6 +28,12 @@ LOCAL_TZ = timezone.utc
 # Single shared manager (holds the loaded Keras model in memory).
 nilm_manager = Seq2PointNILMManager()
 
+# Name of the model currently loaded in nilm_manager (for champion-change detection).
+_loaded_model_name: str | None = None
+
+# Keep at most this many models in DB/disk.
+_MAX_MODELS = 5
+
 # Serialize train/detect — TF is not safe to run concurrently in one process.
 _lock = threading.Lock()
 
@@ -104,35 +110,19 @@ def run_training(min_signatures: int = 2) -> dict:
             duration = int(time.time() - start)
             completed_at = datetime.now(LOCAL_TZ)
 
-            # Drop the previous model (single active model policy).
             with db_manager.get_session() as session:
-                for old_id, old_path in session.execute(text("SELECT id, model_path FROM nilm_models")).fetchall():
-                    if old_path and Path(old_path).exists():
-                        try:
-                            Path(old_path).unlink()
-                        except Exception as e:
-                            logger.warning("cannot delete %s: %s", old_path, e)
-                    meta = Path(str(old_path).replace(".keras", ".metadata.json"))
-                    if meta.exists():
-                        try:
-                            meta.unlink()
-                        except Exception:
-                            pass
-                session.execute(text("DELETE FROM nilm_models"))
-                session.commit()
-
-            with db_manager.get_session() as session:
+                # Insert new model as challenger (is_champion=False).
                 session.execute(
                     text(
                         """
                         INSERT INTO nilm_models
                         (model_name, model_type, architecture, training_date,
                          num_signatures, num_classes, metrics, model_path,
-                         training_duration_seconds)
+                         training_duration_seconds, is_champion)
                         VALUES
                         (:model_name, :model_type, cast(:architecture as jsonb),
                          :training_date, :num_signatures, :num_classes,
-                         cast(:metrics as jsonb), :model_path, :duration)
+                         cast(:metrics as jsonb), :model_path, :duration, FALSE)
                         """
                     ),
                     {
@@ -147,6 +137,18 @@ def run_training(min_signatures: int = 2) -> dict:
                         "duration": duration,
                     },
                 )
+                # Auto-promote when no champion exists yet (first model).
+                has_champion = session.execute(
+                    text("SELECT COUNT(*) FROM nilm_models WHERE is_champion=TRUE")
+                ).scalar() or 0
+                if not has_champion:
+                    session.execute(
+                        text("UPDATE nilm_models SET is_champion=TRUE WHERE model_name=:name"),
+                        {"name": model_name},
+                    )
+                    logger.info("Auto-promoted %s as champion (no previous champion)", model_name)
+                # Trim oldest non-champion models beyond _MAX_MODELS.
+                _trim_old_models(session)
                 session.commit()
 
             logger.info("Model %s trained in %ds (%d appliances, %d sigs)", model_name, duration, num_appliances, total_signatures)
@@ -174,16 +176,25 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
         # Heartbeat: marks each detection run (distinct from last detected cycle).
         db_manager.set_meta("last_detect_run", datetime.now(timezone.utc).isoformat())
         try:
+            global _loaded_model_name
             with db_manager.engine.connect() as conn:
-                row = conn.execute(text("SELECT model_name FROM nilm_models ORDER BY training_date DESC LIMIT 1")).first()
+                # Champion first, fallback to latest.
+                row = conn.execute(
+                    text("SELECT model_name FROM nilm_models WHERE is_champion=TRUE LIMIT 1")
+                ).first()
+                if not row:
+                    row = conn.execute(
+                        text("SELECT model_name FROM nilm_models ORDER BY training_date DESC LIMIT 1")
+                    ).first()
                 if not row:
                     return {"status": "skipped", "message": "Aucun modèle disponible"}
                 active_model = row.model_name
 
             model_path = os.path.join(settings.nilm_model_path, f"{active_model}.keras")
-            if nilm_manager.multioutput_model is None:
+            if nilm_manager.multioutput_model is None or _loaded_model_name != active_model:
                 if os.path.exists(model_path):
                     nilm_manager.load_model(model_path)
+                    _loaded_model_name = active_model
                 else:
                     return {"status": "error", "message": f"Fichier modèle introuvable: {model_path}"}
 
@@ -328,6 +339,53 @@ def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, i
     except Exception as e:
         logger.error("add_signature error: %s", e, exc_info=True)
         return {"status": "error", "message": str(e)}
+
+
+def _trim_old_models(session) -> None:
+    """Delete oldest non-champion models when total exceeds _MAX_MODELS."""
+    total = session.execute(text("SELECT COUNT(*) FROM nilm_models")).scalar() or 0
+    excess = total - _MAX_MODELS
+    if excess <= 0:
+        return
+    rows = session.execute(
+        text("SELECT id, model_path FROM nilm_models WHERE is_champion=FALSE ORDER BY training_date ASC LIMIT :n"),
+        {"n": excess},
+    ).fetchall()
+    for row in rows:
+        if row.model_path:
+            for p in (Path(row.model_path), Path(str(row.model_path).replace(".keras", ".metadata.json"))):
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except Exception as e:
+                        logger.warning("cannot delete %s: %s", p, e)
+        session.execute(text("DELETE FROM nilm_models WHERE id=:id"), {"id": row.id})
+    logger.info("Trimmed %d old non-champion model(s)", len(rows))
+
+
+def promote_model(model_id: int) -> dict:
+    """Promote a model to champion. Reloads it immediately for detection."""
+    global _loaded_model_name
+    with _lock:
+        with db_manager.engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT model_name, model_path FROM nilm_models WHERE id=:id"),
+                {"id": model_id},
+            ).first()
+            if not row:
+                return {"status": "error", "message": f"Modèle {model_id} introuvable"}
+            conn.execute(text("UPDATE nilm_models SET is_champion=FALSE"))
+            conn.execute(
+                text("UPDATE nilm_models SET is_champion=TRUE WHERE id=:id"),
+                {"id": model_id},
+            )
+        model_path = os.path.join(settings.nilm_model_path, f"{row.model_name}.keras")
+        if not os.path.exists(model_path):
+            return {"status": "error", "message": f"Fichier modèle introuvable: {model_path}"}
+        nilm_manager.load_model(model_path)
+        _loaded_model_name = row.model_name
+        logger.info("Champion promoted: %s", row.model_name)
+        return {"status": "ok", "champion": row.model_name}
 
 
 def delete_models() -> dict:
