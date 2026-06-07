@@ -141,6 +141,10 @@ function DetectionsList() {
 
   // No need to fetch detections or setup WebSocket - DataContext handles it all
   const totalDetections = visibleDetections.length;
+  const totalKwh = visibleDetections.reduce(
+    (sum, d) => sum + (d.energy_consumed != null ? d.energy_consumed / 1000 : 0),
+    0
+  );
   const error = errors.detections;
 
   const handleValidate = async (detection) => {
@@ -231,9 +235,11 @@ function DetectionsList() {
         <CardHeader
           title="Détections IA d'appareils"
           titleTypographyProps={{ variant: "h5" }}
-          subheader={`${totalDetections} détection${
-            totalDetections !== 1 ? "s" : ""
-          } dans la période visible`}
+          subheader={
+            totalDetections === 0
+              ? "Aucune détection dans la période visible"
+              : `${totalDetections} détection${totalDetections !== 1 ? "s" : ""} · ${totalKwh.toFixed(2)} kWh`
+          }
           avatar={<InsightsIcon />}
         />
 
@@ -574,10 +580,22 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
         }}
       >
         <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-          <Typography variant="body2" component="div">
-            à <strong>{formatTimeOnly(startTime)}</strong> pendant{" "}
-            <strong>{formatDurationMinutes(durationSeconds)}min</strong>
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+            <Typography variant="body2" component="div">
+              à <strong>{formatTimeOnly(startTime)}</strong> pendant{" "}
+              <strong>{formatDurationMinutes(durationSeconds)}min</strong>
+            </Typography>
+            {detection.energy_consumed != null && (
+              <Typography
+                variant="caption"
+                color="primary.main"
+                component="div"
+                sx={{ fontWeight: 600, fontSize: "0.72rem" }}
+              >
+                {(detection.energy_consumed / 1000).toFixed(3)} kWh
+              </Typography>
+            )}
+          </Box>
           <Typography
             variant="caption"
             color="text.secondary"

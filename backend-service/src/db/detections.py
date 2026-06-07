@@ -33,16 +33,8 @@ class DetectionRepository(DatabaseBase):
                 ca.name AS appliance_name,
                 cd.start_time AS detection_start,
                 cd.end_time AS detection_end,
-                (
-                    SELECT AVG(papp)
-                    FROM linky_realtime
-                    WHERE time >= cd.start_time AND time <= cd.end_time
-                ) as avg_power,
-                (
-                    SELECT SUM(papp) / 3600.0
-                    FROM linky_realtime
-                    WHERE time >= cd.start_time AND time <= cd.end_time
-                ) as energy_consumed,
+                cd.avg_power,
+                cd.energy_consumed,
                 cd.confidence_score,
                 cd.prediction_class,
                 cd.features,

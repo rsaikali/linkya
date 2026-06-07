@@ -7,6 +7,7 @@ import ChartsContainer from './components/ChartsContainer';
 import DetectionsList from './components/DetectionsList';
 import SignaturesList from './components/SignaturesList';
 import AppliancesList from './components/AppliancesList';
+import ModelCard from './components/ModelCard';
 import { DataProvider } from './context/DataContext';
 import { ApplianceColorsProvider } from './context/ApplianceColorsContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -36,9 +37,14 @@ function App() {
                   </Box>
                 </Grid>
 
-                {/* Colonne 2 - Graphique (6/12) */}
-                <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <ChartsContainer />
+                {/* Colonne 2 - Graphique + Modèle (6/12) */}
+                <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
+                  <Box sx={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
+                    <ChartsContainer />
+                  </Box>
+                  <Box sx={{ flex: '0 0 auto' }}>
+                    <ModelCard />
+                  </Box>
                 </Grid>
 
                 {/* Colonne 3 - Détections (3/12) */}
