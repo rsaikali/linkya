@@ -293,6 +293,7 @@ class HAStatesInjector:
         self._process(sl, new_dets, baseline, cum_before, energy_meta, attrs_id, binary_meta, False)
         self._last_id[aid] = max(d["id"] for d in new_dets)
 
+
 def _to_ts(dt) -> float:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
