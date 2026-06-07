@@ -1,4 +1,4 @@
-import { Check, Close, MoreVert, Search, SwapHoriz } from "@mui/icons-material";
+import { Check, Close, CloudUpload, MoreVert, Search, SwapHoriz } from "@mui/icons-material";
 import InsightsIcon from "@mui/icons-material/Insights";
 import {
   Alert,
@@ -79,6 +79,7 @@ function DetectionsList() {
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
   const [detectLoading, setDetectLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [hasModel, setHasModel] = useState(false);
 
@@ -221,18 +222,24 @@ function DetectionsList() {
   const handleDetect = async () => {
     setDetectLoading(true);
     try {
-      const response = await api.post("/api/nilm/detect");
-      showNotification(
-        `Détection lancée (Task ID: ${response.data.task_id})`,
-        "success"
-      );
+      await api.post("/api/nilm/detect");
+      showNotification("Détection lancée — résultats dans quelques instants", "success");
     } catch (error) {
-      showNotification(
-        `Erreur: ${error.response?.data?.detail || error.message}`,
-        "error"
-      );
+      showNotification(`Erreur: ${error.response?.data?.detail || error.message}`, "error");
     } finally {
       setDetectLoading(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    setPublishLoading(true);
+    try {
+      await api.post("/api/nilm/publish");
+      showNotification("Publication HA démarrée — l'historique sera injecté en arrière-plan", "info");
+    } catch (error) {
+      showNotification(`Erreur publish: ${error.response?.data?.detail || error.message}`, "error");
+    } finally {
+      setPublishLoading(false);
     }
   };
 
@@ -297,6 +304,22 @@ function DetectionsList() {
                 sx={{ textTransform: "none" }}
               >
                 Détecter les appareils par l'IA
+              </Button>
+            </span>
+          </Tooltip>
+
+          <Tooltip title="Injecter l'historique des détections dans Home Assistant">
+            <span>
+              <Button
+                variant="outlined"
+                size="small"
+                color="primary"
+                startIcon={publishLoading ? <CircularProgress size={16} color="inherit" /> : <CloudUpload />}
+                onClick={handlePublish}
+                disabled={publishLoading || totalDetections === 0}
+                sx={{ textTransform: "none" }}
+              >
+                {publishLoading ? "Publication…" : "Publier dans HA"}
               </Button>
             </span>
           </Tooltip>

@@ -95,9 +95,9 @@ class DatabaseManager:
         """Last N detection cycles with hour and duration, plus peak_hours."""
         return self.detections.get_cycles(appliance_name, limit)
 
-    def get_detected_appliances(self, start_time=None, end_time=None):
+    def get_detected_appliances(self, start_time=None, end_time=None, model_name=None):
         """Get detected appliances."""
-        return self.detections.get_detected_appliances(start_time, end_time)
+        return self.detections.get_detected_appliances(start_time, end_time, model_name)
 
     def delete_detection(self, detection_id):
         """Delete specific detection."""

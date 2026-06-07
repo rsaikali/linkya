@@ -17,6 +17,7 @@ import {
   DialogContentText,
   DialogTitle,
   LinearProgress,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -29,7 +30,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import api from "../services/api";
 import websocket, { detectionsWS } from "../services/sse";
-import { formatHumanizedDate } from "../utils/dateUtils";
+import { formatDateTime, formatDurationMinutes, formatHumanizedDate, formatTimeOnly } from "../utils/dateUtils";
 import MaterialIcon from "./common/MaterialIcon";
 
 function ModelCard() {
@@ -41,6 +42,9 @@ function ModelCard() {
   const [totalEpochs, setTotalEpochs] = useState(0);
   const [promoteDialog, setPromoteDialog] = useState({ open: false, model: null });
   const [promoting, setPromoting] = useState(false);
+  const [detectionsDialog, setDetectionsDialog] = useState({ open: false, model: null });
+  const [modelDetections, setModelDetections] = useState([]);
+  const [detectionsLoading, setDetectionsLoading] = useState(false);
 
   const loadModels = useCallback(async () => {
     try {
@@ -95,6 +99,19 @@ function ModelCard() {
   }, [loadModels]);
 
   const champion = models.find((m) => m.is_champion);
+
+  const handleOpenDetections = async (model) => {
+    setDetectionsDialog({ open: true, model });
+    setDetectionsLoading(true);
+    try {
+      const res = await api.get("/api/detections", { params: { model_name: model.model_name } });
+      setModelDetections(res.data.detections || []);
+    } catch {
+      setModelDetections([]);
+    } finally {
+      setDetectionsLoading(false);
+    }
+  };
 
   const handlePromote = async () => {
     if (!promoteDialog.model) return;
@@ -213,7 +230,10 @@ function ModelCard() {
                     return (
                       <TableRow
                         key={model.id}
+                        hover
+                        onClick={() => handleOpenDetections(model)}
                         sx={{
+                          cursor: "pointer",
                           bgcolor: model.is_champion ? "success.main" : "transparent",
                           "& td": { color: model.is_champion ? "success.contrastText" : "inherit" },
                           opacity: model.is_champion ? 1 : 0.75,
@@ -244,7 +264,7 @@ function ModelCard() {
                                 variant="outlined"
                                 color="warning"
                                 sx={{ py: 0, px: 0.75, minWidth: 0, fontSize: "0.65rem", textTransform: "none" }}
-                                onClick={() => setPromoteDialog({ open: true, model })}
+                                onClick={(e) => { e.stopPropagation(); setPromoteDialog({ open: true, model }); }}
                               >
                                 Promouvoir
                               </Button>
@@ -260,6 +280,79 @@ function ModelCard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog: détections du modèle sélectionné */}
+      <Dialog
+        open={detectionsDialog.open}
+        onClose={() => setDetectionsDialog({ open: false, model: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Détections —{" "}
+          <Typography component="span" sx={{ fontFamily: "monospace", fontSize: "0.85rem" }}>
+            {detectionsDialog.model?.model_name?.replace("linkya_model_", "")}
+          </Typography>
+          {detectionsDialog.model?.is_champion && (
+            <Chip label="Champion" size="small" color="success" sx={{ ml: 1, height: 20, fontSize: "0.65rem" }} />
+          )}
+        </DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          {detectionsLoading && (
+            <Box sx={{ p: 2 }}>
+              {[1, 2, 3].map((i) => <Skeleton key={i} height={40} sx={{ mb: 0.5 }} />)}
+            </Box>
+          )}
+          {!detectionsLoading && modelDetections.length === 0 && (
+            <Box sx={{ p: 3, textAlign: "center" }}>
+              <Typography variant="body2" color="text.secondary">Aucune détection pour ce modèle.</Typography>
+            </Box>
+          )}
+          {!detectionsLoading && modelDetections.length > 0 && (
+            <TableContainer>
+              <Table size="small" sx={{ "& td, & th": { py: 0.5, px: 1.5, fontSize: "0.75rem" } }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Appareil</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Heure</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>Durée</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>kWh</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>Conf.</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {modelDetections.map((d) => {
+                    const start = new Date(d.start_time);
+                    const end = new Date(d.end_time);
+                    const dur = Math.round((end - start) / 1000);
+                    return (
+                      <TableRow key={d.id} hover>
+                        <TableCell>{d.name}</TableCell>
+                        <TableCell>{formatHumanizedDate(start)}</TableCell>
+                        <TableCell>{formatTimeOnly(start)} – {formatTimeOnly(end)}</TableCell>
+                        <TableCell align="right">{formatDurationMinutes(dur)} min</TableCell>
+                        <TableCell align="right">
+                          {d.energy_consumed != null ? (d.energy_consumed / 1000).toFixed(3) : "—"}
+                        </TableCell>
+                        <TableCell align="right">
+                          {d.confidence_score != null ? `${Math.round(d.confidence_score * 100)}%` : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 2 }}>
+            {modelDetections.length} détection{modelDetections.length !== 1 ? "s" : ""}
+          </Typography>
+          <Button onClick={() => setDetectionsDialog({ open: false, model: null })}>Fermer</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={promoteDialog.open}

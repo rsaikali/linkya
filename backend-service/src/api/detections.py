@@ -27,8 +27,8 @@ async def _create_signature(pending: dict):
 
 
 @router.get("")
-async def get_detected_appliances():
-    detections = db_manager.get_detected_appliances(None, None)
+async def get_detected_appliances(model_name: str = None):
+    detections = db_manager.get_detected_appliances(None, None, model_name=model_name)
     return {"total_detections": len(detections), "detections": detections}
 
 

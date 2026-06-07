@@ -14,17 +14,8 @@ logger = logging.getLogger(__name__)
 class DetectionRepository(DatabaseBase):
     """Repository for detection operations."""
 
-    def get_detected_appliances(self, start_time=None, end_time=None):
-        """
-        Retrieves appliances detected by NILM-CNN.
-
-        Args:
-            start_time: Optional start date filter
-            end_time: Optional end date filter
-
-        Returns:
-            List of detections with appliance information
-        """
+    def get_detected_appliances(self, start_time=None, end_time=None, model_name=None):
+        """Detections with optional time and model filters."""
         query = text(
             """
             SELECT
@@ -38,6 +29,7 @@ class DetectionRepository(DatabaseBase):
                 cd.confidence_score,
                 cd.prediction_class,
                 cd.features,
+                cd.model_name,
                 cd.created_at AS detection_created_at,
                 cd.user_validated,
                 cd.is_correct,
@@ -46,15 +38,19 @@ class DetectionRepository(DatabaseBase):
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE (:start_time IS NULL OR cd.start_time >= :start_time)
               AND (:end_time IS NULL OR cd.end_time <= :end_time)
+              AND (:model_name IS NULL OR cd.model_name = :model_name)
               AND (cd.user_validated IS NULL
                    OR cd.user_validated = FALSE
                    OR cd.is_correct = TRUE)
             ORDER BY cd.start_time DESC
-        """
+            """
         )
 
         with self.engine.connect() as conn:
-            result = conn.execute(query, {"start_time": start_time, "end_time": end_time})
+            result = conn.execute(
+                query,
+                {"start_time": start_time, "end_time": end_time, "model_name": model_name},
+            )
             detections = []
             for row in result:
                 m = row._mapping
@@ -68,12 +64,12 @@ class DetectionRepository(DatabaseBase):
                     "energy_consumed": (float(m["energy_consumed"]) if m["energy_consumed"] is not None else None),
                     "confidence_score": (float(m["confidence_score"]) if m["confidence_score"] is not None else None),
                     "prediction_class": (int(m["prediction_class"]) if m["prediction_class"] is not None else None),
+                    "model_name": m["model_name"],
                     "created_at": format_datetime(m["detection_created_at"]),
                     "user_validated": m["user_validated"],
                     "is_correct": m["is_correct"],
                     "validated_at": format_datetime(m["validated_at"]),
                 }
-                # Exposer les features JSON
                 if "features" in m and m["features"] is not None:
                     feat = m["features"]
                     if isinstance(feat, str):
