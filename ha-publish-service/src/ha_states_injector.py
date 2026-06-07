@@ -188,8 +188,8 @@ class HAStatesInjector:
         """Inject energy (per-minute ramps) + binary (on/off) for a detection list."""
         ha_eid = appliance["ha_entity_id"]
         sl = make_slug(ha_eid)
-        energy_eid = f"sensor.nilm_{sl}_energy"
-        binary_eid = f"binary_sensor.nilm_{sl}"
+        energy_eid = f"sensor.{sl}_energy"
+        binary_eid = f"binary_sensor.{sl}"
 
         energy_meta = self._metadata_id(energy_eid)
         binary_meta = self._metadata_id(binary_eid)
