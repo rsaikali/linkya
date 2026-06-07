@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 
 import aiomqtt
 from loguru import logger
@@ -25,6 +26,19 @@ from .discovery import (
 
 
 RECONNECT_DELAY = 10
+
+_states_injector = None
+
+if settings.ha_sqlite_path:
+    if os.path.exists(settings.ha_sqlite_path):
+        try:
+            from .ha_states_injector import HAStatesInjector
+            _states_injector = HAStatesInjector(settings.ha_sqlite_path)
+            logger.info(f"HA states injector enabled: {settings.ha_sqlite_path}")
+        except Exception as e:
+            logger.error(f"Failed to init HA states injector: {e}")
+    else:
+        logger.warning(f"HA_SQLITE_PATH set but file not found: {settings.ha_sqlite_path}")
 
 
 async def publish_loop(client: aiomqtt.Client):
@@ -112,6 +126,17 @@ async def publish_loop(client: aiomqtt.Client):
             if conf is not None:
                 await client.publish(confidence_state_topic(eid), payload=str(conf))
             logger.debug(f"{eid} | {energy_kwh} kWh | conf={conf}%{' (frozen)' if paused else ''}")
+
+        # ── HA SQLite states injection (minute-level history) ─────────────
+        if _states_injector is not None:
+            loop = asyncio.get_running_loop()
+            if not _states_injector.synced:
+                await loop.run_in_executor(None, _states_injector.full_resync)
+            else:
+                for appliance in active:
+                    await loop.run_in_executor(
+                        None, _states_injector.incremental, appliance
+                    )
 
         await asyncio.sleep(settings.poll_interval)
 

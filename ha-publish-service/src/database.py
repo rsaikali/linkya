@@ -168,6 +168,72 @@ class PublishRepository:
             )
         return float(cur)
 
+    def get_energy_baseline_kwh(self, appliance_id: int) -> float | None:
+        """Baseline kWh stored in ha_energy_hwm (set when ha-publish first ran).
+        Returns None when no HWM row exists yet (ha-publish hasn't published yet)."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT baseline FROM ha_energy_hwm WHERE appliance_id = :id"),
+                {"id": appliance_id},
+            ).fetchone()
+        return float(row[0]) if row else None
+
+    def get_all_detections_ordered(self, appliance_id: int) -> list[dict]:
+        """All detections with energy_consumed > 0, oldest first (for full resync)."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, start_time, end_time, energy_consumed
+                    FROM nilm_detections
+                    WHERE appliance_id = :id
+                      AND energy_consumed IS NOT NULL AND energy_consumed > 0
+                    ORDER BY start_time ASC
+                    """
+                ),
+                {"id": appliance_id},
+            ).fetchall()
+        return [
+            {"id": r[0], "start_time": r[1], "end_time": r[2], "energy_wh": float(r[3])}
+            for r in rows
+        ]
+
+    def get_detections_since_id(self, appliance_id: int, min_id: int) -> list[dict]:
+        """Detections with id > min_id, oldest first (for incremental updates)."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, start_time, end_time, energy_consumed
+                    FROM nilm_detections
+                    WHERE appliance_id = :id AND id > :min_id
+                      AND energy_consumed IS NOT NULL AND energy_consumed > 0
+                    ORDER BY start_time ASC
+                    """
+                ),
+                {"id": appliance_id, "min_id": min_id},
+            ).fetchall()
+        return [
+            {"id": r[0], "start_time": r[1], "end_time": r[2], "energy_wh": float(r[3])}
+            for r in rows
+        ]
+
+    def get_cumulative_energy_before_id(self, appliance_id: int, det_id: int) -> float:
+        """Sum of energy_consumed (Wh) for all detections with id < det_id."""
+        with self.engine.connect() as conn:
+            val = conn.execute(
+                text(
+                    """
+                    SELECT COALESCE(SUM(energy_consumed), 0)
+                    FROM nilm_detections
+                    WHERE appliance_id = :id AND id < :det_id
+                      AND energy_consumed IS NOT NULL AND energy_consumed > 0
+                    """
+                ),
+                {"id": appliance_id, "det_id": det_id},
+            ).scalar()
+        return float(val or 0.0)
+
     def get_last_confidence(self, appliance_id: int) -> float | None:
         """Confidence score (0–100 %) of the most recent detection for this appliance."""
         with self.engine.connect() as conn:
