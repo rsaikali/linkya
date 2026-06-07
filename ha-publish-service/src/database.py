@@ -1,7 +1,6 @@
 """Read appliances, current state, cumulative energy, and lab stats."""
 
 import json
-from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
