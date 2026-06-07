@@ -118,10 +118,10 @@ class PublishRepository:
             ).fetchone()
             cur_f = float(cur)
             if row is None:
-                # First time: anchor baseline to current sum so MQTT starts at 0.
-                # Historical data must be injected via ha-backfill.
-                baseline = cur_f
-                prev = 0.0
+                # First time: baseline=0 so MQTT shows full cumulative from day one.
+                # HWM = cur_f so the sensor doesn't spike on the next read.
+                baseline = 0.0
+                prev = cur_f
             else:
                 baseline = float(row[0])
                 prev = float(row[1])
