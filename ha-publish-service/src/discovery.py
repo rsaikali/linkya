@@ -51,10 +51,6 @@ def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
 
 # ── Energy sensor (kWh cumulatif, total_increasing) ──────────────────────────
 
-# Energy: live total_increasing MQTT sensor. The published value is clamped to a
-# persisted high-water-mark (see database.get_monotonic_energy_kwh) so it never
-# decreases — that was the only cause of the earlier reset-jump.
-
 def energy_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_energy/config"
 
@@ -76,23 +72,63 @@ def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
     })
 
 
+# ── Confidence sensor per appliance (last detection) ─────────────────────────
+
+def confidence_discovery_topic(ha_entity_id: str) -> str:
+    return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_confidence/config"
+
+
+def confidence_state_topic(ha_entity_id: str) -> str:
+    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/confidence_state"
+
+
+def confidence_discovery_payload(name: str, ha_entity_id: str) -> str:
+    return json.dumps({
+        "name": f"NILM {name} Confiance",
+        "unique_id": f"linkya_{slug(ha_entity_id)}_confidence",
+        "state_topic": confidence_state_topic(ha_entity_id),
+        "unit_of_measurement": "%",
+        "state_class": "measurement",
+        "icon": "mdi:percent",
+        "device": _DEVICE,
+    })
+
+
 # ── Lab diagnostics (one shared JSON state topic, value_template per sensor) ──
 
 STATS_STATE_TOPIC = f"{STATE_PREFIX}/_stats/state"
 
 # (json_key, friendly name, extra discovery opts)
+# numeric sensors must have state_class so HA plots them as numbers, not text.
 STATS_SENSORS = [
     ("model_version", "NILM Modèle", {"icon": "mdi:tag"}),
     ("model_type", "NILM Architecture", {"icon": "mdi:chip"}),
     ("trained_at", "NILM Entraîné le", {"device_class": "timestamp"}),
-    ("train_duration_s", "NILM Durée entraînement", {"unit_of_measurement": "s", "device_class": "duration", "icon": "mdi:timer"}),
-    ("num_signatures", "NILM Signatures", {"icon": "mdi:draw"}),
-    ("num_appliances", "NILM Appareils", {"icon": "mdi:home-lightning-bolt"}),
-    ("epochs", "NILM Epochs", {"icon": "mdi:counter"}),
-    ("train_loss", "NILM Train loss", {"icon": "mdi:chart-line"}),
-    ("val_loss", "NILM Val loss", {"icon": "mdi:chart-line"}),
-    ("avg_confidence_pct", "NILM Confiance détection (30j)", {"unit_of_measurement": "%", "icon": "mdi:percent"}),
-    ("detections_total", "NILM Détections total", {"icon": "mdi:magnify"}),
+    ("train_duration_s", "NILM Durée entraînement", {
+        "unit_of_measurement": "s", "device_class": "duration",
+        "state_class": "measurement", "icon": "mdi:timer",
+    }),
+    ("num_signatures", "NILM Signatures", {
+        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:draw",
+    }),
+    ("num_appliances", "NILM Appareils", {
+        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:home-lightning-bolt",
+    }),
+    ("epochs", "NILM Epochs", {
+        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:counter",
+    }),
+    ("train_loss", "NILM Train loss", {
+        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:chart-line",
+    }),
+    ("val_loss", "NILM Val loss", {
+        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:chart-line",
+    }),
+    ("avg_confidence_pct", "NILM Confiance détection (30j)", {
+        "unit_of_measurement": "%", "state_class": "measurement", "icon": "mdi:percent",
+    }),
+    ("detections_total", "NILM Détections total", {
+        "unit_of_measurement": "", "state_class": "total_increasing", "icon": "mdi:magnify",
+    }),
     ("last_detection", "NILM Dernier cycle détecté", {"device_class": "timestamp"}),
     ("last_detect_run", "NILM Dernière exécution détection", {"device_class": "timestamp"}),
 ]

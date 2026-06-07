@@ -168,6 +168,23 @@ class PublishRepository:
             )
         return float(cur)
 
+    def get_last_confidence(self, appliance_id: int) -> float | None:
+        """Confidence score (0–100 %) of the most recent detection for this appliance."""
+        with self.engine.connect() as conn:
+            val = conn.execute(
+                text(
+                    """
+                    SELECT ROUND(confidence_score::numeric * 100, 1)
+                    FROM nilm_detections
+                    WHERE appliance_id = :id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ),
+                {"id": appliance_id},
+            ).scalar()
+        return float(val) if val is not None else None
+
     def get_detections_for_backfill(self, appliance_id: int) -> list[dict]:
         """
         All validated detections for this appliance, ordered chronologically.

@@ -14,6 +14,9 @@ from .discovery import (
     binary_discovery_payload,
     binary_discovery_topic,
     binary_state_topic,
+    confidence_discovery_payload,
+    confidence_discovery_topic,
+    confidence_state_topic,
     energy_discovery_payload,
     energy_discovery_topic,
     energy_state_topic,
@@ -72,13 +75,19 @@ async def publish_loop(client: aiomqtt.Client):
                     payload=energy_discovery_payload(name, eid),
                     retain=True,
                 )
-                logger.info(f"Discovery published: {eid} (binary + energy)")
+                await client.publish(
+                    confidence_discovery_topic(eid),
+                    payload=confidence_discovery_payload(name, eid),
+                    retain=True,
+                )
+                logger.info(f"Discovery published: {eid} (binary + energy + confidence)")
                 known.add(eid)
 
         # ── Remove discovery for disabled appliances ──────────────────────
         for eid in known - active_ids:
             await client.publish(binary_discovery_topic(eid), payload="", retain=True)
             await client.publish(energy_discovery_topic(eid), payload="", retain=True)
+            await client.publish(confidence_discovery_topic(eid), payload="", retain=True)
             logger.info(f"Discovery removed: {eid}")
         known &= active_ids
 
@@ -99,7 +108,10 @@ async def publish_loop(client: aiomqtt.Client):
             else:
                 energy_kwh = repo.get_monotonic_energy_kwh(appliance["id"])
             await client.publish(energy_state_topic(eid), payload=str(energy_kwh))
-            logger.debug(f"{eid} → {'ON' if is_active else 'OFF'} | {energy_kwh} kWh{' (frozen)' if paused else ''}")
+            conf = repo.get_last_confidence(appliance["id"])
+            if conf is not None:
+                await client.publish(confidence_state_topic(eid), payload=str(conf))
+            logger.debug(f"{eid} → {'ON' if is_active else 'OFF'} | {energy_kwh} kWh | conf={conf}%{' (frozen)' if paused else ''}")
 
         await asyncio.sleep(settings.poll_interval)
 
