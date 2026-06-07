@@ -200,23 +200,46 @@ class PublishRepository:
         """Lab diagnostics for HA: active model + detection aggregates.
         Returns None when no model has been trained yet."""
         with self.engine.connect() as conn:
+            # Champion first, fallback to latest.
             m = conn.execute(
                 text(
                     """
                     SELECT model_name, model_type, training_date, num_signatures,
                            num_classes, training_duration_seconds, metrics
                     FROM nilm_models
+                    WHERE is_champion = TRUE
                     ORDER BY training_date DESC
                     LIMIT 1
                     """
                 )
             ).fetchone()
             if not m:
+                m = conn.execute(
+                    text(
+                        """
+                        SELECT model_name, model_type, training_date, num_signatures,
+                               num_classes, training_duration_seconds, metrics
+                        FROM nilm_models
+                        ORDER BY training_date DESC
+                        LIMIT 1
+                        """
+                    )
+                ).fetchone()
+            if not m:
                 return None
 
             det = conn.execute(
                 text("SELECT COUNT(*), MAX(created_at) FROM nilm_detections")
             ).fetchone()
+            avg_conf = conn.execute(
+                text(
+                    """
+                    SELECT ROUND(AVG(confidence_score) * 100, 1)
+                    FROM nilm_detections
+                    WHERE created_at >= NOW() - INTERVAL '30 days'
+                    """
+                )
+            ).scalar()
             last_run = conn.execute(
                 text("SELECT value FROM nilm_meta WHERE key = 'last_detect_run'")
             ).scalar()
@@ -238,6 +261,7 @@ class PublishRepository:
             "train_loss": _round(first.get("train_loss")),
             "val_loss": _round(first.get("val_loss")),
             "epochs": first.get("epochs_trained"),
+            "avg_confidence_pct": float(avg_conf) if avg_conf is not None else None,
             "detections_total": det[0] if det else 0,
             "last_detection": _iso(det[1]) if det else None,
             "last_detect_run": last_run,
