@@ -30,6 +30,8 @@ const SSE_EVENTS = [
   "import_progress",
   "import_complete",
   "ha_experiment_mode",
+  "ha_backfill_start",
+  "ha_backfill_complete",
 ];
 
 function ensureSource() {

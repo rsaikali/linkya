@@ -38,7 +38,7 @@ import { useApplianceColors } from "../context/ApplianceColorsContext";
 import { useData } from "../context/DataContext";
 import { useNotification } from "../context/NotificationContext";
 import api, { apiService } from "../services/api";
-import websocket from "../services/sse";
+import websocket, { detectionsWS } from "../services/sse";
 import {
   formatDateTime,
   formatDurationMinutes,
@@ -118,16 +118,37 @@ function DetectionsList() {
       setHasModel(false);
     };
 
+    const handleBackfillComplete = (data) => {
+      const results = data.results || [];
+      const ok = results.filter((r) => r.status === "ok");
+      const err = results.filter((r) => r.status === "error");
+      if (ok.length > 0) {
+        const total = ok.reduce((s, r) => s + (r.total_kwh || 0), 0);
+        showNotification(
+          `HA synchronisé : ${ok.length} appareil(s) · ${total.toFixed(2)} kWh injectés`,
+          "success"
+        );
+      }
+      if (err.length > 0) {
+        showNotification(
+          `Backfill HA échoué pour : ${err.map((r) => r.name).join(", ")}`,
+          "error"
+        );
+      }
+    };
+
     websocket.on("training_start", handleTrainingStart);
     websocket.on("training_complete", handleTrainingComplete);
+    detectionsWS.on("ha_backfill_complete", handleBackfillComplete);
     window.addEventListener("models-deleted", handleModelsDeleted);
 
     return () => {
       websocket.off("training_start", handleTrainingStart);
       websocket.off("training_complete", handleTrainingComplete);
+      detectionsWS.off("ha_backfill_complete", handleBackfillComplete);
       window.removeEventListener("models-deleted", handleModelsDeleted);
     };
-  }, []);
+  }, [showNotification]);
 
   // Initialize colors/icons for all appliances when detections load
   useEffect(() => {

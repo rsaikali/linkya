@@ -2,11 +2,14 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..config import settings
+from ..db import db_manager
 from ..events import bus
+from ..ha_backfill import run_ha_backfill
 
 
 logger = logging.getLogger(__name__)
@@ -35,10 +38,55 @@ class InternalEvent(BaseModel):
     data: dict = {}
 
 
+async def _auto_ha_backfill():
+    """After detection_complete: reinject all NILM detections as historical
+    HA energy statistics for every ha_publish appliance.  Runs as a background
+    task so the /internal/event response is not delayed."""
+    if not settings.ha_token:
+        logger.info("auto-backfill skipped: HA_TOKEN not set")
+        return
+
+    appliances = db_manager.get_all_appliances()
+    targets = [a for a in appliances if a.get("ha_publish") and a.get("ha_entity_id")]
+
+    if not targets:
+        return
+
+    logger.info("auto-backfill: %d appliance(s)", len(targets))
+    bus.publish("ha_backfill_start", {"count": len(targets)})
+
+    results = []
+    for appliance in targets:
+        detections = db_manager.get_detections_for_backfill(appliance["id"])
+        if not detections:
+            logger.info("auto-backfill %s: no detections, skip", appliance["name"])
+            continue
+        try:
+            result = await run_ha_backfill(
+                settings.ha_url, settings.ha_token, appliance, detections
+            )
+            logger.info(
+                "auto-backfill %s: %d h → %.3f kWh",
+                appliance["name"],
+                result.get("hours_injected", 0),
+                result.get("total_kwh", 0.0),
+            )
+            results.append({"name": appliance["name"], **result})
+        except Exception as e:
+            logger.error("auto-backfill %s failed: %s", appliance["name"], e)
+            results.append({"name": appliance["name"], "status": "error", "error": str(e)})
+
+    bus.publish("ha_backfill_complete", {"results": results})
+
+
 @router.post("/internal/event")
-async def push_event(evt: InternalEvent):
+async def push_event(evt: InternalEvent, background_tasks: BackgroundTasks):
     """Internal-only: the nilm service posts training/detection progress here
     so the backend can fan it out over SSE. Reachable only on the Docker network.
     """
     bus.publish(evt.type, evt.data)
+
+    if evt.type == "detection_complete":
+        background_tasks.add_task(_auto_ha_backfill)
+
     return {"ok": True}
