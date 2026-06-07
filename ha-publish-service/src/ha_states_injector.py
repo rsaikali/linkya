@@ -119,50 +119,121 @@ class HAStatesInjector:
                 rows,
             )
 
+    def _insert_state(
+        self,
+        conn: sqlite3.Connection,
+        metadata_id: int,
+        state: str,
+        ts: float,
+        attrs_id: int | None = None,
+    ):
+        if self._has_last_reported:
+            conn.execute(
+                "INSERT INTO states "
+                "(metadata_id, state, last_changed_ts, last_updated_ts, "
+                "last_reported_ts, attributes_id) VALUES (?,?,?,?,?,?)",
+                (metadata_id, state, ts, ts, ts, attrs_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO states "
+                "(metadata_id, state, last_changed_ts, last_updated_ts, "
+                "attributes_id) VALUES (?,?,?,?,?)",
+                (metadata_id, state, ts, ts, attrs_id),
+            )
+
+    def _inject_binary_full(
+        self,
+        conn: sqlite3.Connection,
+        metadata_id: int,
+        detections: list[dict],
+    ):
+        """Full resync for binary sensor: delete entire history, re-insert on/off."""
+        if not detections:
+            return
+        first_ts = _to_ts(detections[0]["start_time"])
+        conn.execute(
+            "DELETE FROM states WHERE metadata_id = ? AND last_changed_ts >= ?",
+            (metadata_id, first_ts - 120),
+        )
+        self._insert_state(conn, metadata_id, "off", first_ts - 60)
+        for det in detections:
+            self._insert_state(conn, metadata_id, "on", _to_ts(det["start_time"]))
+            self._insert_state(conn, metadata_id, "off", _to_ts(det["end_time"]))
+
+    def _inject_binary_cycle(
+        self,
+        conn: sqlite3.Connection,
+        metadata_id: int,
+        start_ts: float,
+        end_ts: float,
+    ):
+        """Incremental: delete window, insert on/off for one cycle."""
+        conn.execute(
+            "DELETE FROM states WHERE metadata_id = ? "
+            "AND last_changed_ts >= ? AND last_changed_ts <= ?",
+            (metadata_id, start_ts - 60, end_ts + 1),
+        )
+        self._insert_state(conn, metadata_id, "on", start_ts)
+        self._insert_state(conn, metadata_id, "off", end_ts)
+
     def _process(
         self,
         appliance: dict,
         detections: list[dict],
         baseline_kwh: float,
         cum_start: float = 0.0,
+        full_binary: bool = False,
     ) -> int:
-        """Inject a list of detections for one appliance, returns cycles injected."""
+        """Inject energy (per-minute ramps) + binary (on/off) for a detection list."""
         ha_eid = appliance["ha_entity_id"]
-        energy_eid = f"sensor.nilm_{make_slug(ha_eid)}_energy"
+        sl = make_slug(ha_eid)
+        energy_eid = f"sensor.nilm_{sl}_energy"
+        binary_eid = f"binary_sensor.nilm_{sl}"
 
-        meta_id = self._metadata_id(energy_eid)
-        if meta_id is None:
-            logger.debug(f"No states_meta for {energy_eid} — MQTT discovery not seen by HA yet")
+        energy_meta = self._metadata_id(energy_eid)
+        binary_meta = self._metadata_id(binary_eid)
+
+        if energy_meta is None and binary_meta is None:
+            logger.debug(f"No states_meta for {energy_eid} or {binary_eid} — skip")
             return 0
 
-        attrs_id = self._attributes_id(energy_eid, meta_id)
+        attrs_id = self._attributes_id(energy_eid, energy_meta) if energy_meta else None
         cum = cum_start
         injected = 0
         try:
             with self._conn() as conn:
                 self._detect_schema(conn)
+
+                if binary_meta and full_binary:
+                    self._inject_binary_full(conn, binary_meta, detections)
+
                 for det in detections:
                     kwh = det["energy_wh"] / 1000.0
-                    kwh_before = max(0.0, cum - baseline_kwh)
-                    kwh_after = max(0.0, cum + kwh - baseline_kwh)
+                    start_ts = _to_ts(det["start_time"])
+                    end_ts = _to_ts(det["end_time"])
+
+                    if energy_meta is not None:
+                        kwh_before = max(0.0, cum - baseline_kwh)
+                        kwh_after = max(0.0, cum + kwh - baseline_kwh)
+                        self._inject_cycle(conn, energy_meta, attrs_id, start_ts, end_ts, kwh_before, kwh_after)
+
+                    if binary_meta is not None and not full_binary:
+                        self._inject_binary_cycle(conn, binary_meta, start_ts, end_ts)
+
                     cum += kwh
-                    self._inject_cycle(
-                        conn,
-                        meta_id,
-                        attrs_id,
-                        _to_ts(det["start_time"]),
-                        _to_ts(det["end_time"]),
-                        kwh_before,
-                        kwh_after,
-                    )
                     injected += 1
         except sqlite3.OperationalError as e:
-            logger.warning(f"HA SQLite locked ({energy_eid}): {e} — will retry next poll")
+            logger.warning(f"HA SQLite locked ({sl}): {e} — will retry next poll")
             return 0
 
         if injected:
             total = round(max(0.0, cum - baseline_kwh), 3)
-            logger.info(f"{energy_eid}: injected {injected} cycles → {total} kWh")
+            logger.info(
+                f"nilm_{sl}: injected {injected} cycles"
+                f"{f' → {total} kWh' if energy_meta else ''}"
+                f"{' + ON/OFF' if binary_meta else ''}"
+            )
         return injected
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -176,7 +247,7 @@ class HAStatesInjector:
                 logger.debug(f"HWM baseline not set for appliance {aid} — run ha-publish loop first")
                 continue
             detections = repo.get_all_detections_ordered(aid)
-            self._process(appliance, detections, baseline)
+            self._process(appliance, detections, baseline, full_binary=True)
             if detections:
                 self._last_id[aid] = max(d["id"] for d in detections)
         self.synced = True

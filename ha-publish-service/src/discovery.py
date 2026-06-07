@@ -27,8 +27,24 @@ def slug(ha_entity_id: str) -> str:
 
 
 def binary_discovery_topic(ha_entity_id: str) -> str:
-    """Kept only to publish empty payload on startup (remove legacy retained topic)."""
     return f"{DISCOVERY_PREFIX}/binary_sensor/{slug(ha_entity_id)}/config"
+
+
+def binary_state_topic(ha_entity_id: str) -> str:
+    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/binary_state"
+
+
+def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
+    return json.dumps({
+        "name": f"NILM {name}",
+        "unique_id": f"linkya_{slug(ha_entity_id)}_state",
+        "state_topic": binary_state_topic(ha_entity_id),
+        "payload_on": "on",
+        "payload_off": "off",
+        "device_class": "running",
+        "icon": "mdi:washing-machine",
+        "device": _DEVICE,
+    })
 
 
 # ── Energy sensor (kWh cumulatif, total_increasing) ──────────────────────────

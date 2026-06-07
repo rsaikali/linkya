@@ -12,7 +12,9 @@ from .database import repo
 from .discovery import (
     STATS_SENSORS,
     STATS_STATE_TOPIC,
+    binary_discovery_payload,
     binary_discovery_topic,
+    binary_state_topic,
     confidence_discovery_payload,
     confidence_discovery_topic,
     confidence_state_topic,
@@ -57,14 +59,13 @@ async def publish_loop(client: aiomqtt.Client):
     legacy_cleared = False    # legacy retained topics cleared once
 
     while True:
-        # ── One-time cleanup: remove legacy binary_sensor + numeric retained topics ──
+        # ── One-time cleanup: remove legacy numeric_state retained topic ──
         if not legacy_cleared:
             for appliance in repo.get_active_appliances():
                 eid = appliance["ha_entity_id"]
-                await client.publish(binary_discovery_topic(eid), payload="", retain=True)
                 await client.publish(numeric_state_discovery_topic(eid), payload="", retain=True)
             legacy_cleared = True
-            logger.info("Legacy binary_sensor and numeric_state discovery topics cleared")
+            logger.info("Legacy numeric_state discovery topics cleared")
 
         # ── Lab diagnostics (model + detection stats) ─────────────────────
         stats = repo.get_nilm_stats()
@@ -91,6 +92,11 @@ async def publish_loop(client: aiomqtt.Client):
 
             if eid not in known:
                 await client.publish(
+                    binary_discovery_topic(eid),
+                    payload=binary_discovery_payload(name, eid),
+                    retain=True,
+                )
+                await client.publish(
                     energy_discovery_topic(eid),
                     payload=energy_discovery_payload(name, eid),
                     retain=True,
@@ -100,11 +106,12 @@ async def publish_loop(client: aiomqtt.Client):
                     payload=confidence_discovery_payload(name, eid),
                     retain=True,
                 )
-                logger.info(f"Discovery published: {eid} (energy + confidence)")
+                logger.info(f"Discovery published: {eid} (binary + energy + confidence)")
                 known.add(eid)
 
         # ── Remove discovery for disabled appliances ──────────────────────
         for eid in known - active_ids:
+            await client.publish(binary_discovery_topic(eid), payload="", retain=True)
             await client.publish(energy_discovery_topic(eid), payload="", retain=True)
             await client.publish(confidence_discovery_topic(eid), payload="", retain=True)
             logger.info(f"Discovery removed: {eid}")
@@ -121,11 +128,16 @@ async def publish_loop(client: aiomqtt.Client):
                 energy_kwh = repo.get_frozen_energy_kwh(appliance["id"])
             else:
                 energy_kwh = repo.get_monotonic_energy_kwh(appliance["id"])
+            is_on = repo.is_currently_active(appliance["id"])
+            await client.publish(binary_state_topic(eid), payload="on" if is_on else "off")
             await client.publish(energy_state_topic(eid), payload=str(energy_kwh))
             conf = repo.get_last_confidence(appliance["id"])
             if conf is not None:
                 await client.publish(confidence_state_topic(eid), payload=str(conf))
-            logger.debug(f"{eid} | {energy_kwh} kWh | conf={conf}%{' (frozen)' if paused else ''}")
+            logger.debug(
+                f"{eid} | {'ON' if is_on else 'off'} | {energy_kwh} kWh"
+                f" | conf={conf}%{' (frozen)' if paused else ''}"
+            )
 
         # ── HA SQLite states injection (minute-level history) ─────────────
         if _states_injector is not None:
