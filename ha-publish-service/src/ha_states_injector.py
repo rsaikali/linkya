@@ -1,19 +1,18 @@
-"""Inject NILM detection cycles into HA SQLite states as per-minute energy ramps.
+"""Inject NILM detection cycles into HA SQLite states as per-minute energy ramps
+and exact ON/OFF binary transitions.
 
-Each detection cycle [start_time, end_time] becomes ~N minute-level state rows
-for the energy sensor (sensor.nilm_<slug>_energy).  Values form a linear ramp
-(slope) from the cumulative kWh just before the cycle to the cumulative kWh
-just after — matching the baseline-adjusted scale that ha-publish sends via MQTT.
+Entity_ids are resolved from HA's entity registry JSON by unique_id (which we
+control via MQTT discovery payloads) — never computed from a slug pattern, since
+HA may assign arbitrary entity_ids depending on name collisions, areas, etc.
 
-Existing HA states inside each cycle window are deleted first (idempotent).
-The History panel in HA will then show slopes instead of flat-line + step.
-
-Requires HA_SQLITE_PATH to be set to the HA database path (mounted volume).
+Requires HA_SQLITE_PATH pointing to home-assistant_v2.db (mounted volume).
 Feature is silently disabled when the variable is empty or the file is absent.
 """
 
+import json
 import sqlite3
 from datetime import timezone
+from pathlib import Path
 
 from loguru import logger
 
@@ -24,13 +23,13 @@ from .discovery import slug as make_slug
 class HAStatesInjector:
     def __init__(self, sqlite_path: str):
         self.path = sqlite_path
-        self.synced = False                         # True after first full_resync completes
-        self._meta: dict[str, int | None] = {}     # entity_id → metadata_id
-        self._attrs: dict[str, int | None] = {}    # entity_id → attributes_id
+        self.synced = False
+        self._uid_to_eid: dict[str, str] = {}         # unique_id → real HA entity_id
+        self._meta: dict[str, int] = {}               # entity_id → metadata_id (positive only)
+        self._attrs: dict[str, int | None] = {}       # entity_id → attributes_id
         self._has_last_reported: bool | None = None
-        self._last_id: dict[int, int] = {}         # appliance_id → last processed detection id
 
-    # ── SQLite connection ─────────────────────────────────────────────────
+    # ── SQLite helpers ────────────────────────────────────────────────────
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=30)
@@ -43,11 +42,30 @@ class HAStatesInjector:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(states)")}
         self._has_last_reported = "last_reported_ts" in cols
 
-    # ── HA metadata helpers ───────────────────────────────────────────────
+    # ── Entity registry (unique_id → real entity_id) ──────────────────────
+
+    def _load_entity_registry(self):
+        """Read HA entity registry JSON and build unique_id → entity_id map."""
+        reg_path = Path(self.path).parent / ".storage" / "core.entity_registry"
+        try:
+            with open(reg_path) as f:
+                reg = json.load(f)
+            self._uid_to_eid = {
+                e["unique_id"]: e["entity_id"]
+                for e in reg["data"]["entities"]
+                if "unique_id" in e and "entity_id" in e
+            }
+            logger.debug(f"Entity registry loaded: {len(self._uid_to_eid)} entries")
+        except Exception as e:
+            logger.warning(f"Could not read HA entity registry: {e}")
+
+    def _eid(self, unique_id: str) -> str | None:
+        return self._uid_to_eid.get(unique_id)
+
+    # ── states_meta lookup ────────────────────────────────────────────────
 
     def _metadata_id(self, entity_id: str) -> int | None:
-        # Only cache positive hits — None means HA hasn't seen the entity yet,
-        # so we must retry on every call until it appears in states_meta.
+        """Only cache positive hits — None forces a re-query next call."""
         if entity_id in self._meta:
             return self._meta[entity_id]
         with self._conn() as conn:
@@ -61,7 +79,6 @@ class HAStatesInjector:
         return None
 
     def _attributes_id(self, entity_id: str, metadata_id: int) -> int | None:
-        """Reuse the attributes blob from the most recent live state for this entity."""
         if entity_id in self._attrs:
             return self._attrs[entity_id]
         with self._conn() as conn:
@@ -75,187 +92,158 @@ class HAStatesInjector:
         self._attrs[entity_id] = result
         return result
 
-    # ── Core injection ────────────────────────────────────────────────────
+    # ── Core state insertion ──────────────────────────────────────────────
 
-    def _inject_cycle(
-        self,
-        conn: sqlite3.Connection,
-        metadata_id: int,
-        attrs_id: int | None,
-        start_ts: float,
-        end_ts: float,
-        kwh_before: float,
-        kwh_after: float,
-    ):
-        """Delete + re-insert per-minute states for one detection cycle."""
-        conn.execute(
-            "DELETE FROM states WHERE metadata_id = ? "
-            "AND last_changed_ts >= ? AND last_changed_ts <= ?",
-            (metadata_id, start_ts, end_ts),
-        )
-
-        duration = max(end_ts - start_ts, 1.0)
-        delta = kwh_after - kwh_before
-        rows = []
-        t = start_ts
-        while t <= end_ts + 0.5:
-            frac = min(1.0, (t - start_ts) / duration)
-            val = str(round(kwh_before + frac * delta, 4))
-            if self._has_last_reported:
-                rows.append((metadata_id, val, t, t, t, attrs_id))
-            else:
-                rows.append((metadata_id, val, t, t, attrs_id))
-            t += 60.0
-
-        if self._has_last_reported:
-            conn.executemany(
-                "INSERT INTO states "
-                "(metadata_id, state, last_changed_ts, last_updated_ts, "
-                "last_reported_ts, attributes_id) VALUES (?,?,?,?,?,?)",
-                rows,
-            )
-        else:
-            conn.executemany(
-                "INSERT INTO states "
-                "(metadata_id, state, last_changed_ts, last_updated_ts, "
-                "attributes_id) VALUES (?,?,?,?,?)",
-                rows,
-            )
-
-    def _insert_state(
-        self,
-        conn: sqlite3.Connection,
-        metadata_id: int,
-        state: str,
-        ts: float,
-        attrs_id: int | None = None,
-    ):
+    def _insert_state(self, conn, metadata_id, state, ts, attrs_id=None):
         if self._has_last_reported:
             conn.execute(
-                "INSERT INTO states "
-                "(metadata_id, state, last_changed_ts, last_updated_ts, "
-                "last_reported_ts, attributes_id) VALUES (?,?,?,?,?,?)",
+                "INSERT INTO states (metadata_id, state, last_changed_ts, "
+                "last_updated_ts, last_reported_ts, attributes_id) VALUES (?,?,?,?,?,?)",
                 (metadata_id, state, ts, ts, ts, attrs_id),
             )
         else:
             conn.execute(
-                "INSERT INTO states "
-                "(metadata_id, state, last_changed_ts, last_updated_ts, "
-                "attributes_id) VALUES (?,?,?,?,?)",
+                "INSERT INTO states (metadata_id, state, last_changed_ts, "
+                "last_updated_ts, attributes_id) VALUES (?,?,?,?,?)",
                 (metadata_id, state, ts, ts, attrs_id),
             )
 
-    def _inject_binary_full(
-        self,
-        conn: sqlite3.Connection,
-        metadata_id: int,
-        detections: list[dict],
-    ):
-        """Full resync for binary sensor: delete entire history, re-insert on/off."""
+    # ── Energy injection (per-minute ramp) ───────────────────────────────
+
+    def _inject_energy_cycle(self, conn, meta_id, attrs_id, start_ts, end_ts, kwh_before, kwh_after):
+        conn.execute(
+            "DELETE FROM states WHERE metadata_id = ? "
+            "AND last_changed_ts >= ? AND last_changed_ts <= ?",
+            (meta_id, start_ts, end_ts),
+        )
+        duration = max(end_ts - start_ts, 1.0)
+        t = start_ts
+        rows = []
+        while t <= end_ts + 0.5:
+            frac = min(1.0, (t - start_ts) / duration)
+            val = str(round(kwh_before + frac * (kwh_after - kwh_before), 4))
+            if self._has_last_reported:
+                rows.append((meta_id, val, t, t, t, attrs_id))
+            else:
+                rows.append((meta_id, val, t, t, attrs_id))
+            t += 60.0
+        if self._has_last_reported:
+            conn.executemany(
+                "INSERT INTO states (metadata_id, state, last_changed_ts, "
+                "last_updated_ts, last_reported_ts, attributes_id) VALUES (?,?,?,?,?,?)",
+                rows,
+            )
+        else:
+            conn.executemany(
+                "INSERT INTO states (metadata_id, state, last_changed_ts, "
+                "last_updated_ts, attributes_id) VALUES (?,?,?,?,?)",
+                rows,
+            )
+
+    # ── Binary injection (on/off) ─────────────────────────────────────────
+
+    def _inject_binary_full(self, conn, meta_id, detections):
         if not detections:
             return
         first_ts = _to_ts(detections[0]["start_time"])
         conn.execute(
             "DELETE FROM states WHERE metadata_id = ? AND last_changed_ts >= ?",
-            (metadata_id, first_ts - 120),
+            (meta_id, first_ts - 120),
         )
-        self._insert_state(conn, metadata_id, "off", first_ts - 60)
+        self._insert_state(conn, meta_id, "off", first_ts - 60)
         for det in detections:
-            self._insert_state(conn, metadata_id, "on", _to_ts(det["start_time"]))
-            self._insert_state(conn, metadata_id, "off", _to_ts(det["end_time"]))
+            self._insert_state(conn, meta_id, "on", _to_ts(det["start_time"]))
+            self._insert_state(conn, meta_id, "off", _to_ts(det["end_time"]))
 
-    def _inject_binary_cycle(
-        self,
-        conn: sqlite3.Connection,
-        metadata_id: int,
-        start_ts: float,
-        end_ts: float,
-    ):
-        """Incremental: delete window, insert on/off for one cycle."""
+    def _inject_binary_cycle(self, conn, meta_id, start_ts, end_ts):
         conn.execute(
             "DELETE FROM states WHERE metadata_id = ? "
             "AND last_changed_ts >= ? AND last_changed_ts <= ?",
-            (metadata_id, start_ts - 60, end_ts + 1),
+            (meta_id, start_ts - 60, end_ts + 1),
         )
-        self._insert_state(conn, metadata_id, "on", start_ts)
-        self._insert_state(conn, metadata_id, "off", end_ts)
+        self._insert_state(conn, meta_id, "on", start_ts)
+        self._insert_state(conn, meta_id, "off", end_ts)
+
+    # ── Per-appliance processing ──────────────────────────────────────────
 
     def _process(
         self,
-        appliance: dict,
+        label: str,
         detections: list[dict],
         baseline_kwh: float,
-        cum_start: float = 0.0,
-        full_binary: bool = False,
+        cum_start: float,
+        energy_meta: int | None,
+        attrs_id: int | None,
+        binary_meta: int | None,
+        full_binary: bool,
     ) -> int:
-        """Inject energy (per-minute ramps) + binary (on/off) for a detection list."""
-        ha_eid = appliance["ha_entity_id"]
-        sl = make_slug(ha_eid)
-        energy_eid = f"sensor.{sl}_energy"
-        binary_eid = f"binary_sensor.{sl}"
-
-        energy_meta = self._metadata_id(energy_eid)
-        binary_meta = self._metadata_id(binary_eid)
-
-        if energy_meta is None and binary_meta is None:
-            logger.debug(f"No states_meta for {energy_eid} or {binary_eid} — skip")
-            return 0
-
-        attrs_id = self._attributes_id(energy_eid, energy_meta) if energy_meta else None
         cum = cum_start
         injected = 0
         try:
             with self._conn() as conn:
                 self._detect_schema(conn)
-
                 if binary_meta and full_binary:
                     self._inject_binary_full(conn, binary_meta, detections)
-
                 for det in detections:
                     kwh = det["energy_wh"] / 1000.0
                     start_ts = _to_ts(det["start_time"])
                     end_ts = _to_ts(det["end_time"])
-
                     if energy_meta is not None:
-                        kwh_before = max(0.0, cum - baseline_kwh)
-                        kwh_after = max(0.0, cum + kwh - baseline_kwh)
-                        self._inject_cycle(conn, energy_meta, attrs_id, start_ts, end_ts, kwh_before, kwh_after)
-
+                        self._inject_energy_cycle(
+                            conn, energy_meta, attrs_id, start_ts, end_ts,
+                            max(0.0, cum - baseline_kwh),
+                            max(0.0, cum + kwh - baseline_kwh),
+                        )
                     if binary_meta is not None and not full_binary:
                         self._inject_binary_cycle(conn, binary_meta, start_ts, end_ts)
-
                     cum += kwh
                     injected += 1
         except sqlite3.OperationalError as e:
-            logger.warning(f"HA SQLite locked ({sl}): {e} — will retry next poll")
+            logger.warning(f"HA SQLite locked ({label}): {e} — will retry next poll")
             return 0
 
         if injected:
-            total = round(max(0.0, cum - baseline_kwh), 3)
-            logger.info(
-                f"nilm_{sl}: injected {injected} cycles"
-                f"{f' → {total} kWh' if energy_meta else ''}"
-                f"{' + ON/OFF' if binary_meta else ''}"
-            )
+            parts = []
+            if energy_meta:
+                parts.append(f"{round(max(0.0, cum - baseline_kwh), 3)} kWh")
+            if binary_meta:
+                parts.append("ON/OFF")
+            logger.info(f"{label}: injected {injected} cycles — {', '.join(parts)}")
         return injected
 
     # ── Public API ────────────────────────────────────────────────────────
 
     def full_resync(self):
-        """Process all detections for all active appliances.
-        Retried every poll until HA has registered all entities in states_meta
-        (HA processes MQTT discovery asynchronously — may take several seconds)."""
+        """Inject all detections for all active appliances.
+        Retried every poll until HA's entity registry has all expected entries."""
+        self._load_entity_registry()
+
         all_ready = True
         for appliance in repo.get_active_appliances():
             aid = appliance["id"]
-            ha_eid = appliance["ha_entity_id"]
-            sl = make_slug(ha_eid)
+            sl = make_slug(appliance["ha_entity_id"])
+            label = sl
 
-            energy_meta = self._metadata_id(f"sensor.{sl}_energy")
-            binary_meta = self._metadata_id(f"binary_sensor.{sl}")
-            if energy_meta is None or binary_meta is None:
+            energy_uid = f"linkya_{sl}_energy"
+            binary_uid = f"linkya_{sl}_state"
+            energy_eid = self._eid(energy_uid)
+            binary_eid = self._eid(binary_uid)
+
+            if not energy_eid or not binary_eid:
                 logger.debug(
-                    f"nilm_{sl}: states_meta not ready yet "
+                    f"{label}: entity registry not ready "
+                    f"(energy={'ok' if energy_eid else 'missing'}, "
+                    f"binary={'ok' if binary_eid else 'missing'}) — retry next poll"
+                )
+                all_ready = False
+                continue
+
+            energy_meta = self._metadata_id(energy_eid)
+            binary_meta = self._metadata_id(binary_eid)
+
+            if not energy_meta or not binary_meta:
+                logger.debug(
+                    f"{label}: states_meta not ready "
                     f"(energy={'ok' if energy_meta else 'missing'}, "
                     f"binary={'ok' if binary_meta else 'missing'}) — retry next poll"
                 )
@@ -264,12 +252,13 @@ class HAStatesInjector:
 
             baseline = repo.get_energy_baseline_kwh(aid)
             if baseline is None:
-                logger.debug(f"HWM baseline not set for appliance {aid} — retry next poll")
+                logger.debug(f"{label}: HWM baseline not set — retry next poll")
                 all_ready = False
                 continue
 
+            attrs_id = self._attributes_id(energy_eid, energy_meta)
             detections = repo.get_all_detections_ordered(aid)
-            self._process(appliance, detections, baseline, full_binary=True)
+            self._process(label, detections, baseline, 0.0, energy_meta, attrs_id, binary_meta, True)
             if detections:
                 self._last_id[aid] = max(d["id"] for d in detections)
 
@@ -278,8 +267,18 @@ class HAStatesInjector:
             logger.info("HA states injector: full resync complete")
 
     def incremental(self, appliance: dict):
-        """Inject new detections since last seen.  Called every poll."""
+        """Inject new detections since last seen — called every poll."""
         aid = appliance["id"]
+        sl = make_slug(appliance["ha_entity_id"])
+
+        energy_eid = self._eid(f"linkya_{sl}_energy")
+        binary_eid = self._eid(f"linkya_{sl}_state")
+        energy_meta = self._metadata_id(energy_eid) if energy_eid else None
+        binary_meta = self._metadata_id(binary_eid) if binary_eid else None
+
+        if not energy_meta and not binary_meta:
+            return
+
         baseline = repo.get_energy_baseline_kwh(aid)
         if baseline is None:
             return
@@ -289,11 +288,10 @@ class HAStatesInjector:
         if not new_dets:
             return
 
-        # Cumulative energy of all earlier detections (to compute correct kwh_before).
         cum_before = repo.get_cumulative_energy_before_id(aid, new_dets[0]["id"])
-        self._process(appliance, new_dets, baseline, cum_start=cum_before)
+        attrs_id = self._attributes_id(energy_eid, energy_meta) if energy_meta and energy_eid else None
+        self._process(sl, new_dets, baseline, cum_before, energy_meta, attrs_id, binary_meta, False)
         self._last_id[aid] = max(d["id"] for d in new_dets)
-
 
 def _to_ts(dt) -> float:
     if dt.tzinfo is None:
