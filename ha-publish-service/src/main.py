@@ -20,6 +20,9 @@ from .discovery import (
     energy_discovery_payload,
     energy_discovery_topic,
     energy_state_topic,
+    numeric_state_discovery_payload,
+    numeric_state_discovery_topic,
+    numeric_state_topic,
     stats_discovery_payload,
     stats_discovery_topic,
 )
@@ -80,7 +83,12 @@ async def publish_loop(client: aiomqtt.Client):
                     payload=confidence_discovery_payload(name, eid),
                     retain=True,
                 )
-                logger.info(f"Discovery published: {eid} (binary + energy + confidence)")
+                await client.publish(
+                    numeric_state_discovery_topic(eid),
+                    payload=numeric_state_discovery_payload(name, eid),
+                    retain=True,
+                )
+                logger.info(f"Discovery published: {eid} (binary + energy + confidence + numeric)")
                 known.add(eid)
 
         # ── Remove discovery for disabled appliances ──────────────────────
@@ -88,6 +96,7 @@ async def publish_loop(client: aiomqtt.Client):
             await client.publish(binary_discovery_topic(eid), payload="", retain=True)
             await client.publish(energy_discovery_topic(eid), payload="", retain=True)
             await client.publish(confidence_discovery_topic(eid), payload="", retain=True)
+            await client.publish(numeric_state_discovery_topic(eid), payload="", retain=True)
             logger.info(f"Discovery removed: {eid}")
         known &= active_ids
 
@@ -100,6 +109,7 @@ async def publish_loop(client: aiomqtt.Client):
             eid = appliance["ha_entity_id"]
             is_active = repo.is_currently_active(appliance["id"])
             await client.publish(binary_state_topic(eid), payload="ON" if is_active else "OFF")
+            await client.publish(numeric_state_topic(eid), payload="1" if is_active else "0")
             if paused:
                 # Freeze energy at the current HWM — do NOT update it while the user
                 # is experimenting with signatures/detect cycles.  This prevents
