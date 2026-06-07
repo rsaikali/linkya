@@ -46,6 +46,8 @@ class HAStatesInjector:
     # ── HA metadata helpers ───────────────────────────────────────────────
 
     def _metadata_id(self, entity_id: str) -> int | None:
+        # Only cache positive hits — None means HA hasn't seen the entity yet,
+        # so we must retry on every call until it appears in states_meta.
         if entity_id in self._meta:
             return self._meta[entity_id]
         with self._conn() as conn:
@@ -53,9 +55,10 @@ class HAStatesInjector:
                 "SELECT metadata_id FROM states_meta WHERE entity_id = ?",
                 (entity_id,),
             ).fetchone()
-        result = row[0] if row else None
-        self._meta[entity_id] = result
-        return result
+        if row:
+            self._meta[entity_id] = row[0]
+            return row[0]
+        return None
 
     def _attributes_id(self, entity_id: str, metadata_id: int) -> int | None:
         """Reuse the attributes blob from the most recent live state for this entity."""
@@ -239,18 +242,40 @@ class HAStatesInjector:
     # ── Public API ────────────────────────────────────────────────────────
 
     def full_resync(self):
-        """Process all detections for all active appliances.  Called once on startup."""
+        """Process all detections for all active appliances.
+        Retried every poll until HA has registered all entities in states_meta
+        (HA processes MQTT discovery asynchronously — may take several seconds)."""
+        all_ready = True
         for appliance in repo.get_active_appliances():
             aid = appliance["id"]
+            ha_eid = appliance["ha_entity_id"]
+            sl = make_slug(ha_eid)
+
+            energy_meta = self._metadata_id(f"sensor.{sl}_energy")
+            binary_meta = self._metadata_id(f"binary_sensor.{sl}")
+            if energy_meta is None or binary_meta is None:
+                logger.debug(
+                    f"nilm_{sl}: states_meta not ready yet "
+                    f"(energy={'ok' if energy_meta else 'missing'}, "
+                    f"binary={'ok' if binary_meta else 'missing'}) — retry next poll"
+                )
+                all_ready = False
+                continue
+
             baseline = repo.get_energy_baseline_kwh(aid)
             if baseline is None:
-                logger.debug(f"HWM baseline not set for appliance {aid} — run ha-publish loop first")
+                logger.debug(f"HWM baseline not set for appliance {aid} — retry next poll")
+                all_ready = False
                 continue
+
             detections = repo.get_all_detections_ordered(aid)
             self._process(appliance, detections, baseline, full_binary=True)
             if detections:
                 self._last_id[aid] = max(d["id"] for d in detections)
-        self.synced = True
+
+        if all_ready:
+            self.synced = True
+            logger.info("HA states injector: full resync complete")
 
     def incremental(self, appliance: dict):
         """Inject new detections since last seen.  Called every poll."""
