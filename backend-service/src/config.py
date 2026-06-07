@@ -22,6 +22,9 @@ class Settings:
         # Internal nilm service (train / detect / signature processing)
         self.nilm_url = os.getenv("NILM_URL", "http://nilm:8001")
 
+        # Shared secret for /internal/event. Empty = disabled (Docker-network-only deployments).
+        self.internal_token = os.getenv("INTERNAL_TOKEN", "")
+
         # Static React build dir (production image). Absent in dev.
         self.static_dir = os.getenv("STATIC_DIR", "/app/static")
 

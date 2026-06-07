@@ -15,3 +15,9 @@ class HaPublishUpdate(BaseModel):
     """Toggle HA publishing for an appliance."""
 
     enabled: bool
+
+
+class ApplianceUpdate(BaseModel):
+    """Update appliance name."""
+
+    name: str

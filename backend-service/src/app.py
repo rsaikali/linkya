@@ -3,7 +3,7 @@
 import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
@@ -52,6 +52,8 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}")
         async def spa(full_path: str):
+            if full_path.startswith("api/") or full_path.startswith("internal/"):
+                raise HTTPException(status_code=404)
             candidate = os.path.join(static_dir, full_path)
             if full_path and os.path.isfile(candidate):
                 return FileResponse(candidate)

@@ -66,7 +66,7 @@ async def delete_all_signatures():
 
 
 @router.delete("/{signature_id}")
-async def delete_signature(signature_id):
+async def delete_signature(signature_id: int):
     result = db_manager.delete_signature(signature_id)
     if not result:
         raise HTTPException(status_code=404, detail="Signature non trouvée")
@@ -99,7 +99,11 @@ async def import_signatures(file: UploadFile):
     if not required.issubset(reader.fieldnames or []):
         raise HTTPException(status_code=422, detail=f"Colonnes requises: {', '.join(required)}")
 
-    deleted = db_manager.delete_all_signatures()
+    # Capture existing IDs before any mutation. Old signatures are deleted only
+    # after a successful import so nilm-service failure mid-import doesn't wipe them.
+    existing = db_manager.get_all_signatures_with_appliance()
+    old_ids = [s["id"] for s in existing]
+
     bus.publish("import_start", {"filename": file.filename})
 
     success, errors = 0, []
@@ -112,25 +116,43 @@ async def import_signatures(file: UploadFile):
             is_neg = row.get("is_negative", "False").strip().lower() in ("true", "1", "yes", "oui")
             if not name:
                 raise ValueError("nom vide")
-            if datetime.fromisoformat(start) >= datetime.fromisoformat(end):
+            if datetime.fromisoformat(start) > datetime.fromisoformat(end):
                 raise ValueError("start_time >= end_time")
             # auto_train=False: avoid one training per row; train once at the end.
             await _nilm_add_signature(name, start, end, is_neg, auto_train=False)
             success += 1
             if success % 5 == 0:
-                bus.publish("import_progress", {"done": success, "total": len(rows)})
+                total = len(rows)
+                bus.publish("import_progress", {
+                    "done": success,
+                    "total": total,
+                    "total_lines": total,
+                    "success_count": success,
+                    "error_count": len(errors),
+                    "progress_percent": round(success / total * 100),
+                })
         except Exception as e:
             errors.append({"line": line_num, "error": str(e)})
 
-    # Single training after the whole import (coalesced on the nilm side too).
-    if success:
+    # Only replace old signatures if at least one new one was stored successfully.
+    deleted = {"signatures_deleted": 0}
+    if success > 0:
+        deleted = db_manager.delete_signatures_by_ids(old_ids)
+        # Single training after the whole import (coalesced on the nilm side too).
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
                 await client.post(f"{settings.nilm_url}/train")
         except httpx.HTTPError as e:
             logger.warning("post-import train trigger failed: %s", e)
 
-    bus.publish("import_complete", {"success": success, "errors": len(errors)})
+    total_rows = len(rows)
+    bus.publish("import_complete", {
+        "success": success,
+        "errors": len(errors),
+        "total_lines": total_rows,
+        "success_count": success,
+        "error_count": len(errors),
+    })
     return {
         "status": "completed",
         "signatures_deleted": deleted["signatures_deleted"],

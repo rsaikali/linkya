@@ -26,10 +26,30 @@ def format_datetime(dt):
     return dt.isoformat()
 
 
+_shared_engine = None
+_shared_session_factory = None
+
+
+def _get_engine():
+    global _shared_engine
+    if _shared_engine is None:
+        _shared_engine = create_engine(
+            settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20
+        )
+    return _shared_engine
+
+
+def _get_session_factory():
+    global _shared_session_factory
+    if _shared_session_factory is None:
+        _shared_session_factory = sessionmaker(autocommit=False, autoflush=False, bind=_get_engine())
+    return _shared_session_factory
+
+
 class DatabaseBase:
     """Base class for database repositories."""
 
     def __init__(self):
         """Initializes the database connection."""
-        self.engine = create_engine(settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self.engine = _get_engine()
+        self.SessionLocal = _get_session_factory()

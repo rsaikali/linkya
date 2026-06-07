@@ -14,16 +14,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/detections", tags=["Detections"])
 
 
-async def _create_signature(pending: dict):
-    """Forward a validate/reassign-derived signature to the nilm service."""
+async def _create_signature(pending: dict) -> bool:
+    """Forward a validate/reassign-derived signature to the nilm service. Returns True on success."""
     if not pending:
-        return
+        return True
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.post(f"{settings.nilm_url}/signatures", json=pending)
             r.raise_for_status()
+        return True
     except httpx.HTTPError as e:
         logger.error("nilm signature from feedback failed: %s", e)
+        return False
 
 
 @router.get("")
@@ -40,33 +42,33 @@ async def delete_all_detections():
 
 
 @router.patch("/{detection_id}/validate")
-async def validate_detection(detection_id):
+async def validate_detection(detection_id: int):
     result = db_manager.validate_detection(detection_id, is_correct=True)
     if not result:
         raise HTTPException(status_code=404, detail="Détection non trouvée")
     pending = result.get("pending_signature")
-    await _create_signature(pending)
-    if pending:
+    sig_ok = await _create_signature(pending)
+    if pending and sig_ok:
         bus.publish("signature_added", {"appliance_name": pending.get("appliance_name", "")})
     bus.publish("detection_validated", {"id": detection_id, "correct": True})
     return {"status": "success", "detection": result}
 
 
 @router.patch("/{detection_id}/invalidate")
-async def invalidate_detection(detection_id):
+async def invalidate_detection(detection_id: int):
     result = db_manager.validate_detection(detection_id, is_correct=False)
     if not result:
         raise HTTPException(status_code=404, detail="Détection non trouvée")
     pending = result.get("pending_signature")
-    await _create_signature(pending)
-    if pending:
+    sig_ok = await _create_signature(pending)
+    if pending and sig_ok:
         bus.publish("signature_added", {"appliance_name": pending.get("appliance_name", ""), "is_negative": True})
     bus.publish("detection_validated", {"id": detection_id, "correct": False})
     return {"status": "success", "detection": result}
 
 
 @router.patch("/{detection_id}/reassign")
-async def reassign_detection(detection_id, request: dict):
+async def reassign_detection(detection_id: int, request: dict):
     appliance_name = request.get("appliance_name")
     if not appliance_name:
         raise HTTPException(status_code=400, detail="Le nom de l'appareil est requis")
@@ -74,8 +76,8 @@ async def reassign_detection(detection_id, request: dict):
     if not result:
         raise HTTPException(status_code=404, detail="Détection non trouvée")
     pending = result.get("pending_signature")
-    await _create_signature(pending)
-    if pending:
+    sig_ok = await _create_signature(pending)
+    if pending and sig_ok:
         bus.publish("signature_added", {"appliance_name": pending.get("appliance_name", appliance_name)})
     bus.publish("detection_reassigned", {"id": detection_id, "appliance": appliance_name})
     return {"status": "success", "reassignment": result}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { apiService } from '../services/api';
 import { detectionsWS, importProgressWS } from '../services/sse';
 
@@ -46,6 +46,8 @@ export const DataProvider = ({ children }) => {
     errorCount: 0,
     progressPercent: 0,
   });
+
+  const importCompleteTimerRef = useRef(null);
 
   // ===== Fonctions de chargement =====
   
@@ -154,8 +156,8 @@ export const DataProvider = ({ children }) => {
 
   // ===== WebSocket pour les détections + signatures =====
   useEffect(() => {
-    const handleNewDetection = (detection) => {
-      setDetections(prev => [...prev, detection]);
+    const handleNewDetection = () => {
+      refreshDetections();
     };
 
     const handleDetectionComplete = () => {
@@ -240,8 +242,8 @@ export const DataProvider = ({ children }) => {
         progressPercent: 100,
       });
 
-      // Refresh signatures after import
-      setTimeout(() => {
+      if (importCompleteTimerRef.current) clearTimeout(importCompleteTimerRef.current);
+      importCompleteTimerRef.current = setTimeout(() => {
         refreshSignatures();
       }, 2000);
     };
@@ -262,6 +264,7 @@ export const DataProvider = ({ children }) => {
       importProgressWS.off('import_progress', handleImportProgress);
       importProgressWS.off('import_complete', handleImportComplete);
       importProgressWS.off('import_error', handleImportError);
+      if (importCompleteTimerRef.current) clearTimeout(importCompleteTimerRef.current);
     };
   }, [refreshSignatures]);
 

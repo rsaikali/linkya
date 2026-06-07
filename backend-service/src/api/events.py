@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -80,10 +80,16 @@ async def _auto_ha_backfill():
 
 
 @router.post("/internal/event")
-async def push_event(evt: InternalEvent, background_tasks: BackgroundTasks):
+async def push_event(
+    evt: InternalEvent,
+    background_tasks: BackgroundTasks,
+    x_internal_token: str = Header(default=""),
+):
     """Internal-only: the nilm service posts training/detection progress here
-    so the backend can fan it out over SSE. Reachable only on the Docker network.
+    so the backend can fan it out over SSE. Token-gated when INTERNAL_TOKEN is set.
     """
+    if settings.internal_token and x_internal_token != settings.internal_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
     bus.publish(evt.type, evt.data)
 
     # Backfill only after a full detection run (not cron 2h window).

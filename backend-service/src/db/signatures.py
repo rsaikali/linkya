@@ -155,6 +155,20 @@ class SignatureRepository(DatabaseBase):
 
             return signature_info
 
+    def delete_signatures_by_ids(self, ids: list) -> dict:
+        """Delete specific signatures by ID list. Used by import to remove old-only rows."""
+        if not ids:
+            return {"signatures_deleted": 0}
+        placeholders = ", ".join(f":id_{i}" for i in range(len(ids)))
+        params = {f"id_{i}": v for i, v in enumerate(ids)}
+        with self.engine.connect() as conn:
+            result = conn.execute(
+                text(f"DELETE FROM nilm_signatures WHERE id IN ({placeholders})"),
+                params,
+            )
+            conn.commit()
+            return {"signatures_deleted": result.rowcount}
+
     def get_all_signatures_with_appliance(self):
         """
         Retrieves all signatures with associated appliance information.

@@ -74,6 +74,10 @@ class DatabaseManager:
         """Delete all signatures."""
         return self.signatures.delete_all_signatures()
 
+    def delete_signatures_by_ids(self, ids: list) -> dict:
+        """Delete specific signatures by ID list."""
+        return self.signatures.delete_signatures_by_ids(ids)
+
     def delete_signature(self, signature_id):
         """Delete specific signature."""
         return self.signatures.delete_signature(signature_id)
