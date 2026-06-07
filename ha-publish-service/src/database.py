@@ -80,6 +80,23 @@ class PublishRepository:
             ).fetchone()
         return row is not None
 
+    def is_publish_paused(self) -> bool:
+        """True when experiment mode is active (ha_publish_paused=1 in nilm_meta)."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT value FROM nilm_meta WHERE key = 'ha_publish_paused'")
+            ).fetchone()
+        return row is not None and row[0] == "1"
+
+    def get_frozen_energy_kwh(self, appliance_id: int) -> float:
+        """Return the current HWM without updating it (safe to call during experiment mode)."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
+                {"id": appliance_id},
+            ).fetchone()
+        return round(float(row[0]), 3) if row else 0.0
+
     def get_monotonic_energy_kwh(self, appliance_id: int) -> float:
         """Energy since last reset (kWh) = SUM(detections) - baseline, clamped to a
         persisted high-water-mark so it never decreases (re-detection / restart

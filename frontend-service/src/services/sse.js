@@ -29,6 +29,7 @@ const SSE_EVENTS = [
   "import_start",
   "import_progress",
   "import_complete",
+  "ha_experiment_mode",
 ];
 
 function ensureSource() {

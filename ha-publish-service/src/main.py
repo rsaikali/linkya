@@ -83,14 +83,23 @@ async def publish_loop(client: aiomqtt.Client):
         known &= active_ids
 
         # ── Live state per active appliance ───────────────────────────────
+        paused = repo.is_publish_paused()
+        if paused:
+            logger.info("ha-publish: experiment mode ON — energy frozen, binary state passthrough")
+
         for appliance in active:
             eid = appliance["ha_entity_id"]
             is_active = repo.is_currently_active(appliance["id"])
             await client.publish(binary_state_topic(eid), payload="ON" if is_active else "OFF")
-            # Energy: monotonic kWh (high-water-mark) → total_increasing safe.
-            energy_kwh = repo.get_monotonic_energy_kwh(appliance["id"])
+            if paused:
+                # Freeze energy at the current HWM — do NOT update it while the user
+                # is experimenting with signatures/detect cycles.  This prevents
+                # artificial detections from inflating the HA Energy Dashboard.
+                energy_kwh = repo.get_frozen_energy_kwh(appliance["id"])
+            else:
+                energy_kwh = repo.get_monotonic_energy_kwh(appliance["id"])
             await client.publish(energy_state_topic(eid), payload=str(energy_kwh))
-            logger.debug(f"{eid} → {'ON' if is_active else 'OFF'} | {energy_kwh} kWh")
+            logger.debug(f"{eid} → {'ON' if is_active else 'OFF'} | {energy_kwh} kWh{' (frozen)' if paused else ''}")
 
         await asyncio.sleep(settings.poll_interval)
 
