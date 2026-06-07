@@ -385,8 +385,13 @@ class Seq2PointMultiOutputModel:
         X_scaled, _ = self.preprocessor.transform(X)
         X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
 
-        # Prédiction (liste de N outputs)
-        predictions_scaled_list = self.model.predict(X_scaled, batch_size=32, verbose=0)
+        # Prédiction (liste de N outputs, ou array si N=1 — Keras unwraps single outputs).
+        raw_output = self.model.predict(X_scaled, batch_size=32, verbose=0)
+        if isinstance(raw_output, list):
+            predictions_scaled_list = raw_output
+        else:
+            # Single output: Keras returns shape (n, 1) — wrap in list.
+            predictions_scaled_list = [raw_output]
 
         # Dénormaliser et reconstruire pour chaque appareil
         result = {}
@@ -394,6 +399,8 @@ class Seq2PointMultiOutputModel:
 
         for idx, app_id in enumerate(self.appliance_ids):
             predictions_scaled = predictions_scaled_list[idx]
+            if predictions_scaled.ndim == 1:
+                predictions_scaled = predictions_scaled.reshape(-1, 1)
             predictions = self.preprocessor.target_scaler.inverse_transform(predictions_scaled).flatten()
 
             # Post-traitement
