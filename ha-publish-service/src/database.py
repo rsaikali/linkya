@@ -1,7 +1,6 @@
-"""Read appliances, current state, daily energy, and lab stats."""
+"""Read appliances, current state, cumulative energy, and lab stats."""
 
 import json
-from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
@@ -66,9 +65,8 @@ class PublishRepository:
             ).fetchone()
         return row is not None and row[0] == "1"
 
-    def get_daily_energy_kwh(self, appliance_id: int) -> float:
-        """kWh from detections that started since today's UTC midnight (MQTT live state)."""
-        today_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    def get_cumulative_energy_kwh(self, appliance_id: int) -> float:
+        """Total kWh from all detections (MQTT live state, total_increasing)."""
         with self.engine.connect() as conn:
             val = conn.execute(
                 text(
@@ -76,11 +74,10 @@ class PublishRepository:
                     SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
                     FROM nilm_detections
                     WHERE appliance_id = :id
-                      AND start_time >= :today
                       AND energy_consumed IS NOT NULL AND energy_consumed > 0
                     """
                 ),
-                {"id": appliance_id, "today": today_midnight},
+                {"id": appliance_id},
             ).scalar()
         return round(float(val or 0.0), 4)
 
