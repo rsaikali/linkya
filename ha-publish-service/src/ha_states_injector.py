@@ -241,12 +241,15 @@ class HAStatesInjector:
                 start_ts, end_ts, kwh_total
             ):
                 if day_midnight not in day_cum:
-                    # Continue from the last injected state value for this day.
+                    # Read accumulated kWh BEFORE this segment starts.
+                    # Using seg_start (not end-of-day) ensures a re-detected window
+                    # (same time range, new DB id) starts from the correct baseline
+                    # instead of stacking on top of its own previous injection.
                     row = conn.execute(
                         "SELECT state FROM states WHERE metadata_id = ? "
                         "AND last_changed_ts >= ? AND last_changed_ts < ? "
                         "ORDER BY last_changed_ts DESC LIMIT 1",
-                        (meta_id, day_midnight, day_midnight + 86400.0),
+                        (meta_id, day_midnight, seg_start),
                     ).fetchone()
                     try:
                         day_cum[day_midnight] = float(row[0]) if row else 0.0
