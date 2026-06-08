@@ -147,18 +147,31 @@ class HAStatesInjector:
         self,
         conn,
         meta_id: int,
-        appliance_id: int,
         new_dets: list[dict],
     ):
-        """Inject new detections. Uses Postgres cumulative before each det to avoid stacking."""
+        """Inject new detections continuing from last known SQLite state.
+
+        Reads the cumulative baseline from SQLite (last state strictly before
+        start_ts) rather than Postgres, because a full NILM re-detect wipes and
+        replaces all detection IDs — Postgres cumulative would return 0 for the
+        new IDs while the SQLite history is still correct.
+        DELETE before re-inject makes this idempotent for re-detected windows.
+        """
         for det in new_dets:
             kwh = det["energy_wh"] / 1000.0
             start_ts = _to_ts(det["start_time"])
             end_ts = _to_ts(det["end_time"])
 
-            # Query Postgres directly — handles re-detection (old det deleted, new id)
-            # without reading back from SQLite (which would stack on re-runs).
-            kwh_before = repo.get_cumulative_energy_before_id(appliance_id, det["id"]) / 1000.0
+            row = conn.execute(
+                "SELECT state FROM states WHERE metadata_id = ? "
+                "AND last_changed_ts < ? "
+                "ORDER BY last_changed_ts DESC LIMIT 1",
+                (meta_id, start_ts),
+            ).fetchone()
+            try:
+                kwh_before = float(row[0]) if row else 0.0
+            except (TypeError, ValueError):
+                kwh_before = 0.0
             kwh_after = kwh_before + kwh
 
             conn.execute(
@@ -273,7 +286,7 @@ class HAStatesInjector:
             with self._conn() as conn:
                 self._detect_schema(conn)
                 if energy_meta and energy_eid:
-                    self._inject_energy_incremental(conn, energy_meta, aid, new_dets)
+                    self._inject_energy_incremental(conn, energy_meta, new_dets)
                 if binary_meta:
                     for det in new_dets:
                         self._inject_binary_cycle(
