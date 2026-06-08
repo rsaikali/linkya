@@ -1,6 +1,7 @@
-"""Read appliances, current state, cumulative energy, and lab stats."""
+"""Read appliances, current state, daily energy, and lab stats."""
 
 import json
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
@@ -10,29 +11,6 @@ from .config import settings
 class PublishRepository:
     def __init__(self):
         self.engine = create_engine(settings.local_db_url, pool_pre_ping=True, pool_size=3)
-        self._init_hwm()
-
-    def _init_hwm(self):
-        """Per-appliance energy state for the HA total_increasing sensor:
-        - baseline: SUM(detections) at the last reset (sensor = SUM - baseline)
-        - kwh: high-water-mark → published value never decreases.
-        """
-        with self.engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
-                    CREATE TABLE IF NOT EXISTS ha_energy_hwm (
-                        appliance_id INTEGER PRIMARY KEY,
-                        baseline DOUBLE PRECISION NOT NULL DEFAULT 0,
-                        kwh DOUBLE PRECISION NOT NULL DEFAULT 0
-                    );
-                    """
-                )
-            )
-            # Upgrade older tables that lack the baseline column.
-            conn.execute(
-                text("ALTER TABLE ha_energy_hwm ADD COLUMN IF NOT EXISTS baseline DOUBLE PRECISION NOT NULL DEFAULT 0")
-            )
 
     def get_active_appliances(self) -> list[dict]:
         """Return all appliances with ha_publish=True."""
@@ -88,95 +66,23 @@ class PublishRepository:
             ).fetchone()
         return row is not None and row[0] == "1"
 
-    def get_frozen_energy_kwh(self, appliance_id: int) -> float:
-        """Return the current HWM without updating it (safe to call during experiment mode)."""
+    def get_daily_energy_kwh(self, appliance_id: int) -> float:
+        """kWh from detections that started since today's UTC midnight (MQTT live state)."""
+        today_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         with self.engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
-                {"id": appliance_id},
-            ).fetchone()
-        return round(float(row[0]), 3) if row else 0.0
-
-    def get_monotonic_energy_kwh(self, appliance_id: int) -> float:
-        """Energy since last reset (kWh) = SUM(detections) - baseline, clamped to a
-        persisted high-water-mark so it never decreases (re-detection / restart
-        safe → no false meter reset/jump in HA total_increasing)."""
-        with self.engine.begin() as conn:
-            cur = conn.execute(
+            val = conn.execute(
                 text(
                     """
                     SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
                     FROM nilm_detections
-                    WHERE appliance_id = :id AND energy_consumed IS NOT NULL
+                    WHERE appliance_id = :id
+                      AND start_time >= :today
+                      AND energy_consumed IS NOT NULL AND energy_consumed > 0
                     """
                 ),
-                {"id": appliance_id},
-            ).scalar() or 0.0
-            row = conn.execute(
-                text("SELECT baseline, kwh FROM ha_energy_hwm WHERE appliance_id = :id"),
-                {"id": appliance_id},
-            ).fetchone()
-            cur_f = float(cur)
-            if row is None:
-                # First time: baseline=0 so MQTT shows full cumulative from day one.
-                # HWM = cur_f so the sensor doesn't spike on the next read.
-                baseline = 0.0
-                prev = cur_f
-            else:
-                baseline = float(row[0])
-                prev = float(row[1])
-            if cur_f < baseline:
-                # Total shrank (re-detection with different values, or deleted detections).
-                # Re-anchor so future detections accumulate correctly.
-                baseline = cur_f
-            value = max(cur_f - baseline, prev, 0.0)
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO ha_energy_hwm (appliance_id, baseline, kwh)
-                    VALUES (:id, :baseline, :kwh)
-                    ON CONFLICT (appliance_id) DO UPDATE SET baseline = EXCLUDED.baseline, kwh = EXCLUDED.kwh
-                    """
-                ),
-                {"id": appliance_id, "baseline": baseline, "kwh": value},
-            )
-        return round(value, 3)
-
-    def reset_energy(self, appliance_id: int):
-        """Reset the energy sensor to 0: baseline := current SUM(detections),
-        high-water-mark := 0. Detections are kept untouched."""
-        with self.engine.begin() as conn:
-            cur = conn.execute(
-                text(
-                    """
-                    SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
-                    FROM nilm_detections
-                    WHERE appliance_id = :id AND energy_consumed IS NOT NULL
-                    """
-                ),
-                {"id": appliance_id},
-            ).scalar() or 0.0
-            conn.execute(
-                text(
-                    """
-                    INSERT INTO ha_energy_hwm (appliance_id, baseline, kwh)
-                    VALUES (:id, :baseline, 0)
-                    ON CONFLICT (appliance_id) DO UPDATE SET baseline = EXCLUDED.baseline, kwh = 0
-                    """
-                ),
-                {"id": appliance_id, "baseline": float(cur)},
-            )
-        return float(cur)
-
-    def get_energy_baseline_kwh(self, appliance_id: int) -> float | None:
-        """Baseline kWh stored in ha_energy_hwm (set when ha-publish first ran).
-        Returns None when no HWM row exists yet (ha-publish hasn't published yet)."""
-        with self.engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT baseline FROM ha_energy_hwm WHERE appliance_id = :id"),
-                {"id": appliance_id},
-            ).fetchone()
-        return float(row[0]) if row else None
+                {"id": appliance_id, "today": today_midnight},
+            ).scalar()
+        return round(float(val or 0.0), 4)
 
     def get_all_detections_ordered(self, appliance_id: int) -> list[dict]:
         """All detections with energy_consumed > 0, oldest first (for full resync)."""

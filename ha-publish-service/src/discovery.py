@@ -47,7 +47,7 @@ def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
     })
 
 
-# ── Energy sensor (kWh cumulatif, total_increasing) ──────────────────────────
+# ── Energy sensor (kWh daily reset — state_class: total) ─────────────────────
 
 def energy_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_energy/config"
@@ -62,9 +62,11 @@ def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
         "name": f"NILM {name} Énergie",
         "unique_id": f"linkya_{slug(ha_entity_id)}_energy",
         "state_topic": energy_state_topic(ha_entity_id),
+        "value_template": "{{ value_json.value | round(4) }}",
+        "last_reset_value_template": "{{ value_json.last_reset }}",
         "unit_of_measurement": "kWh",
         "device_class": "energy",
-        "state_class": "total_increasing",
+        "state_class": "total",
         "icon": "mdi:lightning-bolt",
         "device": _DEVICE,
     })

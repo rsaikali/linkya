@@ -1,17 +1,17 @@
-"""Inject NILM detection cycles into HA SQLite states as per-minute energy ramps
-and exact ON/OFF binary transitions.
+"""Inject NILM detection cycles into HA SQLite states.
 
-Entity_ids are resolved from HA's entity registry JSON by unique_id (which we
-control via MQTT discovery payloads) — never computed from a slug pattern, since
-HA may assign arbitrary entity_ids depending on name collisions, areas, etc.
+Energy sensors: per-minute ramps with daily reset at UTC midnight.
+  - state_class: total, last_reset attribute updated per-day.
+  - Detections crossing midnight are split proportionally.
+Binary sensors: exact ON/OFF transitions.
 
 Requires HA_SQLITE_PATH pointing to home-assistant_v2.db (mounted volume).
-Feature is silently disabled when the variable is empty or the file is absent.
+Silently disabled when variable is empty or file absent.
 """
 
 import json
 import sqlite3
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -20,15 +20,58 @@ from .database import repo
 from .discovery import slug as make_slug
 
 
+_ENERGY_BASE_ATTRS = {
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total",
+}
+
+
+def _fnv1a_32(data: str) -> int:
+    """FNV-1a 32-bit — matches HA state_attributes dedup hash."""
+    h = 0x811C9DC5
+    for b in data.encode("utf-8"):
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def _day_midnight_ts(ts: float) -> float:
+    """UTC midnight (float) for the calendar day containing ts."""
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    return datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc).timestamp()
+
+
+def _to_ts(dt) -> float:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _split_by_midnight(start_ts: float, end_ts: float, total_kwh: float):
+    """Yield (seg_start, seg_end, seg_kwh, day_midnight_ts) splitting at UTC midnights."""
+    duration = max(end_ts - start_ts, 1.0)
+    seg_start = start_ts
+    while seg_start < end_ts:
+        day_midnight = _day_midnight_ts(seg_start)
+        seg_end = min(end_ts, day_midnight + 86400.0)
+        frac_start = (seg_start - start_ts) / duration
+        frac_end = min(1.0, (seg_end - start_ts) / duration)
+        seg_kwh = total_kwh * (frac_end - frac_start)
+        yield seg_start, seg_end, seg_kwh, day_midnight
+        seg_start = seg_end
+
+
 class HAStatesInjector:
     def __init__(self, sqlite_path: str):
         self.path = sqlite_path
         self.synced = False
-        self._uid_to_eid: dict[str, str] = {}         # unique_id → real HA entity_id
-        self._meta: dict[str, int] = {}               # entity_id → metadata_id (positive only)
-        self._attrs: dict[str, int | None] = {}       # entity_id → attributes_id
+        self._uid_to_eid: dict[str, str] = {}
+        self._meta: dict[str, int] = {}
         self._has_last_reported: bool | None = None
-        self._last_id: dict[int, int] = {}            # appliance_id → last processed detection id
+        self._last_id: dict[int, int] = {}
+        # entity_id → {day_midnight_ts → attributes_id}
+        self._attrs_by_day: dict[str, dict[float, int]] = {}
 
     # ── SQLite helpers ────────────────────────────────────────────────────
 
@@ -43,10 +86,9 @@ class HAStatesInjector:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(states)")}
         self._has_last_reported = "last_reported_ts" in cols
 
-    # ── Entity registry (unique_id → real entity_id) ──────────────────────
+    # ── Entity registry ───────────────────────────────────────────────────
 
     def _load_entity_registry(self):
-        """Read HA entity registry JSON and build unique_id → entity_id map."""
         reg_path = Path(self.path).parent / ".storage" / "core.entity_registry"
         try:
             with open(reg_path) as f:
@@ -66,7 +108,6 @@ class HAStatesInjector:
     # ── states_meta lookup ────────────────────────────────────────────────
 
     def _metadata_id(self, entity_id: str) -> int | None:
-        """Only cache positive hits — None forces a re-query next call."""
         if entity_id in self._meta:
             return self._meta[entity_id]
         with self._conn() as conn:
@@ -79,21 +120,35 @@ class HAStatesInjector:
             return row[0]
         return None
 
-    def _attributes_id(self, entity_id: str, metadata_id: int) -> int | None:
-        if entity_id in self._attrs:
-            return self._attrs[entity_id]
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT attributes_id FROM states "
-                "WHERE metadata_id = ? AND attributes_id IS NOT NULL "
-                "ORDER BY last_updated_ts DESC LIMIT 1",
-                (metadata_id,),
-            ).fetchone()
-        result = row[0] if row else None
-        self._attrs[entity_id] = result
-        return result
+    # ── Attrs management (per-day last_reset) ─────────────────────────────
 
-    # ── Core state insertion ──────────────────────────────────────────────
+    def _attrs_id_for_day(self, conn, entity_id: str, day_midnight_ts: float) -> int | None:
+        """Find or create a state_attributes row for this day's last_reset."""
+        cache = self._attrs_by_day.setdefault(entity_id, {})
+        if day_midnight_ts in cache:
+            return cache[day_midnight_ts]
+
+        last_reset = datetime.fromtimestamp(day_midnight_ts, tz=timezone.utc).isoformat()
+        attrs = {**_ENERGY_BASE_ATTRS, "last_reset": last_reset}
+        attrs_json = json.dumps(attrs, sort_keys=True, separators=(",", ":"))
+        h = _fnv1a_32(attrs_json)
+
+        row = conn.execute(
+            "SELECT attributes_id FROM state_attributes WHERE hash = ?", (h,)
+        ).fetchone()
+        if row:
+            attrs_id = row[0]
+        else:
+            conn.execute(
+                "INSERT INTO state_attributes (hash, shared_attrs) VALUES (?, ?)",
+                (h, attrs_json),
+            )
+            attrs_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        cache[day_midnight_ts] = attrs_id
+        return attrs_id
+
+    # ── Low-level state row insertion ─────────────────────────────────────
 
     def _insert_state(self, conn, metadata_id, state, ts, attrs_id=None):
         if self._has_last_reported:
@@ -109,19 +164,26 @@ class HAStatesInjector:
                 (metadata_id, state, ts, ts, attrs_id),
             )
 
-    # ── Energy injection (per-minute ramp) ───────────────────────────────
+    # ── Energy injection ──────────────────────────────────────────────────
 
-    def _inject_energy_cycle(self, conn, meta_id, attrs_id, start_ts, end_ts, kwh_before, kwh_after):
-        conn.execute(
-            "DELETE FROM states WHERE metadata_id = ? "
-            "AND last_changed_ts >= ? AND last_changed_ts <= ?",
-            (meta_id, start_ts, end_ts),
-        )
-        duration = max(end_ts - start_ts, 1.0)
-        t = start_ts
+    def _inject_energy_segment(
+        self,
+        conn,
+        meta_id: int,
+        entity_id: str,
+        seg_start: float,
+        seg_end: float,
+        kwh_before: float,
+        kwh_after: float,
+        day_midnight: float,
+    ):
+        """Minute-by-minute ramp for one day segment. Caller handles DELETE."""
+        attrs_id = self._attrs_id_for_day(conn, entity_id, day_midnight)
+        seg_dur = max(seg_end - seg_start, 1.0)
         rows = []
-        while t <= end_ts + 0.5:
-            frac = min(1.0, (t - start_ts) / duration)
+        t = seg_start
+        while t <= seg_end + 0.5:
+            frac = min(1.0, (t - seg_start) / seg_dur)
             val = str(round(kwh_before + frac * (kwh_after - kwh_before), 4))
             if self._has_last_reported:
                 rows.append((meta_id, val, t, t, t, attrs_id))
@@ -141,7 +203,71 @@ class HAStatesInjector:
                 rows,
             )
 
-    # ── Binary injection (on/off) ─────────────────────────────────────────
+    def _inject_energy_full(
+        self, conn, meta_id: int, entity_id: str, detections: list[dict]
+    ):
+        """Full wipe then reinsert all detections with daily reset."""
+        conn.execute("DELETE FROM states WHERE metadata_id = ?", (meta_id,))
+        day_cum: dict[float, float] = {}
+        for det in detections:
+            kwh_total = det["energy_wh"] / 1000.0
+            start_ts = _to_ts(det["start_time"])
+            end_ts = _to_ts(det["end_time"])
+            for seg_start, seg_end, seg_kwh, day_midnight in _split_by_midnight(
+                start_ts, end_ts, kwh_total
+            ):
+                kwh_before = day_cum.get(day_midnight, 0.0)
+                kwh_after = kwh_before + seg_kwh
+                day_cum[day_midnight] = kwh_after
+                self._inject_energy_segment(
+                    conn, meta_id, entity_id,
+                    seg_start, seg_end, kwh_before, kwh_after, day_midnight,
+                )
+
+    def _inject_energy_incremental(
+        self,
+        conn,
+        meta_id: int,
+        entity_id: str,
+        new_dets: list[dict],
+    ):
+        """Inject new detections, reading back last state per day for continuation."""
+        day_cum: dict[float, float] = {}
+        for det in new_dets:
+            kwh_total = det["energy_wh"] / 1000.0
+            start_ts = _to_ts(det["start_time"])
+            end_ts = _to_ts(det["end_time"])
+            for seg_start, seg_end, seg_kwh, day_midnight in _split_by_midnight(
+                start_ts, end_ts, kwh_total
+            ):
+                if day_midnight not in day_cum:
+                    # Continue from the last injected state value for this day.
+                    row = conn.execute(
+                        "SELECT state FROM states WHERE metadata_id = ? "
+                        "AND last_changed_ts >= ? AND last_changed_ts < ? "
+                        "ORDER BY last_changed_ts DESC LIMIT 1",
+                        (meta_id, day_midnight, day_midnight + 86400.0),
+                    ).fetchone()
+                    try:
+                        day_cum[day_midnight] = float(row[0]) if row else 0.0
+                    except (TypeError, ValueError):
+                        day_cum[day_midnight] = 0.0
+
+                kwh_before = day_cum[day_midnight]
+                kwh_after = kwh_before + seg_kwh
+                day_cum[day_midnight] = kwh_after
+
+                conn.execute(
+                    "DELETE FROM states WHERE metadata_id = ? "
+                    "AND last_changed_ts >= ? AND last_changed_ts <= ?",
+                    (meta_id, seg_start, seg_end),
+                )
+                self._inject_energy_segment(
+                    conn, meta_id, entity_id,
+                    seg_start, seg_end, kwh_before, kwh_after, day_midnight,
+                )
+
+    # ── Binary injection ──────────────────────────────────────────────────
 
     def _inject_binary_full(self, conn, meta_id, detections):
         if not detections:
@@ -165,65 +291,19 @@ class HAStatesInjector:
         self._insert_state(conn, meta_id, "on", start_ts)
         self._insert_state(conn, meta_id, "off", end_ts)
 
-    # ── Per-appliance processing ──────────────────────────────────────────
-
-    def _process(
-        self,
-        label: str,
-        detections: list[dict],
-        baseline_kwh: float,
-        cum_start: float,
-        energy_meta: int | None,
-        attrs_id: int | None,
-        binary_meta: int | None,
-        full_binary: bool,
-    ) -> int:
-        cum = cum_start
-        injected = 0
-        try:
-            with self._conn() as conn:
-                self._detect_schema(conn)
-                if binary_meta and full_binary:
-                    self._inject_binary_full(conn, binary_meta, detections)
-                for det in detections:
-                    kwh = det["energy_wh"] / 1000.0
-                    start_ts = _to_ts(det["start_time"])
-                    end_ts = _to_ts(det["end_time"])
-                    if energy_meta is not None:
-                        self._inject_energy_cycle(
-                            conn, energy_meta, attrs_id, start_ts, end_ts,
-                            max(0.0, cum - baseline_kwh),
-                            max(0.0, cum + kwh - baseline_kwh),
-                        )
-                    if binary_meta is not None and not full_binary:
-                        self._inject_binary_cycle(conn, binary_meta, start_ts, end_ts)
-                    cum += kwh
-                    injected += 1
-        except sqlite3.OperationalError as e:
-            logger.warning(f"HA SQLite locked ({label}): {e} — will retry next poll")
-            return 0
-
-        if injected:
-            parts = []
-            if energy_meta:
-                parts.append(f"{round(max(0.0, cum - baseline_kwh), 3)} kWh")
-            if binary_meta:
-                parts.append("ON/OFF")
-            logger.info(f"{label}: injected {injected} cycles — {', '.join(parts)}")
-        return injected
-
     # ── Public API ────────────────────────────────────────────────────────
 
     def full_resync(self):
         """Inject all detections for all active appliances.
-        Retried every poll until HA's entity registry has all expected entries."""
+        Retried every poll until HA entity registry has all expected entries.
+        Energy states are fully wiped and rewritten — corrects any stale data.
+        """
         self._load_entity_registry()
 
         all_ready = True
         for appliance in repo.get_active_appliances():
             aid = appliance["id"]
             sl = make_slug(appliance["ha_entity_id"])
-            label = sl
 
             energy_uid = f"linkya_{sl}_energy"
             binary_uid = f"linkya_{sl}_state"
@@ -232,7 +312,7 @@ class HAStatesInjector:
 
             if not energy_eid or not binary_eid:
                 logger.debug(
-                    f"{label}: entity registry not ready "
+                    f"{sl}: entity registry not ready "
                     f"(energy={'ok' if energy_eid else 'missing'}, "
                     f"binary={'ok' if binary_eid else 'missing'}) — retry next poll"
                 )
@@ -244,24 +324,27 @@ class HAStatesInjector:
 
             if not energy_meta or not binary_meta:
                 logger.debug(
-                    f"{label}: states_meta not ready "
+                    f"{sl}: states_meta not ready "
                     f"(energy={'ok' if energy_meta else 'missing'}, "
                     f"binary={'ok' if binary_meta else 'missing'}) — retry next poll"
                 )
                 all_ready = False
                 continue
 
-            baseline = repo.get_energy_baseline_kwh(aid)
-            if baseline is None:
-                logger.debug(f"{label}: HWM baseline not set — retry next poll")
+            detections = repo.get_all_detections_ordered(aid)
+            try:
+                with self._conn() as conn:
+                    self._detect_schema(conn)
+                    self._inject_binary_full(conn, binary_meta, detections)
+                    self._inject_energy_full(conn, energy_meta, energy_eid, detections)
+            except sqlite3.OperationalError as e:
+                logger.warning(f"HA SQLite locked ({sl}): {e} — will retry next poll")
                 all_ready = False
                 continue
 
-            attrs_id = self._attributes_id(energy_eid, energy_meta)
-            detections = repo.get_all_detections_ordered(aid)
-            self._process(label, detections, baseline, 0.0, energy_meta, attrs_id, binary_meta, True)
             if detections:
                 self._last_id[aid] = max(d["id"] for d in detections)
+            logger.info(f"{sl}: full resync — {len(detections)} cycles injected")
 
         if all_ready:
             self.synced = True
@@ -280,22 +363,26 @@ class HAStatesInjector:
         if not energy_meta and not binary_meta:
             return
 
-        baseline = repo.get_energy_baseline_kwh(aid)
-        if baseline is None:
-            return
-
         last_seen = self._last_id.get(aid, 0)
         new_dets = repo.get_detections_since_id(aid, last_seen)
         if not new_dets:
             return
 
-        cum_before = repo.get_cumulative_energy_before_id(aid, new_dets[0]["id"])
-        attrs_id = self._attributes_id(energy_eid, energy_meta) if energy_meta and energy_eid else None
-        self._process(sl, new_dets, baseline, cum_before, energy_meta, attrs_id, binary_meta, False)
+        try:
+            with self._conn() as conn:
+                self._detect_schema(conn)
+                if energy_meta and energy_eid:
+                    self._inject_energy_incremental(conn, energy_meta, energy_eid, new_dets)
+                if binary_meta:
+                    for det in new_dets:
+                        self._inject_binary_cycle(
+                            conn, binary_meta,
+                            _to_ts(det["start_time"]),
+                            _to_ts(det["end_time"]),
+                        )
+        except sqlite3.OperationalError as e:
+            logger.warning(f"HA SQLite locked ({sl}): {e} — will retry next poll")
+            return
+
         self._last_id[aid] = max(d["id"] for d in new_dets)
-
-
-def _to_ts(dt) -> float:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.timestamp()
+        logger.info(f"{sl}: incremental — {len(new_dets)} new cycles injected")
