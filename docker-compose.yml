@@ -48,9 +48,10 @@ services:
     env_file: [.env]
     networks: [linkya]
     healthcheck:
-      test: [CMD-SHELL, "curl -f http://localhost:8000/healthz || exit 1"]
+      test: [CMD-SHELL, "curl -f http://localhost:8001/healthz || exit 1"]
       interval: 10s
       timeout: 5s
+      start_period: 30s
       retries: 5
 
   ha-ingest:
