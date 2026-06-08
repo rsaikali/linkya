@@ -152,6 +152,9 @@ class DatabaseManager:
                 conn.execute(
                     text("ALTER TABLE nilm_detections ADD COLUMN IF NOT EXISTS model_name TEXT")
                 )
+                conn.execute(
+                    text("ALTER TABLE nilm_appliances ADD COLUMN IF NOT EXISTS energy_hwm_kwh FLOAT NOT NULL DEFAULT 0")
+                )
                 conn.commit()
                 logger.info("Tables NILM créées avec succès")
 
