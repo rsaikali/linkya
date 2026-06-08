@@ -9,6 +9,7 @@ Silently disabled when variable is empty or file absent.
 
 import json
 import sqlite3
+import time
 from datetime import timezone
 from pathlib import Path
 
@@ -280,6 +281,19 @@ class HAStatesInjector:
         last_seen = self._last_id.get(aid, 0)
         new_dets = repo.get_detections_since_id(aid, last_seen)
         if not new_dets:
+            return
+
+        # Full re-detect: NILM wiped all IDs and re-created the full history.
+        # New detections span more than 3h back → stale SQLite states from the
+        # previous full_resync would corrupt the incremental baseline.
+        # Reset to full_resync instead.
+        if len(new_dets) > 5 and time.time() - _to_ts(new_dets[0]["start_time"]) > 3 * 3600:
+            logger.info(
+                f"{sl}: full re-detect detected ({len(new_dets)} cycles spanning history)"
+                " — triggering full resync"
+            )
+            self.synced = False
+            self._last_id.pop(aid, None)
             return
 
         try:
