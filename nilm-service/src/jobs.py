@@ -218,8 +218,7 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
                 # Cron: wipe only the time window (don't touch older history).
                 if full_detect:
                     session.execute(text("DELETE FROM nilm_detections"))
-                    session.execute(text("DELETE FROM ha_energy_hwm"))
-                    logger.info("Full detect: wiped all detections and energy HWM")
+                    logger.info("Full detect: wiped all detections")
                 else:
                     session.execute(
                         text("""

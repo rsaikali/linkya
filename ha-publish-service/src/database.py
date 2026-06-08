@@ -66,7 +66,7 @@ class PublishRepository:
         return row is not None and row[0] == "1"
 
     def get_cumulative_energy_kwh(self, appliance_id: int) -> float:
-        """Total kWh from all detections (MQTT live state, total_increasing)."""
+        """Total kWh from all detections — raw sum, not clamped."""
         with self.engine.connect() as conn:
             val = conn.execute(
                 text(
@@ -80,6 +80,26 @@ class PublishRepository:
                 {"id": appliance_id},
             ).scalar()
         return round(float(val or 0.0), 4)
+
+    def clamp_and_update_hwm(self, appliance_id: int, new_kwh: float) -> float:
+        """Return max(new_kwh, stored HWM). Persists the new HWM when new_kwh wins.
+
+        Prevents total_increasing from ever decreasing in HA — a full NILM
+        re-detect can lower the raw SUM; the clamp absorbs the drop silently.
+        """
+        with self.engine.begin() as conn:
+            hwm = conn.execute(
+                text("SELECT energy_hwm_kwh FROM nilm_appliances WHERE id = :id"),
+                {"id": appliance_id},
+            ).scalar() or 0.0
+            hwm = float(hwm)
+            if new_kwh > hwm:
+                conn.execute(
+                    text("UPDATE nilm_appliances SET energy_hwm_kwh = :v WHERE id = :id"),
+                    {"v": new_kwh, "id": appliance_id},
+                )
+                return new_kwh
+        return hwm
 
     def get_all_detections_ordered(self, appliance_id: int) -> list[dict]:
         """All detections with energy_consumed > 0, oldest first (for full resync)."""

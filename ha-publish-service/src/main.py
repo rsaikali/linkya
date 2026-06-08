@@ -120,14 +120,19 @@ async def publish_loop(client: aiomqtt.Client):
         # ── Live state per active appliance ───────────────────────────────
         for appliance in active:
             eid = appliance["ha_entity_id"]
-            energy_kwh = repo.get_cumulative_energy_kwh(appliance["id"])
+            raw_kwh = repo.get_cumulative_energy_kwh(appliance["id"])
+            energy_kwh = repo.clamp_and_update_hwm(appliance["id"], raw_kwh)
             is_on = repo.is_currently_active(appliance["id"])
             await client.publish(binary_state_topic(eid), payload="on" if is_on else "off")
             await client.publish(energy_state_topic(eid), payload=str(energy_kwh))
             conf = repo.get_last_confidence(appliance["id"])
             if conf is not None:
                 await client.publish(confidence_state_topic(eid), payload=str(conf))
-            logger.debug(f"{eid} | {'ON' if is_on else 'off'} | {energy_kwh} kWh total | conf={conf}%")
+            clamped = energy_kwh != raw_kwh
+            logger.debug(
+                f"{eid} | {'ON' if is_on else 'off'} | {energy_kwh} kWh"
+                f"{f' [clamped from {raw_kwh}]' if clamped else ''} | conf={conf}%"
+            )
 
         # ── HA SQLite states injection (minute-level history) ─────────────
         if _states_injector is not None:

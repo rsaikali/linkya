@@ -39,6 +39,7 @@ class DatabaseManager:
             Column("name", String(255), nullable=False),
             Column("ha_publish", Boolean, nullable=False, server_default="false"),
             Column("ha_entity_id", String(255), nullable=True),
+            Column("energy_hwm_kwh", Float, nullable=False, server_default="0"),
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
             Column("updated_at", DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index("idx_nilm_appliances_name", "name"),
