@@ -57,14 +57,6 @@ class PublishRepository:
             ).fetchone()
         return row is not None
 
-    def is_publish_paused(self) -> bool:
-        """True when experiment mode is active (ha_publish_paused=1 in nilm_meta)."""
-        with self.engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT value FROM nilm_meta WHERE key = 'ha_publish_paused'")
-            ).fetchone()
-        return row is not None and row[0] == "1"
-
     def get_cumulative_energy_kwh(self, appliance_id: int) -> float:
         """Total kWh from all detections — raw sum, not clamped."""
         with self.engine.connect() as conn:

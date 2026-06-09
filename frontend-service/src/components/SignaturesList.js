@@ -1,4 +1,4 @@
-import { FileDownload, FileUpload, MoreVert, Science } from "@mui/icons-material";
+import { FileDownload, FileUpload, MoreVert } from "@mui/icons-material";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
 import {
   Alert,
@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
-  Divider,
   IconButton,
   LinearProgress,
   ListItemIcon,
@@ -74,14 +73,12 @@ function SignaturesList() {
   const [deleteModelsLoading, setDeleteModelsLoading] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
   const [hasModel, setHasModel] = useState(false);
-  const [experimentMode, setExperimentMode] = useState(false);
-  const [experimentModeLoading, setExperimentModeLoading] = useState(false);
 
   // Use data from context
   const totalSignatures = signatures.length;
   const error = errors.signatures;
 
-  // Vérifier si un modèle existe + état du mode expérimentation
+  // Vérifier si un modèle existe
   useEffect(() => {
     const checkModel = async () => {
       try {
@@ -91,19 +88,10 @@ function SignaturesList() {
         console.error("Erreur lors de la vérification du modèle:", error);
       }
     };
-    const checkExperimentMode = async () => {
-      try {
-        const response = await api.get("/api/ha/experiment-mode");
-        setExperimentMode(response.data.paused);
-      } catch (error) {
-        console.error("Erreur lors de la vérification du mode expérimentation:", error);
-      }
-    };
     checkModel();
-    checkExperimentMode();
   }, []);
 
-  // Écouter les événements WebSocket d'entraînement + mode expérimentation
+  // Écouter les événements WebSocket d'entraînement
   useEffect(() => {
     const handleTrainingStart = () => {
       setIsTraining(true);
@@ -126,19 +114,13 @@ function SignaturesList() {
       setHasModel(false);
     };
 
-    const handleExperimentMode = (data) => {
-      setExperimentMode(data.paused);
-    };
-
     websocket.on("training_start", handleTrainingStart);
     websocket.on("training_complete", handleTrainingComplete);
-    websocket.on("ha_experiment_mode", handleExperimentMode);
     window.addEventListener("models-deleted", handleModelsDeleted);
 
     return () => {
       websocket.off("training_start", handleTrainingStart);
       websocket.off("training_complete", handleTrainingComplete);
-      websocket.off("ha_experiment_mode", handleExperimentMode);
       window.removeEventListener("models-deleted", handleModelsDeleted);
     };
   }, []);
@@ -150,25 +132,6 @@ function SignaturesList() {
       ensureApplianceColors(applianceIds);
     }
   }, [signatures, ensureApplianceColors]);
-
-  const handleToggleExperimentMode = async () => {
-    setExperimentModeLoading(true);
-    const newPaused = !experimentMode;
-    try {
-      await api.post("/api/ha/experiment-mode", { paused: newPaused });
-      setExperimentMode(newPaused);
-      showNotification(
-        newPaused
-          ? "Mode expérimentation activé — publication HA suspendue"
-          : "Mode expérimentation désactivé — publication HA reprise",
-        newPaused ? "warning" : "success"
-      );
-    } catch (error) {
-      showNotification("Erreur lors du changement de mode", "error");
-    } finally {
-      setExperimentModeLoading(false);
-    }
-  };
 
   const handleTrain = async () => {
     setTrainLoading(true);
@@ -366,19 +329,6 @@ function SignaturesList() {
       {/* Model Information Section */}
       <ModelInfoSection />
 
-      {/* Banner mode expérimentation */}
-      {experimentMode && (
-        <Alert
-          severity="warning"
-          icon={<Science />}
-          sx={{ borderRadius: 0, py: 0.5 }}
-        >
-          <strong>Mode expérimentation actif</strong> — Publication HA suspendue.
-          L'énergie dans HA est figée. Ajustez vos signatures librement,
-          puis désactivez le mode pour reprendre la publication.
-        </Alert>
-      )}
-
       {/* Toolbar avec actions */}
       <Toolbar
         variant="dense"
@@ -434,36 +384,6 @@ function SignaturesList() {
         </Tooltip>
 
         <Box sx={{ flexGrow: 1 }} />
-
-        <Tooltip
-          title={
-            experimentMode
-              ? "Mode expérimentation actif : publication HA suspendue. Cliquer pour reprendre."
-              : "Activer le mode expérimentation : suspend la publication HA pendant que vous ajustez les signatures et redetectez."
-          }
-        >
-          <span>
-            <Button
-              variant={experimentMode ? "contained" : "outlined"}
-              size="small"
-              color="warning"
-              startIcon={
-                experimentModeLoading ? (
-                  <CircularProgress size={16} color="inherit" />
-                ) : (
-                  <Science fontSize="small" />
-                )
-              }
-              onClick={handleToggleExperimentMode}
-              disabled={experimentModeLoading}
-              sx={{ textTransform: "none" }}
-            >
-              {experimentMode ? "HA suspendu" : "Mode expérimentation"}
-            </Button>
-          </span>
-        </Tooltip>
-
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
 
         <Tooltip title="Exporter les signatures en CSV">
           <IconButton

@@ -29,7 +29,6 @@ const SSE_EVENTS = [
   "import_start",
   "import_progress",
   "import_complete",
-  "ha_experiment_mode",
   "ha_backfill_start",
   "ha_backfill_complete",
 ];
