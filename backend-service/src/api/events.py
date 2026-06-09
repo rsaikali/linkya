@@ -92,8 +92,12 @@ async def push_event(
         raise HTTPException(status_code=403, detail="Forbidden")
     bus.publish(evt.type, evt.data)
 
-    # Backfill only after a full detection run (not cron 2h window).
-    if evt.type == "detection_complete" and evt.data.get("full_detect"):
+    # Re-publish energy statistics after every detection run: cycles are
+    # always detected late, so each run rewrites recent (or full) history.
+    # Skip cron runs that found nothing — no history change to publish.
+    if evt.type == "detection_complete" and (
+        evt.data.get("full_detect") or evt.data.get("num_detections", 0) > 0
+    ):
         background_tasks.add_task(_auto_ha_backfill)
 
     return {"ok": True}

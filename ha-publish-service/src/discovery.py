@@ -1,4 +1,4 @@
-"""MQTT discovery payloads for HA — energy + confidence per appliance."""
+"""MQTT discovery payloads for HA — binary + confidence per appliance."""
 
 import json
 import re
@@ -47,30 +47,12 @@ def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
     })
 
 
-# ── Energy sensor (kWh cumulative — state_class: total_increasing) ───────────
+# ── Legacy discovery topics (kept only to clear retained MQTT messages) ──────
+# Energy moved to HA external statistics (backend, recorder/import_statistics).
 
 def energy_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_energy/config"
 
-
-def energy_state_topic(ha_entity_id: str) -> str:
-    return f"{STATE_PREFIX}/{slug(ha_entity_id)}/energy_state"
-
-
-def energy_discovery_payload(name: str, ha_entity_id: str) -> str:
-    return json.dumps({
-        "name": f"NILM {name} Énergie",
-        "unique_id": f"linkya_{slug(ha_entity_id)}_energy",
-        "state_topic": energy_state_topic(ha_entity_id),
-        "unit_of_measurement": "kWh",
-        "device_class": "energy",
-        "state_class": "total_increasing",
-        "icon": "mdi:lightning-bolt",
-        "device": _DEVICE,
-    })
-
-
-# ── Legacy: numeric state sensor discovery topic (kept only to clear retained MQTT message) ──
 
 def numeric_state_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_numeric/config"

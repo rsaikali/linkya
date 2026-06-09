@@ -1,4 +1,11 @@
-"""HA historical statistics backfill via WebSocket recorder/import_statistics."""
+"""HA energy publication via WebSocket recorder/import_statistics.
+
+NILM energy is published as *external statistics* (statistic_id
+"linkya:<slug>_energy", like Tibber/EDF integrations) — no MQTT entity, no
+state_class, no recorder coupling. External statistics are the official way
+to write hourly energy into the past, which NILM needs constantly: a cycle
+is always detected after it happened, and re-detections rewrite history.
+"""
 
 import json
 import logging
@@ -88,16 +95,16 @@ async def run_ha_backfill(
     detections: list[dict],
 ) -> dict:
     """
-    Inject NILM energy history into HA via recorder/import_statistics.
+    Publish NILM energy history into HA as external statistics.
 
     Steps:
     1. Auth
-    2. Resolve HA entity_id from entity registry (by unique_id)
-    3. Clear existing statistics (avoids conflicts with past 0.0 states)
-    4. Inject all hourly entries with carry-forward (monotonic, no gaps)
+    2. Clear existing statistics (a re-detect can lower past hourly sums;
+       import alone only overwrites hours present in the new payload)
+    3. Import all hourly entries with carry-forward (monotonic, no gaps)
     """
     slug = _ha_entity_slug(appliance["ha_entity_id"])
-    energy_unique_id = f"linkya_{slug}_energy"
+    statistic_id = f"linkya:{slug}_energy"
     energy_name = f"NILM {appliance['name']} Énergie"
 
     stats = _build_full_hourly_stats(detections)
@@ -122,18 +129,6 @@ async def run_ha_backfill(
         if auth_resp.get("type") != "auth_ok":
             raise RuntimeError(f"HA auth failed: {auth_resp}")
 
-        # Resolve entity_id from registry by unique_id
-        reg_resp = await _ws_send_recv(ws, {"id": next_id(), "type": "config/entity_registry/list"})
-        entities = reg_resp.get("result") or []
-        entity = next((e for e in entities if e.get("unique_id") == energy_unique_id), None)
-        if not entity:
-            raise RuntimeError(
-                f"No HA entity with unique_id '{energy_unique_id}'. "
-                "Run ha-publish first to announce MQTT discovery."
-            )
-        statistic_id = entity["entity_id"]
-
-        # Clear existing statistics to avoid conflicts with past 0.0 states
         clear_resp = await _ws_send_recv(ws, {
             "id": next_id(),
             "type": "recorder/clear_statistics",
@@ -150,7 +145,7 @@ async def run_ha_backfill(
                 "has_mean": False,
                 "has_sum": True,
                 "name": energy_name,
-                "source": "recorder",
+                "source": "linkya",
                 "statistic_id": statistic_id,
                 "unit_of_measurement": "kWh",
             },

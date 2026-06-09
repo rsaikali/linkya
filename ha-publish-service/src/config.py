@@ -23,9 +23,6 @@ class Settings:
         # Doit être >= NILM_DETECTION_INTERVAL_MINUTES pour ne pas rater les cycles récents
         self.active_buffer_minutes = int(os.getenv("NILM_DETECTION_INTERVAL_MINUTES", "5")) * 2
 
-        # Path to HA SQLite DB mounted into this container (empty = feature disabled).
-        self.ha_sqlite_path = os.getenv("HA_SQLITE_PATH", "")
-
     @property
     def local_db_url(self):
         return (

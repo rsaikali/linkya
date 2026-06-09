@@ -214,7 +214,7 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
             num_saved = num_skipped = 0
             with db_manager.get_session() as session:
                 # Wipe existing detections for the window, then insert fresh ones.
-                # Full detect: wipe ALL detections + reset energy HWM (fresh slate).
+                # Full detect: wipe ALL detections (fresh slate).
                 # Cron: wipe only the time window (don't touch older history).
                 if full_detect:
                     session.execute(text("DELETE FROM nilm_detections"))

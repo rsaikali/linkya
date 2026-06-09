@@ -284,30 +284,6 @@ class ApplianceRepository(DatabaseBase):
 
             return appliance_id
 
-    def reset_energy(self, appliance_id: int):
-        """Reset the HA energy sensor to 0.
-
-        Resets energy_hwm_kwh so ha-publish stops clamping to the old high.
-        Detections are kept (next full detect will rebuild the cumulative sum
-        starting from 0 again). Returns the previous cumulative total (kWh).
-        """
-        with self.engine.begin() as conn:
-            cur = conn.execute(
-                text(
-                    """
-                    SELECT COALESCE(SUM(energy_consumed), 0) / 1000.0
-                    FROM nilm_detections
-                    WHERE appliance_id = :id AND energy_consumed IS NOT NULL
-                    """
-                ),
-                {"id": appliance_id},
-            ).scalar() or 0.0
-            conn.execute(
-                text("UPDATE nilm_appliances SET energy_hwm_kwh = 0 WHERE id = :id"),
-                {"id": appliance_id},
-            )
-        return round(float(cur), 3)
-
     def update_ha_publish(self, appliance_id: int, enabled: bool):
         """
         Toggles HA publishing for an appliance.

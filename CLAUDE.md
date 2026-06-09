@@ -9,7 +9,7 @@ Plateforme NILM (Non-Intrusive Load Monitoring) : détecte des appareils sans pr
 **Histoire** : linkystat (courbe globale) → HA + prises connectées (détail partiel) → Linkya comble les trous via NILM sur signatures manuelles → résultats injectés dans HA.
 
 **Source** : `sensor.linky_sinsts` depuis HA (MQTT statestream + History API backfill).
-**Sortie** : `binary_sensor.nilm_*` (ON/OFF) + `sensor.nilm_*_energy` (kWh) via MQTT discovery.
+**Sortie** : `binary_sensor.nilm_*` (ON/OFF) + `sensor.nilm_*_confidence` (%) via MQTT discovery, énergie via **external statistics** HA (`linkya:<slug>_energy`).
 
 ## Architecture — 5 services
 
@@ -20,7 +20,8 @@ HA (sensor.linky_sinsts)
   ├── MQTT statestream ─┐
   └── History API ──────┴─→ ha-ingest ─→ PostgreSQL (linky_realtime)
 PostgreSQL ─→ nilm (Seq2Point GRU) ─→ nilm_detections
-nilm_detections ─→ ha-publish ─→ HA MQTT discovery
+nilm_detections ─→ ha-publish ─→ HA MQTT discovery (binary + confidence + stats)
+nilm_detections ─→ backend ─→ HA WebSocket recorder/import_statistics (énergie)
 Browser ─→ backend (REST + SSE + React) ─→ PostgreSQL ─(HTTP)→ nilm
 ```
 
@@ -30,7 +31,7 @@ Browser ─→ backend (REST + SSE + React) ─→ PostgreSQL ─(HTTP)→ nilm
 | `backend` | FastAPI | REST API, bus SSE, sert le SPA React, proxy vers nilm |
 | `nilm` | FastAPI + TensorFlow CPU + APScheduler | train / detect / signatures + cron détection |
 | `ha-ingest` | asyncio + aiomqtt + httpx | statestream MQTT + backfill History API |
-| `ha-publish` | asyncio + aiomqtt | détections → MQTT discovery HA + statistics |
+| `ha-publish` | asyncio + aiomqtt | détections → MQTT discovery HA (binary/confidence/diagnostics) |
 
 ## Communication inter-services
 
@@ -55,17 +56,24 @@ Browser ─→ backend (REST + SSE + React) ─→ PostgreSQL ─(HTTP)→ nilm
 | `nilm_appliances` | `id`, `name`, `ha_publish`, `ha_entity_id` | `nilm` `init_tables()` |
 | `nilm_signatures` | `appliance_id`, `start_time`, `end_time`, `power_data`, `is_negative` | idem |
 | `nilm_detections` | `appliance_id`, `start_time`, `end_time`, `avg_power`, `confidence_score` | idem |
-| `nilm_models` | `model_name`, `metrics`, `model_path` | idem |
+| `nilm_models` | `model_name`, `metrics`, `model_path`, `is_champion` | idem |
+| `nilm_meta` | `key`, `value` (heartbeats, marqueurs) | idem |
 
-Bucketing temporel : `to_timestamp(floor(epoch/secs)*secs)` (pas de `time_bucket` TimescaleDB). **Pas de migrations** — `make clean && make up`.
+Bucketing temporel : `to_timestamp(floor(epoch/secs)*secs)` (pas de `time_bucket` TimescaleDB). Pas d'Alembic — migrations légères = `ALTER TABLE … IF (NOT) EXISTS` idempotents dans `init_tables()`, sinon `make clean && make up`.
 
-## Publication HA (`ha-publish`)
+## Publication HA
 
-Par appareil avec `ha_publish=True` :
+Deux canaux, un par nature de donnée :
 
-- **`binary_sensor.nilm_<slug>`** — ON/OFF live (cycle en cours), via MQTT discovery. **Live only** : HA n'upsert pas l'historique d'états → pas de on/off passé rejouable.
-- **`sensor.nilm_<slug>_energy`** — kWh, `total_increasing` (utilisable direct dans l'Energy Dashboard). Valeur = `SUM(détections)` **clampée à un high-water-mark persisté** (`ha_energy_hwm`, écrit par `ha-publish`) → **jamais décroissante**. C'est le clamp qui élimine le saut : une re-détection qui baisse la somme ne fait plus lire un reset compteur à HA.
+**MQTT discovery (`ha-publish`)** — par appareil avec `ha_publish=True` :
+- **`binary_sensor.nilm_<slug>`** — ON/OFF live (cycle en cours). Live only.
+- **`sensor.nilm_<slug>_confidence`** — confiance (%) de la dernière détection.
 - **Sensors diagnostic** (device `Linkya NILM`, catégorie diagnostic) : version modèle, type, entraîné le, durée, signatures, appareils, epochs, train_loss, val_loss, détections total, dernière détection. 1 topic JSON partagé + `value_template`. **Pas de F1** — Linkya n'a pas de ground-truth.
+
+**External statistics (`backend/src/ha_backfill.py`)** — énergie kWh :
+- `statistic_id = linkya:<slug>_energy` via WebSocket `recorder/clear_statistics` + `recorder/import_statistics` (comme Tibber/EDF). **Pas d'entité, pas de state, pas de MQTT** — l'Energy Dashboard lit uniquement les statistics horaires.
+- Déclenché après **chaque** `detection_complete` ayant trouvé des détections (cron ou full) : NILM détecte toujours en retard, chaque run réécrit l'historique. Buckets horaires avec split proportionnel des cycles à cheval (23h54→00h13) + carry-forward.
+- Réécriture du passé native et supportée → plus de clamp HWM, plus de `total_increasing`, plus d'injection SQLite directe.
 
 ## Compose
 

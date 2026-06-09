@@ -39,7 +39,6 @@ class DatabaseManager:
             Column("name", String(255), nullable=False),
             Column("ha_publish", Boolean, nullable=False, server_default="false"),
             Column("ha_entity_id", String(255), nullable=True),
-            Column("energy_hwm_kwh", Float, nullable=False, server_default="0"),
             Column("created_at", DateTime(timezone=True), default=datetime.utcnow),
             Column("updated_at", DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow),
             Index("idx_nilm_appliances_name", "name"),
@@ -152,8 +151,9 @@ class DatabaseManager:
                 conn.execute(
                     text("ALTER TABLE nilm_detections ADD COLUMN IF NOT EXISTS model_name TEXT")
                 )
+                # Energy HWM removed: energy now goes to HA as external statistics.
                 conn.execute(
-                    text("ALTER TABLE nilm_appliances ADD COLUMN IF NOT EXISTS energy_hwm_kwh FLOAT NOT NULL DEFAULT 0")
+                    text("ALTER TABLE nilm_appliances DROP COLUMN IF EXISTS energy_hwm_kwh")
                 )
                 conn.commit()
                 logger.info("Tables NILM créées avec succès")

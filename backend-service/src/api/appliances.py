@@ -50,19 +50,6 @@ async def toggle_ha_publish(appliance_id: int, body: HaPublishUpdate):
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
-@router.post("/{appliance_id}/reset-energy")
-async def reset_energy(appliance_id: int):
-    """Reset the HA energy sensor to 0 (baseline = current total, keeps detections).
-    Use after clearing the entity's corrupted statistics in HA."""
-    try:
-        baseline = db_manager.reset_energy(appliance_id)
-        bus.publish("appliance_updated", {"id": appliance_id, "energy_reset": True})
-        return {"status": "success", "baseline_kwh": baseline}
-    except Exception as e:
-        logger.error(f"Error resetting energy for appliance {appliance_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-
-
 @router.post("/{appliance_id}/ha-backfill")
 async def ha_backfill(appliance_id: int):
     """Inject all NILM detections as historical energy statistics into HA (recorder/import_statistics)."""

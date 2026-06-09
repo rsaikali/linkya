@@ -71,10 +71,6 @@ services:
         condition: service_healthy
       nilm:
         condition: service_healthy
-    volumes:
-      # HA data dir mounted read-write for SQLite states injection.
-      # Set HA_SQLITE_PATH=/ha_db/home-assistant_v2.db in .env to enable.
-      - /home/rsaikali/homeassistant:/ha_db:rw
     env_file: [.env]
     networks: [linkya]
 
