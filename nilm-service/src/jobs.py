@@ -223,7 +223,7 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
                     session.execute(
                         text("""
                             DELETE FROM nilm_detections
-                            WHERE start_time < :end AND end_time > :start
+                            WHERE start_time >= :start AND start_time < :end
                         """),
                         {"start": start_time, "end": end_time},
                     )
