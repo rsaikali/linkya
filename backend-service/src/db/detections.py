@@ -125,7 +125,8 @@ class DetectionRepository(DatabaseBase):
                 ROUND(d.confidence_avg::numeric, 3) AS confidence_avg,
                 ROUND(t.total_kwh::numeric, 3) AS total_kwh,
                 s.cnt AS signatures_count,
-                (SELECT training_date FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS trained_at
+                (SELECT training_date FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS trained_at,
+                (SELECT metrics FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS model_metrics
             FROM det_stats d, det_total dt, total_consumption t, sig_count s
             """
         )
@@ -142,6 +143,8 @@ class DetectionRepository(DatabaseBase):
         kwh = float(m["kwh"]) if m["kwh"] is not None else 0.0
         total_kwh = float(m["total_kwh"]) if m["total_kwh"] is not None else 0.0
         recovered_share = round(kwh / total_kwh, 3) if total_kwh > 0 else None
+        model_metrics = m["model_metrics"] or {}
+        val_loss = model_metrics.get("val_loss") if isinstance(model_metrics, dict) else None
 
         return {
             "appliance": m["appliance_name"],
@@ -153,6 +156,7 @@ class DetectionRepository(DatabaseBase):
             "confidence_avg": (float(m["confidence_avg"]) if m["confidence_avg"] is not None else None),
             "signatures_count": int(m["signatures_count"]) if m["signatures_count"] is not None else 0,
             "trained_at": format_datetime(m["trained_at"]),
+            "val_loss": round(float(val_loss), 4) if val_loss is not None else None,
         }
 
     def get_history(self, appliance_name: str, days: int = 30) -> dict | None:
