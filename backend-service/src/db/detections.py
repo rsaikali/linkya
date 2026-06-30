@@ -157,7 +157,7 @@ class DetectionRepository(DatabaseBase):
             "kwh": kwh,
             "total_kwh": total_kwh,
             "recovered_share": recovered_share,
-            "cycles": int(m["total_cycles"]) if m["total_cycles"] is not None else 0,
+            "cycles": int(m["cycles"]) if m["cycles"] is not None else 0,
             "confidence_avg": (float(m["confidence_avg"]) if m["confidence_avg"] is not None else None),
             "signatures_count": int(m["signatures_count"]) if m["signatures_count"] is not None else 0,
             "trained_at": format_datetime(m["trained_at"]),
