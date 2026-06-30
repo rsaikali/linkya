@@ -144,7 +144,12 @@ class DetectionRepository(DatabaseBase):
         total_kwh = float(m["total_kwh"]) if m["total_kwh"] is not None else 0.0
         recovered_share = round(kwh / total_kwh, 3) if total_kwh > 0 else None
         model_metrics = m["model_metrics"] or {}
-        val_loss = model_metrics.get("val_loss") if isinstance(model_metrics, dict) else None
+        val_loss = None
+        if isinstance(model_metrics, dict):
+            for app in model_metrics.get("appliances", []):
+                if app.get("name") == appliance_name:
+                    val_loss = (app.get("metrics") or {}).get("val_loss")
+                    break
 
         return {
             "appliance": m["appliance_name"],
