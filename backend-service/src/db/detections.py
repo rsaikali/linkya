@@ -227,7 +227,8 @@ class DetectionRepository(DatabaseBase):
                 GREATEST(
                     EXTRACT(EPOCH FROM (d.end_time - d.start_time)) / 60.0,
                     1.0
-                ) AS duration_min
+                ) AS duration_min,
+                d.start_time AS start_time
             FROM nilm_detections d
             JOIN nilm_appliances a ON d.appliance_id = a.id
             WHERE a.name = :appliance_name
@@ -258,9 +259,12 @@ class DetectionRepository(DatabaseBase):
         peak_hours = [h for h, _ in hour_counts.most_common(2)]
         peak_hours.sort()
 
+        last_detection_at = format_datetime(rows[0]._mapping["start_time"])
+
         return {
             "appliance": appliance_name,
             "peak_hours": peak_hours,
+            "last_detection_at": last_detection_at,
             "cycles": cycles,
         }
 
