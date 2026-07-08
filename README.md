@@ -34,7 +34,7 @@ mqtt_statestream:
 ### 2 — Configure
 
 ```bash
-git clone https://github.com/YOUR_USER/linkya
+git clone https://github.com/rsaikali/linkya
 cd linkya
 cp .env.example .env
 ```
