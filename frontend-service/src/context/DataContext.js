@@ -3,20 +3,20 @@ import { apiService } from '../services/api';
 import { detectionsWS, importProgressWS } from '../services/sse';
 
 /**
- * Contexte centralisé pour toutes les données de l'application
- * Source unique de vérité pour : consommation, détections, signatures, appareils
- * Gère également le zoom et la période visible du graphique
+ * Centralized context for all app data
+ * Single source of truth for: consumption, detections, signatures, appliances
+ * Also manages chart zoom and visible period
  */
 const DataContext = createContext();
 
 export const DataProvider = ({ children }) => {
-  // ===== États des données =====
+  // ===== Data state =====
   const [rawData, setRawData] = useState(null);
   const [detections, setDetections] = useState([]);
   const [signatures, setSignatures] = useState([]);
   const [appliances, setAppliances] = useState([]);
 
-  // ===== États de chargement =====
+  // ===== Loading state =====
   const [loading, setLoading] = useState({
     consumption: true,
     detections: true,
@@ -26,7 +26,7 @@ export const DataProvider = ({ children }) => {
 
   const [loadingProgress, setLoadingProgress] = useState(0);
 
-  // ===== États d'erreur =====
+  // ===== Error state =====
   const [errors, setErrors] = useState({
     consumption: null,
     detections: null,
@@ -34,11 +34,11 @@ export const DataProvider = ({ children }) => {
     appliances: null,
   });
 
-  // ===== États du graphique (fusionné depuis ChartContext) =====
+  // ===== Chart state (merged from ChartContext) =====
   const [visibleTimeRange, setVisibleTimeRange] = useState(null);
   const [zoomState, setZoomState] = useState({ min: null, max: null, dataLength: null });
 
-  // ===== État de progression d'import =====
+  // ===== Import progress state =====
   const [importProgress, setImportProgress] = useState({
     status: 'idle',
     totalLines: 0,
@@ -149,12 +149,12 @@ export const DataProvider = ({ children }) => {
     ]);
   }, [refreshConsumption, refreshDetections, refreshSignatures, refreshAppliances]);
 
-  // ===== Chargement initial =====
+  // ===== Initial load =====
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
 
-  // ===== WebSocket pour les détections + signatures =====
+  // ===== SSE for detections + signatures =====
   useEffect(() => {
     const handleNewDetection = () => {
       refreshDetections();
@@ -211,7 +211,7 @@ export const DataProvider = ({ children }) => {
     };
   }, [refreshDetections, refreshSignatures]);
 
-  // ===== WebSocket pour l'import de signatures =====
+  // ===== SSE for signature import =====
   useEffect(() => {
     const handleImportStart = (data) => {
       setImportProgress({
@@ -268,7 +268,7 @@ export const DataProvider = ({ children }) => {
     };
   }, [refreshSignatures]);
 
-  // ===== Événements custom window (pour compatibilité) =====
+  // ===== Custom window events (for compatibility) =====
   useEffect(() => {
     const handleSignatureCreated = () => {
       refreshSignatures();
@@ -280,7 +280,7 @@ export const DataProvider = ({ children }) => {
     };
   }, [refreshSignatures]);
 
-  // ===== Détections filtrées selon la période visible =====
+  // ===== Detections filtered by visible period =====
   const visibleDetections = useMemo(() => {
     if (!visibleTimeRange || !detections.length) {
       return detections;
@@ -293,41 +293,41 @@ export const DataProvider = ({ children }) => {
       const detectionStart = new Date(d.start_time).getTime();
       const detectionEnd = new Date(d.end_time).getTime();
 
-      // Une détection est visible si elle chevauche la période
+      // A detection is visible if it overlaps the period
       return (detectionStart <= endTime && detectionEnd >= startTime);
     });
   }, [detections, visibleTimeRange]);
 
-  // ===== Valeur du contexte =====
+  // ===== Context value =====
   const value = {
-    // Données
+    // Data
     rawData,
     detections,
     signatures,
     appliances,
     visibleDetections,
 
-    // États de chargement
+    // Loading state
     loading,
     loadingProgress,
 
-    // Erreurs
+    // Errors
     errors,
 
-    // Actions de refresh
+    // Refresh actions
     refreshConsumption,
     refreshDetections,
     refreshSignatures,
     refreshAppliances,
     refreshAll,
 
-    // État du graphique
+    // Chart state
     visibleTimeRange,
     setVisibleTimeRange,
     zoomState,
     setZoomState,
 
-    // Progression d'import
+    // Import progress
     importProgress,
     setImportProgress,
   };

@@ -25,6 +25,23 @@ jobs:
       - name: isort
         run: isort --check-only backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src
 
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: backend-service
+        working-directory: backend-service
+        run: |
+          uv sync --group dev
+          uv run python -m pytest tests/ -v
+      - name: nilm-service
+        working-directory: nilm-service
+        run: |
+          uv sync --group dev
+          uv run python -m pytest tests/ -v
+
   build:
     name: Docker build
     runs-on: ubuntu-latest
@@ -32,6 +49,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build backend
         run: docker build -f backend-service/Dockerfile --target prod -t linkya-backend .
+      - name: Build nilm
+        run: docker build -t linkya-nilm ./nilm-service
       - name: Build ha-ingest
         run: docker build -t linkya-ha-ingest ./ha-ingest-service
       - name: Build ha-publish

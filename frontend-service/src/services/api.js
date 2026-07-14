@@ -14,93 +14,93 @@ const api = axios.create({
 
 // Services API
 export const apiService = {
-  // Récupérer la dernière consommation
+  // Get the latest consumption
   getLatestConsumption: async () => {
     try {
       const response = await api.get('/api/consumption/latest');
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération de la dernière consommation:', error);
+      console.error('Error fetching latest consumption:', error);
       throw error;
     }
   },
 
-  // Récupérer l'historique de consommation
+  // Get consumption history
   getConsumptionHistory: async (interval = 'auto') => {
     try {
       const params = { interval };
-      
+
       const response = await api.get('/api/consumption/history', { params });
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération de l\'historique:', error);
+      console.error('Error fetching history:', error);
       throw error;
     }
   },
 
-  // Récupérer tous les appareils
+  // Get all appliances
   getAllAppliances: async () => {
     try {
       const response = await api.get('/api/appliances');
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération des appareils:', error);
+      console.error('Error fetching appliances:', error);
       throw error;
     }
   },
 
-  // Récupérer les détections
+  // Get detections
   getDetections: async () => {
     try {
-      // Récupère toutes les détections
+      // Fetch all detections
       const response = await api.get('/api/detections');
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération des détections:', error);
+      console.error('Error fetching detections:', error);
       throw error;
     }
   },
 
-  // Récupérer les signatures
+  // Get signatures
   getSignatures: async () => {
     try {
       const response = await api.get('/api/signatures');
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la récupération des signatures:', error);
+      console.error('Error fetching signatures:', error);
       throw error;
     }
   },
 
-  // Créer une nouvelle signature d'appareil
+  // Create a new appliance signature
   createSignature: async (signatureData) => {
     try {
       const response = await api.post('/api/signatures', signatureData);
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la création de la signature:', error);
+      console.error('Error creating signature:', error);
       throw error;
     }
   },
 
-  // Valider une détection (marquer comme correcte)
+  // Validate a detection (mark as correct)
   validateDetection: async (detectionId) => {
     try {
       const response = await api.patch(`/api/detections/${detectionId}/validate`);
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la validation de la détection:', error);
+      console.error('Error validating detection:', error);
       throw error;
     }
   },
 
-  // Invalider une détection (marquer comme incorrecte)
+  // Invalidate a detection (mark as incorrect)
   invalidateDetection: async (detectionId) => {
     try {
       const response = await api.patch(`/api/detections/${detectionId}/invalidate`);
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de l\'invalidation de la détection:', error);
+      console.error('Error invalidating detection:', error);
       throw error;
     }
   },
@@ -114,12 +114,12 @@ export const apiService = {
       );
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la réassignation de la détection:', error);
+      console.error('Error reassigning detection:', error);
       throw error;
     }
   },
 
-  // Exporter toutes les signatures en CSV
+  // Export all signatures as CSV
   exportSignatures: async () => {
     try {
       const response = await api.get('/api/signatures/export', {
@@ -127,12 +127,12 @@ export const apiService = {
       });
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de l\'export des signatures:', error);
+      console.error('Error exporting signatures:', error);
       throw error;
     }
   },
 
-  // Importer des signatures depuis un fichier CSV
+  // Import signatures from a CSV file
   importSignatures: async (file) => {
     try {
       const formData = new FormData();
@@ -145,7 +145,7 @@ export const apiService = {
       });
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de l\'import des signatures:', error);
+      console.error('Error importing signatures:', error);
       throw error;
     }
   },
@@ -156,7 +156,7 @@ export const apiService = {
       const response = await api.patch(`/api/appliances/${applianceId}/ha-publish`, { enabled });
       return response.data;
     } catch (error) {
-      console.error('Erreur lors du toggle HA publish:', error);
+      console.error('Error toggling HA publish:', error);
       throw error;
     }
   },
@@ -167,7 +167,7 @@ export const apiService = {
       const response = await api.delete('/api/nilm/models');
       return response.data;
     } catch (error) {
-      console.error('Erreur lors de la suppression des modèles:', error);
+      console.error('Error deleting models:', error);
       throw error;
     }
   },

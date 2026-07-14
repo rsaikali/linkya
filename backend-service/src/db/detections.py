@@ -317,7 +317,7 @@ class DetectionRepository(DatabaseBase):
                 "end_time": format_datetime(result[4]),
             }
 
-            # Supprimer la détection
+            # Delete the detection
             delete_query = text(
                 """
                 DELETE FROM nilm_detections
@@ -338,7 +338,7 @@ class DetectionRepository(DatabaseBase):
             Dictionary with the number of deleted detections
         """
         with self.engine.connect() as conn:
-            # Compter d'abord le nombre de détections
+            # Count detections first
             count_query = text(
                 """
                 SELECT COUNT(*) FROM nilm_detections
@@ -346,7 +346,7 @@ class DetectionRepository(DatabaseBase):
             )
             count = conn.execute(count_query).scalar() or 0
 
-            # Supprimer toutes les détections
+            # Delete all detections
             delete_query = text(
                 """
                 DELETE FROM nilm_detections
@@ -362,7 +362,8 @@ class DetectionRepository(DatabaseBase):
     def validate_detection(self, detection_id, is_correct):
         """
         Marks a detection as validated by the user.
-        Creates a signature (positive or negative) via Celery task.
+        Flags a signature to create (positive or negative); the API layer
+        performs the actual creation via the nilm service.
 
         Args:
             detection_id: ID of the detection to validate

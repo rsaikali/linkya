@@ -19,8 +19,8 @@ class Settings:
 
         self.poll_interval = int(os.getenv("HA_PUBLISH_POLL_INTERVAL", "30"))
 
-        # Buffer : une détection est "active" si end_time >= NOW() - buffer
-        # Doit être >= NILM_DETECTION_INTERVAL_MINUTES pour ne pas rater les cycles récents
+        # Buffer: a detection is "active" if end_time >= NOW() - buffer
+        # Must be >= NILM_DETECTION_INTERVAL_MINUTES to avoid missing recent cycles
         self.active_buffer_minutes = int(os.getenv("NILM_DETECTION_INTERVAL_MINUTES", "5")) * 2
 
     @property

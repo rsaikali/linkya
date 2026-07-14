@@ -7,22 +7,22 @@ import re
 
 def normalize_name_for_tensorflow(name):
     """
-    Normalise un nom pour être compatible avec TensorFlow/Keras.
-    Les noms de scope TensorFlow doivent correspondre au pattern: ^[A-Za-z0-9.][A-Za-z0-9_.\\/>-]*$
+    Normalize a name to be TensorFlow/Keras-compatible.
+    TensorFlow scope names must match the pattern: ^[A-Za-z0-9.][A-Za-z0-9_.\\/>-]*$
 
     Args:
-        name: Nom à normaliser
+        name: Name to normalize
 
     Returns:
-        Nom normalisé (espaces → underscores, caractères spéciaux supprimés)
+        Normalized name (spaces -> underscores, special characters stripped)
     """
-    # Remplacer les espaces par des underscores
+    # Replace spaces with underscores
     normalized = name.replace(" ", "_")
-    # Remplacer les apostrophes par rien
+    # Strip apostrophes
     normalized = normalized.replace("'", "")
-    # Garder uniquement les caractères alphanumériques, points, underscores, slashes, tirets
+    # Keep only alphanumeric characters, dots, underscores, slashes, dashes
     normalized = re.sub(r"[^A-Za-z0-9._/\->]", "", normalized)
-    # S'assurer que le nom commence par une lettre, chiffre ou point
+    # Ensure the name starts with a letter, digit, or dot
     if normalized and not re.match(r"^[A-Za-z0-9.]", normalized):
         normalized = "appliance_" + normalized
     return normalized if normalized else "unknown_appliance"

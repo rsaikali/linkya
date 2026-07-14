@@ -4,7 +4,7 @@ NILM (Non-Intrusive Load Monitoring) package.
 Provides tools for appliance disaggregation using deep learning.
 """
 
-from .callbacks import RedisTrainingCallback
+from .callbacks import TrainingProgressCallback
 from .detectors import ApplianceStateDetector, ChangePointPatternDetector
 from .layers import MultiHeadAttentionLayer
 from .losses import asymmetric_loss, focal_loss_fixed
@@ -15,7 +15,7 @@ from .utils import normalize_name_for_tensorflow
 
 
 __all__ = [
-    "RedisTrainingCallback",
+    "TrainingProgressCallback",
     "MultiHeadAttentionLayer",
     "asymmetric_loss",
     "focal_loss_fixed",

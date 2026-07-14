@@ -1,5 +1,5 @@
 """
-Gestion de la base de données TimescaleDB pour nilm-service
+Database access for nilm-service (plain PostgreSQL)
 """
 
 import logging
@@ -17,21 +17,21 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    """Gestionnaire de connexion à la base de données TimescaleDB"""
+    """Database connection manager"""
 
     def __init__(self):
-        """Initialise le gestionnaire de base de données"""
+        """Initialize the database manager"""
         self.engine = create_engine(settings.database_url, pool_pre_ping=True, pool_size=5, max_overflow=10)
         self.SessionLocal = sessionmaker(bind=self.engine)
         self.metadata = MetaData()
 
-        # Définition des tables
+        # Define tables
         self._define_tables()
 
     def _define_tables(self):
-        """Définit les tables pour le service NILM"""
+        """Define the tables for the NILM service"""
 
-        # Table des appliances
+        # Appliances table
         self.nilm_appliances = Table(
             "nilm_appliances",
             self.metadata,
@@ -44,7 +44,7 @@ class DatabaseManager:
             Index("idx_nilm_appliances_name", "name"),
         )
 
-        # Table des signatures de courbes (soumises par utilisateur)
+        # Curve signatures table (user-submitted)
         self.nilm_signatures = Table(
             "nilm_signatures",
             self.metadata,
@@ -69,7 +69,7 @@ class DatabaseManager:
             Index("idx_nilm_signatures_time", "start_time", "end_time"),
         )
 
-        # Table des détections d'appliances
+        # Appliance detections table
         self.nilm_detections = Table(
             "nilm_detections",
             self.metadata,
@@ -112,34 +112,34 @@ class DatabaseManager:
 
     @contextmanager
     def get_session(self):
-        """Context manager pour obtenir une session de base de données"""
+        """Context manager to obtain a database session"""
         session = self.SessionLocal()
         try:
             yield session
             session.commit()
         except Exception as e:
             session.rollback()
-            logger.error(f"Erreur de session: {e}")
+            logger.error(f"Session error: {e}")
             raise
         finally:
             session.close()
 
     def test_connection(self):
-        """Teste la connexion à la base de données"""
+        """Test the database connection"""
         try:
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            logger.info("Connexion à TimescaleDB: OK")
+            logger.info("Database connection: OK")
             return True
         except SQLAlchemyError as e:
-            logger.error(f"Erreur de connexion à TimescaleDB: {e}")
+            logger.error(f"Database connection error: {e}")
             return False
 
     def init_tables(self):
-        """Initialise les tables NILM dans TimescaleDB"""
+        """Initialize the NILM tables"""
         try:
             with self.engine.connect() as conn:
-                # Créer les tables si elles n'existent pas
+                # Create tables if they don't exist
                 self.metadata.create_all(self.engine)
                 # Key/value meta (e.g. last_detect_run heartbeat)
                 conn.execute(
@@ -156,32 +156,32 @@ class DatabaseManager:
                     text("ALTER TABLE nilm_appliances DROP COLUMN IF EXISTS energy_hwm_kwh")
                 )
                 conn.commit()
-                logger.info("Tables NILM créées avec succès")
+                logger.info("NILM tables created successfully")
 
-                # Vérifier si les tables existent
+                # Check that the tables exist
                 for table_name in ["nilm_appliances", "nilm_signatures", "nilm_detections", "nilm_models"]:
                     result = conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}')"))
                     exists = result.scalar()
-                    status = "existe" if exists else "n'existe pas"
+                    status = "exists" if exists else "does not exist"
                     logger.info(f"Table {table_name}: {status}")
 
                 conn.commit()
 
         except SQLAlchemyError as e:
-            logger.error(f"Erreur lors de l'initialisation des tables: {e}")
+            logger.error(f"Error initializing tables: {e}")
             raise
 
     def get_consumption_data(self, start_time, end_time, resample_seconds=1):
         """
-        Récupère les données de consommation depuis linky_realtime
+        Fetch consumption data from linky_realtime
 
         Args:
-            start_time: Début de la période
-            end_time: Fin de la période
-            resample_seconds: Intervalle de rééchantillonnage (secondes)
+            start_time: Period start
+            end_time: Period end
+            resample_seconds: Resampling interval (seconds)
 
         Returns:
-            Liste de dictionnaires avec time et papp
+            List of dicts with time and papp
         """
         try:
             with self.engine.connect() as conn:
@@ -202,29 +202,29 @@ class DatabaseManager:
 
                 data = [{"time": row.bucket_time, "papp": float(row.avg_papp)} for row in result]
 
-                logger.info(f"Récupéré {len(data)} points de consommation")
+                logger.info(f"Fetched {len(data)} consumption points")
                 return data
 
         except SQLAlchemyError as e:
-            logger.error(f"Erreur lors de la récupération des données: {e}")
+            logger.error(f"Error fetching data: {e}")
             return []
 
     def add_signature(self, appliance_id, start_time, end_time, is_negative=False):
         """
-        Ajoute une signature de courbe soumise par l'utilisateur.
-        Capture les data points et calcule l'analyse morphologique.
+        Add a user-submitted curve signature.
+        Captures the data points and computes the morphological analysis.
 
         Args:
-            appliance_id: ID de l'appareil
-            start_time: Début de la signature
-            end_time: Fin de la signature
-            is_negative: True si signature négative (faux positif)
+            appliance_id: Appliance ID
+            start_time: Signature start
+            end_time: Signature end
+            is_negative: True if a negative signature (false positive)
 
         Returns:
-            ID de la signature créée ou None si erreur
+            ID of the created signature, or None on error
         """
         try:
-            # Vérifier les chevauchements
+            # Check for overlaps
             with self.engine.connect() as conn:
                 overlap_query = text(
                     """
@@ -245,18 +245,18 @@ class DatabaseManager:
 
                 overlap = result.first()
                 if overlap:
-                    logger.error(f"Chevauchement détecté avec signature {overlap.id}")
+                    logger.error(f"Overlap detected with signature {overlap.id}")
                     raise ValueError(
-                        f"Cette période chevauche une signature existante "
+                        f"This period overlaps an existing signature "
                         f"({overlap.start_time.strftime('%Y-%m-%d %H:%M')} - "
                         f"{overlap.end_time.strftime('%Y-%m-%d %H:%M')})"
                     )
 
-            # Récupérer les données de consommation
+            # Fetch consumption data
             consumption_data = self.get_consumption_data(start_time, end_time)
 
             if not consumption_data:
-                logger.error("Aucune donnée trouvée pour cette période")
+                logger.error("No data found for this period")
                 return None
 
             # Extract power values and compute stats
@@ -319,29 +319,29 @@ class DatabaseManager:
                 signature_id = result.scalar()
 
                 logger.info(
-                    f"Signature {signature_id} créée: "
+                    f"Signature {signature_id} created: "
                     f"{num_points} points, {avg_power:.1f}W avg, "
                     f"morphology={'computed' if morphology_analysis else 'skipped'}"
                 )
                 return signature_id
 
         except SQLAlchemyError as e:
-            logger.error(f"Erreur lors de l'ajout de la signature: {e}")
+            logger.error(f"Error adding signature: {e}")
             return None
 
     def get_all_signatures(self):
         """
-        Récupère toutes les signatures pour l'entraînement.
-        Optimisé pour éviter le problème N+1 :
-        1. Utilise power_data (JSON) si disponible
-        2. Charge les données manquantes en batch si nécessaire
+        Fetch all signatures for training.
+        Optimized to avoid the N+1 problem:
+        1. Uses power_data (JSON) if available
+        2. Batch-loads missing data if needed
 
         Returns:
-            Liste de signatures avec leurs données
+            List of signatures with their data
         """
         try:
             with self.engine.connect() as conn:
-                # Récupérer toutes les signatures
+                # Fetch all signatures
                 query_text = """
                     SELECT
                         s.id, s.appliance_id, s.start_time, s.end_time,
@@ -373,30 +373,30 @@ class DatabaseManager:
                         "raw_data": None,
                     }
 
-                    # Stratégie 1: Utiliser power_data stocké (rapide)
+                    # Strategy 1: use stored power_data (fast)
                     if row.power_data:
                         try:
                             p_data = row.power_data if isinstance(row.power_data, dict) else json.loads(row.power_data)
                             values = p_data.get("values", [])
-                            # Reconstruire format attendu par le modèle [{"papp": x}, ...]
+                            # Rebuild the format expected by the model [{"papp": x}, ...]
                             sig["raw_data"] = [{"papp": v} for v in values]
                         except Exception as e:
-                            logger.warning(f"Erreur lecture power_data sig {row.id}: {e}")
+                            logger.warning(f"Error reading power_data for sig {row.id}: {e}")
 
                     if not sig["raw_data"]:
                         missing_data_sigs.append(sig)
 
                     signatures.append(sig)
 
-                # Stratégie 2: Batch load pour les données manquantes (lent mais optimisé)
+                # Strategy 2: batch-load missing data (slow but optimized)
                 if missing_data_sigs:
-                    logger.info(f"Chargement données brutes pour {len(missing_data_sigs)} signatures...")
-                    # Pour éviter une requête géante, on fait boucle optimisée ou on accepte le N+1
-                    # juste pour les anciennes signatures sans power_data
+                    logger.info(f"Loading raw data for {len(missing_data_sigs)} signatures...")
+                    # To avoid one giant query, we loop per-signature (N+1) —
+                    # acceptable since it only affects old signatures without power_data
                     for sig in missing_data_sigs:
                         sig["raw_data"] = self.get_consumption_data(sig["start_time"], sig["end_time"])
 
-                        # Auto-repair: sauvegarder power_data pour la prochaine fois
+                        # Auto-repair: save power_data for next time
                         if sig["raw_data"]:
                             try:
                                 power_values = [d["papp"] for d in sig["raw_data"]]
@@ -406,7 +406,7 @@ class DatabaseManager:
                                     "values": power_values,
                                     "num_points": len(power_values),
                                 }
-                                # Update DB (dans une nouvelle transaction)
+                                # Update DB (in a new transaction)
                                 with self.get_session() as session:
                                     session.execute(
                                         text("UPDATE nilm_signatures SET power_data = :pd WHERE id = :id"),
@@ -415,11 +415,11 @@ class DatabaseManager:
                             except Exception as e:
                                 logger.warning(f"Auto-repair failed for sig {sig['id']}: {e}")
 
-                logger.info(f"Récupéré {len(signatures)} signatures (dont {len(missing_data_sigs)} rechargées)")
+                logger.info(f"Fetched {len(signatures)} signatures ({len(missing_data_sigs)} reloaded)")
                 return signatures
 
         except SQLAlchemyError as e:
-            logger.error(f"Erreur lors de la récupération des signatures: {e}")
+            logger.error(f"Error fetching signatures: {e}")
             return []
 
     def set_meta(self, key, value):
@@ -447,9 +447,9 @@ class DatabaseManager:
                 )
                 return result.scalar() or 0
         except SQLAlchemyError as e:
-            logger.error(f"Erreur count_positive_signatures: {e}")
+            logger.error(f"Error in count_positive_signatures: {e}")
             return 0
 
 
-# Instance globale du gestionnaire de base de données
+# Global database manager instance
 db_manager = DatabaseManager()

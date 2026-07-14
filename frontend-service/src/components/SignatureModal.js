@@ -24,7 +24,7 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Initialiser les times et charger les appareils
+  // Initialize times and load appliances
   useEffect(() => {
     if (open && selectedRange) {
       setStartTime(selectedRange.startTime.toISOString());
@@ -39,15 +39,15 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
       const names = (data.appliances || []).map(a => a.name);
       setApplianceOptions(names);
     } catch (err) {
-      console.error('Erreur lors du chargement des appareils:', err);
+      console.error('Error loading appliances:', err);
     }
   };
 
   const handleStartTimeChange = (e) => {
-    // Convertir en ISO string si c'est un datetime-local
+    // Convert to ISO string if it's a datetime-local value
     const value = e.target.value;
     if (value && !value.includes('Z') && !value.includes('+')) {
-      // Format datetime-local sans timezone -> ajouter la timezone locale
+      // datetime-local format has no timezone -> add the local timezone
       setStartTime(new Date(value).toISOString());
     } else {
       setStartTime(value);
@@ -55,10 +55,10 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
   };
 
   const handleEndTimeChange = (e) => {
-    // Convertir en ISO string si c'est un datetime-local
+    // Convert to ISO string if it's a datetime-local value
     const value = e.target.value;
     if (value && !value.includes('Z') && !value.includes('+')) {
-      // Format datetime-local sans timezone -> ajouter la timezone locale
+      // datetime-local format has no timezone -> add the local timezone
       setEndTime(new Date(value).toISOString());
     } else {
       setEndTime(value);
@@ -148,7 +148,7 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* Nom de l'appareil avec autocomplete */}
+          {/* Appliance name with autocomplete */}
           <Autocomplete
             freeSolo
             options={applianceOptions}
@@ -171,7 +171,7 @@ const SignatureModal = ({ open, onClose, selectedRange, onSignatureSaved }) => {
             )}
           />
 
-          {/* Plage horaire */}
+          {/* Time range */}
           <Box sx={{ pt: 1 }}>
             <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
               Plage horaire de la signature

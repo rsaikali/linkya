@@ -129,5 +129,5 @@ class DatabaseManager:
         return self.models.delete_all_models()
 
 
-# Instance globale du gestionnaire de base de données
+# Global database manager instance
 db_manager = DatabaseManager()

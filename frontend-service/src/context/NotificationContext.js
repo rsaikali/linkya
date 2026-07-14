@@ -2,8 +2,8 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import { Snackbar, Alert } from '@mui/material';
 
 /**
- * Context pour gérer les notifications globales de l'application
- * Utilise Snackbar + Alert de Material-UI pour un rendu moderne
+ * Context to manage global app notifications
+ * Uses Material-UI Snackbar + Alert for a modern look
  */
 const NotificationContext = createContext();
 
@@ -11,10 +11,10 @@ export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
 
   /**
-   * Affiche une notification
-   * @param {string} message - Le message à afficher
-   * @param {string} severity - Le type de notification: 'success', 'error', 'warning', 'info'
-   * @param {number} duration - Durée en ms avant fermeture auto (défaut: 6000)
+   * Show a notification
+   * @param {string} message - The message to display
+   * @param {string} severity - Notification type: 'success', 'error', 'warning', 'info'
+   * @param {number} duration - Duration in ms before auto-close (default: 6000)
    */
   const showNotification = useCallback((message, severity = 'info', duration = 6000) => {
     const id = Date.now();

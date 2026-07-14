@@ -88,10 +88,10 @@ class SignatureRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            # Compter les signatures à supprimer
+            # Count signatures to delete
             signatures_count = conn.execute(count_query).scalar() or 0
 
-            # Supprimer toutes les signatures
+            # Delete all signatures
             conn.execute(delete_query)
             conn.commit()
 
@@ -132,13 +132,13 @@ class SignatureRepository(DatabaseBase):
         )
 
         with self.engine.connect() as conn:
-            # Récupérer les infos de la signature
+            # Retrieve signature info
             result = conn.execute(get_query, {"signature_id": signature_id}).fetchone()
 
             if not result:
                 return None
 
-            # Convertir en dict
+            # Convert to dict
             signature_info = {
                 "id": result[0],
                 "appliance_id": result[1],
@@ -149,7 +149,7 @@ class SignatureRepository(DatabaseBase):
                 "created_at": format_datetime(result[6]),
             }
 
-            # Supprimer la signature
+            # Delete the signature
             conn.execute(delete_query, {"signature_id": signature_id})
             conn.commit()
 

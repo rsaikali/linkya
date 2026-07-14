@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class ApplianceStateDetector:
-    """Détecteur d'états/cycles pour un appareil"""
+    """State/cycle detector for an appliance"""
 
     def __init__(self, n_states=5):
         """
         Args:
-            n_states: Nombre d'états à détecter (par défaut 5: off, low, medium, high, peak)
+            n_states: Number of states to detect (default 5: off, low, medium, high, peak)
         """
         self.n_states = n_states
         self.kmeans = None
@@ -25,74 +25,74 @@ class ApplianceStateDetector:
 
     def fit(self, power_values):
         """
-        Entraîne le détecteur d'états sur des données de consommation
+        Train the state detector on consumption data
 
         Args:
-            power_values: Array de valeurs de puissance
+            power_values: Array of power values
 
         Returns:
-            Self pour chaînage
+            Self for chaining
         """
         if len(power_values) < self.n_states:
-            logger.warning(f"Pas assez de données pour {self.n_states} états, réduction automatique")
+            logger.warning(f"Not enough data for {self.n_states} states, reducing automatically")
             self.n_states = max(2, len(power_values) // 10)
 
-        # Reshape pour KMeans
+        # Reshape for KMeans
         power_reshaped = power_values.reshape(-1, 1)
 
-        # Clustering pour identifier les états
+        # Clustering to identify states
         self.kmeans = KMeans(n_clusters=self.n_states, random_state=42, n_init=10)
         self.kmeans.fit(power_reshaped)
 
-        # Calculer les seuils entre états (centres triés)
+        # Compute thresholds between states (sorted centers)
         centers = sorted(self.kmeans.cluster_centers_.flatten())
         self.state_thresholds = centers
 
-        logger.info(f"États détectés: {len(centers)} niveaux = {[f'{c:.1f}W' for c in centers]}")
+        logger.info(f"States detected: {len(centers)} levels = {[f'{c:.1f}W' for c in centers]}")
         return self
 
     def predict_states(self, power_values):
         """
-        Prédit les états pour une séquence de consommation
+        Predict states for a consumption sequence
 
         Args:
-            power_values: Array de valeurs de puissance
+            power_values: Array of power values
 
         Returns:
-            Tuple (états prédits, cycles détectés)
+            Tuple (predicted states, detected cycles)
         """
         if self.kmeans is None:
-            raise ValueError("Le détecteur doit être entraîné avant prédiction (fit)")
+            raise ValueError("The detector must be trained before prediction (fit)")
 
-        # Prédire les états
+        # Predict states
         power_reshaped = power_values.reshape(-1, 1)
         states = self.kmeans.predict(power_reshaped)
 
-        # Détecter les cycles (transitions d'états)
+        # Detect cycles (state transitions)
         cycles = self._detect_cycles(states, power_values)
 
         return states, cycles
 
     def _detect_cycles(self, states, power_values):
         """
-        Détecte les cycles/phases dans les transitions d'états
+        Detect cycles/phases in state transitions
 
         Args:
-            states: Array d'états prédits
-            power_values: Valeurs de puissance correspondantes
+            states: Array of predicted states
+            power_values: Corresponding power values
 
         Returns:
-            Liste de cycles détectés avec métadonnées
+            List of detected cycles with metadata
         """
         cycles = []
         current_state = states[0]
         start_idx = 0
 
         for i in range(1, len(states)):
-            # Transition d'état détectée
+            # State transition detected
             if states[i] != current_state:
-                # Enregistrer le cycle précédent
-                if i - start_idx >= 10:  # Minimum 10 points (10 secondes)
+                # Record the previous cycle
+                if i - start_idx >= 10:  # Minimum 10 points (10 seconds)
                     cycle_power = power_values[start_idx:i]
                     cycles.append(
                         {
@@ -106,11 +106,11 @@ class ApplianceStateDetector:
                         }
                     )
 
-                # Nouveau cycle
+                # New cycle
                 current_state = states[i]
                 start_idx = i
 
-        # Dernier cycle
+        # Last cycle
         if len(states) - start_idx >= 10:
             cycle_power = power_values[start_idx:]
             cycles.append(

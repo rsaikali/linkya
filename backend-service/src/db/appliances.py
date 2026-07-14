@@ -24,7 +24,7 @@ class ApplianceRepository(DatabaseBase):
                 ca.ha_entity_id,
                 ca.created_at,
                 ca.updated_at,
-                -- Calculer avg_power depuis linky_realtime
+                -- Compute avg_power from linky_realtime
                 (
                     SELECT AVG(
                         (SELECT AVG(papp)
@@ -36,7 +36,7 @@ class ApplianceRepository(DatabaseBase):
                     WHERE cs.appliance_id = ca.id
                       AND cs.is_negative = false
                 ) as avg_power,
-                -- Calculer power_std depuis linky_realtime
+                -- Compute power_std from linky_realtime
                 (
                     SELECT STDDEV(
                         (SELECT AVG(papp)
@@ -126,7 +126,7 @@ class ApplianceRepository(DatabaseBase):
             params["name"] = name
 
         if not set_clauses:
-            # Rien à mettre à jour, récupérer l'appareil actuel
+            # Nothing to update, return the current appliance
             select_query = text(
                 """
                 SELECT id, name, created_at, updated_at
@@ -191,7 +191,7 @@ class ApplianceRepository(DatabaseBase):
             if not exists:
                 return None
 
-            # Compter les éléments à supprimer
+            # Count items to delete
             count_signatures_query = text(
                 """
                 SELECT COUNT(*)
@@ -211,7 +211,7 @@ class ApplianceRepository(DatabaseBase):
 
             detections_count = conn.execute(count_detections_query, {"appliance_id": appliance_id}).scalar()
 
-            # Supprimer dans l'ordre (FK constraints)
+            # Delete in order (FK constraints)
             delete_detections_query = text(
                 """
                 DELETE FROM nilm_detections

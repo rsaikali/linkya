@@ -1,8 +1,8 @@
 /**
  * SSE client — one EventSource on /api/events, fanned out to subscribers.
  * Replaces the old per-channel WebSocket stack. Exposes the same singletons
- * (trainingLogsWS, detectionsWS, importProgressWS, consumptionWS) with the
- * same .on/.off/.connect/.disconnect API so components need no changes.
+ * (trainingLogsWS, detectionsWS, importProgressWS) with the same
+ * .on/.off/.connect/.disconnect API so components need no changes.
  */
 
 const SSE_URL = `${process.env.REACT_APP_API_URL || ""}/api/events`;
@@ -36,7 +36,7 @@ const SSE_EVENTS = [
 function ensureSource() {
   if (source) return;
   source = new EventSource(SSE_URL);
-  source.onopen = () => console.log("✅ SSE connected", SSE_URL);
+  source.onopen = () => console.log("SSE connected", SSE_URL);
   source.onerror = () => console.warn("SSE error (browser will retry)");
   SSE_EVENTS.forEach((type) => {
     source.addEventListener(type, (e) => {
@@ -102,8 +102,5 @@ const detectionsWS = new Channel({
 
 const importProgressWS = new Channel();
 
-// Consumption live stream was dropped (no value on the front). No-op channel.
-const consumptionWS = new Channel();
-
 export default trainingLogsWS;
-export { trainingLogsWS, detectionsWS, importProgressWS, consumptionWS };
+export { trainingLogsWS, detectionsWS, importProgressWS };

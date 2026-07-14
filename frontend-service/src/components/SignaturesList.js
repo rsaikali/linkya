@@ -47,7 +47,7 @@ import MaterialIcon from "./common/MaterialIcon";
 import ModelInfoSection from "./ModelInfoSection";
 
 /**
- * Composant affichant la liste des signatures
+ * Component showing the list of signatures
  */
 function SignaturesList() {
   const { getApplianceColor, getApplianceIcon, ensureApplianceColors } =
@@ -78,20 +78,20 @@ function SignaturesList() {
   const totalSignatures = signatures.length;
   const error = errors.signatures;
 
-  // Vérifier si un modèle existe
+  // Check whether a model exists
   useEffect(() => {
     const checkModel = async () => {
       try {
         const response = await api.get("/api/nilm/models");
         setHasModel(response.data.models.length > 0);
       } catch (error) {
-        console.error("Erreur lors de la vérification du modèle:", error);
+        console.error("Error checking model:", error);
       }
     };
     checkModel();
   }, []);
 
-  // Écouter les événements WebSocket d'entraînement
+  // Listen for training SSE events
   useEffect(() => {
     const handleTrainingStart = () => {
       setIsTraining(true);
@@ -99,13 +99,13 @@ function SignaturesList() {
 
     const handleTrainingComplete = () => {
       setIsTraining(false);
-      // Recharger le statut du modèle
+      // Reload model status
       setTimeout(async () => {
         try {
           const response = await api.get("/api/nilm/models");
           setHasModel(response.data.models.length > 0);
         } catch (error) {
-          console.error("Erreur lors de la vérification du modèle:", error);
+          console.error("Error checking model:", error);
         }
       }, 1000);
     };
@@ -158,7 +158,7 @@ function SignaturesList() {
       );
       setDeleteModelsDialogOpen(false);
 
-      // Notifier les autres composants de la suppression
+      // Notify other components of the deletion
       window.dispatchEvent(new Event("models-deleted"));
     } catch (error) {
       showNotification(
@@ -170,18 +170,16 @@ function SignaturesList() {
     }
   };
 
-  // Remove the fetchSignatures function and all WebSocket setup - handled by DataContext
-
   const handleExportCSV = async () => {
     try {
       const blob = await apiService.exportSignatures();
 
-      // Créer un lien de téléchargement
+      // Create a download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
 
-      // Générer le nom du fichier avec timestamp
+      // Generate the filename with a timestamp
       const timestamp = new Date()
         .toISOString()
         .replace(/[:.]/g, "-")
@@ -291,10 +289,10 @@ function SignaturesList() {
         "success"
       );
 
-      // Rafraîchir la liste
+      // Refresh the list
       await refreshSignatures();
     } catch (err) {
-      console.error("Erreur lors de la suppression de la signature:", err);
+      console.error("Error deleting signature:", err);
       showNotification("Erreur lors de la suppression", "error");
     } finally {
       setDeleteDialogOpen(false);
@@ -329,7 +327,7 @@ function SignaturesList() {
       {/* Model Information Section */}
       <ModelInfoSection />
 
-      {/* Toolbar avec actions */}
+      {/* Toolbar with actions */}
       <Toolbar
         variant="dense"
         sx={{
@@ -417,7 +415,7 @@ function SignaturesList() {
               </Alert>
             )}
 
-            {/* Section de progression d'importation */}
+            {/* Import progress section */}
             {importProgress.status !== "idle" &&
               importProgress.status !== "completed" && (
                 <Box sx={{ mb: 2 }}>
@@ -497,7 +495,7 @@ function SignaturesList() {
                 </Box>
               )}
 
-            {/* Message de succès après import terminé */}
+            {/* Success message after import completes */}
             {importProgress.status === "completed" &&
               importProgress.errorCount === 0 && (
                 <Alert
@@ -583,7 +581,7 @@ function SignaturesList() {
         )}
       </CardContent>
 
-      {/* Dialog de confirmation de suppression */}
+      {/* Delete confirmation dialog */}
       <Dialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
@@ -603,7 +601,7 @@ function SignaturesList() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog d'import de signatures */}
+      {/* Signature import dialog */}
       <Dialog
         open={importDialogOpen}
         onClose={() => !importLoading && setImportDialogOpen(false)}
@@ -636,7 +634,7 @@ function SignaturesList() {
             </Button>
           </label>
 
-          {/* Barre de progression en temps réel */}
+          {/* Real-time progress bar */}
           {importLoading && importProgress.status !== "idle" && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="body2" color="text.secondary" gutterBottom>
@@ -727,7 +725,7 @@ function SignaturesList() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog de confirmation de suppression de tous les modèles IA */}
+      {/* Confirmation dialog for deleting all AI models */}
       <Dialog
         open={deleteModelsDialogOpen}
         onClose={() => setDeleteModelsDialogOpen(false)}
@@ -790,7 +788,7 @@ function SignaturesList() {
 }
 
 /**
- * Ligne de tableau pour une signature
+ * Table row for a signature
  */
 function SignatureRow({
   signature,

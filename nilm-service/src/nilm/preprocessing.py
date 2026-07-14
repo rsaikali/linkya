@@ -12,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 class Seq2PointPreprocessor:
-    """Preprocessing pour modèle Sequence-to-Point"""
+    """Preprocessing for the Sequence-to-Point model"""
 
     def __init__(self, sequence_length=599):
         """
         Args:
-            sequence_length: Longueur de la fenêtre d'entrée (impair pour point central)
+            sequence_length: Input window length (odd, for a center point)
         """
-        # Forcer impair pour avoir un point central
+        # Force odd length to have a center point
         self.sequence_length = sequence_length if sequence_length % 2 == 1 else sequence_length - 1
         self.input_scaler = StandardScaler()
         self.target_scaler = MinMaxScaler(feature_range=(0, 1))
@@ -27,31 +27,31 @@ class Seq2PointPreprocessor:
 
     def create_sequences(self, aggregate_power, appliance_power, stride=1):
         """
-        Crée des séquences pour l'entraînement Sequence-to-Point
+        Create sequences for Sequence-to-Point training
 
         Args:
-            aggregate_power: Consommation totale (agrégée)
-            appliance_power: Consommation de l'appareil cible
-            stride: Pas de déplacement de la fenêtre
+            aggregate_power: Total (aggregate) consumption
+            appliance_power: Target appliance consumption
+            stride: Window step size
 
         Returns:
-            Tuple (X: séquences d'entrée, y: valeurs cibles au point central)
+            Tuple (X: input sequences, y: target values at the center point)
         """
         if len(aggregate_power) != len(appliance_power):
-            raise ValueError("aggregate_power et appliance_power doivent avoir la même longueur")
+            raise ValueError("aggregate_power and appliance_power must have the same length")
 
         if len(aggregate_power) < self.sequence_length:
-            logger.warning(f"Séquence trop courte ({len(aggregate_power)} < {self.sequence_length})")
+            logger.warning(f"Sequence too short ({len(aggregate_power)} < {self.sequence_length})")
             return np.array([]), np.array([])
 
         X, y = [], []
         half_window = self.sequence_length // 2
 
         for i in range(half_window, len(aggregate_power) - half_window, stride):
-            # Fenêtre d'entrée centrée sur i
+            # Input window centered on i
             window = aggregate_power[i - half_window : i + half_window + 1]
 
-            # Cible : consommation de l'appareil au point central
+            # Target: appliance consumption at the center point
             target = appliance_power[i]
 
             X.append(window)
@@ -88,44 +88,44 @@ class Seq2PointPreprocessor:
 
     def fit(self, aggregate_power, appliance_power):
         """
-        Ajuste les scalers sur les données d'entraînement
+        Fit the scalers on the training data
 
         Args:
-            aggregate_power: Consommation totale
-            appliance_power: Consommation de l'appareil
+            aggregate_power: Total consumption
+            appliance_power: Appliance consumption
         """
-        # Fit scaler pour l'entrée (agrégat)
+        # Fit scaler for the input (aggregate)
         self.input_scaler.fit(aggregate_power.reshape(-1, 1))
 
-        # Fit scaler pour la cible (appareil)
+        # Fit scaler for the target (appliance)
         self.target_scaler.fit(appliance_power.reshape(-1, 1))
 
         self.fitted = True
         logger.info(
-            f"Scalers ajustés: input=[{aggregate_power.min():.1f}, {aggregate_power.max():.1f}], "
+            f"Scalers fitted: input=[{aggregate_power.min():.1f}, {aggregate_power.max():.1f}], "
             f"target=[{appliance_power.min():.1f}, {appliance_power.max():.1f}]"
         )
 
     def transform(self, X, y=None):
         """
-        Transforme les données avec les scalers
+        Transform the data with the scalers
 
         Args:
-            X: Séquences d'entrée
-            y: Valeurs cibles (optionnel)
+            X: Input sequences
+            y: Target values (optional)
 
         Returns:
-            Tuple (X transformé, y transformé ou None)
+            Tuple (transformed X, transformed y or None)
         """
         if not self.fitted:
-            raise ValueError("Le preprocessor doit être ajusté avant transformation (fit)")
+            raise ValueError("The preprocessor must be fitted before transform")
 
-        # Normaliser X (chaque séquence indépendamment)
+        # Normalize X (each sequence independently)
         X_scaled = np.zeros_like(X)
         for i in range(len(X)):
             X_scaled[i] = self.input_scaler.transform(X[i].reshape(-1, 1)).flatten()
 
-        # Normaliser y si fourni
+        # Normalize y if provided
         y_scaled = None
         if y is not None:
             y_scaled = self.target_scaler.transform(y.reshape(-1, 1)).flatten()
@@ -134,12 +134,12 @@ class Seq2PointPreprocessor:
 
     def inverse_transform_target(self, y_scaled):
         """
-        Inverse la transformation pour les prédictions
+        Invert the transformation for predictions
 
         Args:
-            y_scaled: Valeurs normalisées
+            y_scaled: Normalized values
 
         Returns:
-            Valeurs originales
+            Original values
         """
         return self.target_scaler.inverse_transform(y_scaled.reshape(-1, 1)).flatten()

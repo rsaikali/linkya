@@ -2,9 +2,7 @@ import {
   AccessTime,
   Description,
   ElectricBolt,
-  FiberManualRecord,
   MenuBook,
-  Storage,
   Thermostat,
 } from "@mui/icons-material";
 import {
@@ -12,35 +10,18 @@ import {
   Box,
   Chip,
   IconButton,
-  keyframes,
   Toolbar,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiService } from "../services/api";
-import { consumptionWS } from "../services/sse";
 import { formatFullDateTime, formatTimeWithSeconds } from "../utils/dateUtils";
-
-// Animation de pulsation douce
-const pulse = keyframes`
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(1.2);
-  }
-`;
 
 const Header = () => {
   const [data, setData] = useState(null);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const updateTimeoutRef = useRef(null);
 
   useEffect(() => {
-    // Fetch initial data
     const fetchLatestConsumption = async () => {
       try {
         const result = await apiService.getLatestConsumption();
@@ -51,70 +32,21 @@ const Header = () => {
     };
 
     fetchLatestConsumption();
-
-    // Setup WebSocket for real-time consumption updates
-    const handleNewConsumption = (consumptionData) => {
-      setData(consumptionData);
-
-      // Déclencher l'animation de mise à jour
-      setIsUpdating(true);
-
-      // Arrêter l'animation après 800ms
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-      updateTimeoutRef.current = setTimeout(() => {
-        setIsUpdating(false);
-      }, 800);
-    };
-
-    const handleConnected = () => {};
-
-    const handleDisconnected = () => {};
-
-    const handleError = (errorData) => {
-      console.error("WebSocket error:", errorData);
-    };
-
-    // Register event handlers
-    consumptionWS.onopen = () => {
-      console.log(`✅ WebSocket connected to ${this.url}`);
-    };
-    consumptionWS.on("new_consumption", handleNewConsumption);
-    consumptionWS.on("connected", handleConnected);
-    consumptionWS.on("disconnected", handleDisconnected);
-    consumptionWS.on("error", handleError);
-
-    // Connect to WebSocket
-    consumptionWS.connect();
-
-    // Cleanup on unmount
-    return () => {
-      consumptionWS.off("new_consumption", handleNewConsumption);
-      consumptionWS.off("connected", handleConnected);
-      consumptionWS.off("disconnected", handleDisconnected);
-      consumptionWS.off("error", handleError);
-
-      // Nettoyer le timeout
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
   }, []);
 
   return (
     <AppBar position="static" elevation={2}>
       <Toolbar sx={{ gap: 2, minHeight: "56px", py: 0.5 }}>
-        {/* Logo et titre */}
+        {/* Logo and title */}
         <ElectricBolt sx={{ fontSize: 28 }} />
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           Linkya - Monitoring Linky & NILM
         </Typography>
 
-        {/* Informations en temps réel */}
+        {/* Real-time info */}
         {data && (
           <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-            {/* Date et heure */}
+            {/* Date and time */}
             <Tooltip
               title={`Dernière mise à jour: ${formatFullDateTime(data.time)}`}
             >
@@ -133,7 +65,7 @@ const Header = () => {
               />
             </Tooltip>
 
-            {/* Puissance */}
+            {/* Power */}
             <Tooltip title="Puissance apparente">
               <Chip
                 icon={<ElectricBolt sx={{ fontSize: 19 }} />}
@@ -150,7 +82,7 @@ const Header = () => {
               />
             </Tooltip>
 
-            {/* Température */}
+            {/* Temperature */}
             {data.temperature && (
               <Tooltip title="Température extérieure">
                 <Chip
@@ -169,7 +101,7 @@ const Header = () => {
               </Tooltip>
             )}
 
-            {/* Liens vers les outils de documentation et monitoring */}
+            {/* Links to documentation and monitoring tools */}
             <Box sx={{ display: "flex", gap: 0.5, ml: 1 }}>
               <Tooltip title="Swagger UI - Documentation API interactive">
                 <IconButton
@@ -206,53 +138,7 @@ const Header = () => {
                   <MenuBook sx={{ fontSize: 20 }} />
                 </IconButton>
               </Tooltip>
-
-              <Tooltip title="pgweb - Interface TimescaleDB">
-                <IconButton
-                  size="small"
-                  href="http://localhost:8081"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  sx={{
-                    color: "white",
-                    bgcolor: (theme) => theme.palette.overlay.white[10],
-                    "&:hover": {
-                      bgcolor: (theme) => theme.palette.overlay.white[20],
-                    },
-                  }}
-                >
-                  <Storage sx={{ fontSize: 20 }} />
-                </IconButton>
-              </Tooltip>
             </Box>
-
-            {/* Indicateur de mise à jour clignotant */}
-            <Tooltip
-              title={
-                isUpdating ? "Mise à jour en cours..." : "En attente de données"
-              }
-            >
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  bgcolor: "transparent",
-                  animation: isUpdating ? `${pulse} 0.5s ease-in-out` : "none",
-                }}
-              >
-                <FiberManualRecord
-                  sx={{
-                    fontSize: 32,
-                    color: isUpdating ? "white" : "transparent",
-                    transition: "color 0.5s ease-in-out",
-                  }}
-                />
-              </Box>
-            </Tooltip>
           </Box>
         )}
       </Toolbar>

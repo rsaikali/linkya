@@ -30,7 +30,7 @@ import {
 import MaterialIcon from "./common/MaterialIcon";
 
 /**
- * Composant affichant les informations du modèle actuel et la progression de l'entraînement
+ * Component showing the current model's info and training progress
  */
 function ModelInfoSection() {
   const theme = useTheme();
@@ -42,7 +42,7 @@ function ModelInfoSection() {
   const [totalEpochs, setTotalEpochs] = useState(0);
   const [trainingLogs, setTrainingLogs] = useState([]);
 
-  // Charger le modèle actuel
+  // Load the current model
   const loadModel = useCallback(async () => {
     try {
       const response = await api.get("/api/nilm/models");
@@ -53,14 +53,14 @@ function ModelInfoSection() {
         setModel(null);
       }
     } catch (error) {
-      console.error("Erreur lors du chargement du modèle:", error);
+      console.error("Error loading model:", error);
     }
   }, []);
 
   useEffect(() => {
     loadModel();
 
-    // Écouter l'événement personnalisé de suppression de modèle
+    // Listen for the custom model-deleted event
     const handleModelDeleted = () => {
       loadModel();
     };
@@ -72,7 +72,7 @@ function ModelInfoSection() {
     };
   }, [loadModel]);
 
-  // Gérer les événements WebSocket d'entraînement
+  // Handle training SSE events
   useEffect(() => {
     websocket.connect();
 
@@ -88,7 +88,7 @@ function ModelInfoSection() {
           timestamp: new Date(),
         },
       ]);
-      setExpanded(true); // Auto-expansion au démarrage de l'entraînement
+      setExpanded(true); // Auto-expand when training starts
     };
 
     const handleEpochEnd = (data) => {
@@ -97,7 +97,7 @@ function ModelInfoSection() {
       setCurrentEpoch(data.epoch + 1);
       setTotalEpochs(data.total_epochs);
 
-      // Ajouter un log pour l'époque
+      // Add a log entry for the epoch
       const logMessage = `Époque ${data.epoch + 1}/${
         data.total_epochs
       } terminée`;
@@ -133,7 +133,7 @@ function ModelInfoSection() {
         },
       ]);
 
-      // Recharger le modèle après 2 secondes
+      // Reload the model after 2 seconds
       setTimeout(() => {
         loadModel();
       }, 2000);
@@ -154,7 +154,7 @@ function ModelInfoSection() {
     setExpanded(!expanded);
   };
 
-  // Afficher le badge de statut
+  // Show the status badge
   const getStatusBadge = () => {
     if (isTraining) {
       return (
@@ -228,7 +228,7 @@ function ModelInfoSection() {
     }
   };
 
-  // Extraire les métriques
+  // Extract metrics
   const getMetrics = (metricsData) => {
     if (!metricsData) return null;
 
@@ -236,7 +236,7 @@ function ModelInfoSection() {
       const parsed =
         typeof metricsData === "string" ? JSON.parse(metricsData) : metricsData;
 
-      // Si les métriques sont dans appliances[].metrics, on extrait et on fait la moyenne
+      // If metrics are under appliances[].metrics, extract and average them
       if (
         parsed.appliances &&
         Array.isArray(parsed.appliances) &&
@@ -247,7 +247,7 @@ function ModelInfoSection() {
           num_appliances: parsed.num_appliances || parsed.appliances.length,
         };
 
-        // Calculer les moyennes des métriques
+        // Compute metric averages
         const valLosses = parsed.appliances
           .map((app) => app.metrics?.val_loss)
           .filter((v) => v !== undefined && v !== null);
@@ -279,7 +279,7 @@ function ModelInfoSection() {
 
       return parsed;
     } catch (error) {
-      console.error("Erreur parsing metrics:", error);
+      console.error("Error parsing metrics:", error);
       return null;
     }
   };
@@ -288,7 +288,7 @@ function ModelInfoSection() {
 
   return (
     <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-      {/* En-tête collapsible */}
+      {/* Collapsible header */}
       <Box
         sx={{
           px: 2,
@@ -386,7 +386,7 @@ function ModelInfoSection() {
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Box sx={{ p: 2 }}>
           {isTraining ? (
-            // Affichage des logs d'entraînement en temps réel
+            // Real-time training logs display
             <Paper
               variant="outlined"
               sx={{
@@ -422,7 +422,7 @@ function ModelInfoSection() {
                   Logs d'entraînement
                 </Typography>
               </Box>
-              {/* Afficher les 5 dernières lignes */}
+              {/* Show the last 5 rows */}
               {Array.from({ length: 5 }).map((_, index) => {
                 const logIndex = trainingLogs.length - 5 + index;
                 const log = logIndex >= 0 ? trainingLogs[logIndex] : null;
@@ -511,7 +511,7 @@ function ModelInfoSection() {
             </Paper>
           ) : model ? (
             <Grid container spacing={2}>
-              {/* Date d'entraînement */}
+              {/* Training date */}
               <Grid item xs={12} md={6}>
                 <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
                   <Box
@@ -537,7 +537,7 @@ function ModelInfoSection() {
                 </Paper>
               </Grid>
 
-              {/* Durée d'entraînement */}
+              {/* Training duration */}
               {model.training_duration_seconds && (
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
@@ -565,7 +565,7 @@ function ModelInfoSection() {
                 </Grid>
               )}
 
-              {/* Nombre d'appareils */}
+              {/* Number of appliances */}
               {model.num_classes && (
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
@@ -597,7 +597,7 @@ function ModelInfoSection() {
                 </Grid>
               )}
 
-              {/* Nombre de signatures */}
+              {/* Number of signatures */}
               {model.num_signatures && (
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
@@ -629,7 +629,7 @@ function ModelInfoSection() {
                 </Grid>
               )}
 
-              {/* Nombre d'époques */}
+              {/* Number of epochs */}
               {metrics && metrics.epochs && (
                 <Grid item xs={12} md={6}>
                   <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
@@ -661,7 +661,7 @@ function ModelInfoSection() {
                 </Grid>
               )}
 
-              {/* Loss de validation */}
+              {/* Validation loss */}
               {metrics &&
                 metrics.val_loss !== undefined &&
                 metrics.val_loss !== null && (
@@ -695,7 +695,7 @@ function ModelInfoSection() {
                   </Grid>
                 )}
 
-              {/* MAE de validation (si disponible) */}
+              {/* Validation MAE (if available) */}
               {metrics &&
                 metrics.val_mae !== undefined &&
                 metrics.val_mae !== null && (

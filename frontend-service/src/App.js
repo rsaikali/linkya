@@ -27,7 +27,7 @@ function App() {
 
             <Box sx={{ px: 3, py: 3, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
               <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-                {/* Colonne 1 - Appareils & Signatures (3/12) */}
+                {/* Column 1 - Appliances & Signatures (3/12) */}
                 <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
                   <Box sx={{ flex: '0 0 auto', minHeight: 0, maxHeight: '40%', display: 'flex', width: '100%' }}>
                     <AppliancesList />
@@ -37,7 +37,7 @@ function App() {
                   </Box>
                 </Grid>
 
-                {/* Colonne 2 - Graphique + Modèle (6/12) */}
+                {/* Column 2 - Chart + Model (6/12) */}
                 <Grid item xs={12} lg={6} sx={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 2 }}>
                   <Box sx={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}>
                     <ChartsContainer />
@@ -47,7 +47,7 @@ function App() {
                   </Box>
                 </Grid>
 
-                {/* Colonne 3 - Détections (3/12) */}
+                {/* Column 3 - Detections (3/12) */}
                 <Grid item xs={12} lg={3} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <DetectionsList />
                 </Grid>

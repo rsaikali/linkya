@@ -1,11 +1,11 @@
 """
-Modèle Sequence-to-Point NILM pour désagrégation d'appliances concurrents
-et détection de cycles complexes.
+Sequence-to-Point NILM model for disaggregating concurrent appliances
+and detecting complex cycles.
 
-Architecture basée sur LSTM/GRU avec mécanisme d'attention pour :
-- Désagrégation : prédit la consommation individuelle de chaque appareil
-- Détection d'états : identifie les différentes phases/cycles (chauffage, lavage, etc.)
-- Appareils concurrents : gère plusieurs appliances fonctionnant simultanément
+LSTM/GRU-based architecture with an attention mechanism for:
+- Disaggregation: predicts each appliance's individual consumption
+- State detection: identifies the different phases/cycles (heating, washing, etc.)
+- Concurrent appliances: handles several appliances running simultaneously
 """
 
 from __future__ import annotations
@@ -28,39 +28,39 @@ logger = logging.getLogger(__name__)
 
 
 class Seq2PointNILMManager:
-    """Gestionnaire de modèles S2P NILM avec architecture Multi-Output"""
+    """Manager for S2P NILM models with a Multi-Output architecture"""
 
     def __init__(self):
         self.model_type = os.getenv("NILM_MODEL_TYPE", "gru").lower()
         # Architecture: 'multioutput'
         self.architecture = os.getenv("NILM_ARCHITECTURE", "multioutput").lower()
 
-        # Créer le répertoire des modèles
+        # Create the models directory
         Path(settings.nilm_model_path).mkdir(parents=True, exist_ok=True)
 
-        # Détecteur hybride change point + pattern matching
+        # Hybrid change point + pattern matching detector
         self.change_point_detector = ChangePointPatternDetector(
             min_power_change=settings.nilm_min_power_threshold, min_duration=settings.nilm_min_duration_seconds
         )
-        logger.info("Change Point Pattern Detector initialisé")
+        logger.info("Change Point Pattern Detector initialized")
 
-        # Modèle Multi-Output
+        # Multi-Output model
         self.multioutput_model = None
 
         logger.info(f"Architecture: {self.architecture.upper()}, " f"Type: {self.model_type.upper()}")
 
     def load_model(self, model_path):
         """
-        Charge un modèle existant for fine-tuning.
+        Load an existing model for fine-tuning.
 
         Args:
-            model_path: Chemin vers le modèle .keras à charger
+            model_path: Path to the .keras model to load
         """
         try:
-            # Charger les métadonnées
+            # Load the metadata
             metadata_path = Path(model_path).with_suffix(".metadata.json")
             if not metadata_path.exists():
-                raise ValueError(f"Métadonnées introuvables: {metadata_path}")
+                raise ValueError(f"Metadata not found: {metadata_path}")
 
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
@@ -89,14 +89,14 @@ class Seq2PointNILMManager:
 
     def train_all_appliances(self, model_name, fine_tune=False):
         """
-        Entraîne le modèle sur tous les appliances (Multi-Output).
+        Train the model on all appliances (Multi-Output).
 
         Args:
             model_name: Name of the model (format: linkya_model_<timestamp>)
-            fine_tune: Si True, continue l'entraînement du modèle existant
+            fine_tune: If True, continue training the existing model
 
         Returns:
-            Dictionnaire global de métriques
+            Global dict of metrics
         """
         try:
             with db_manager.get_session() as session:
@@ -111,13 +111,13 @@ class Seq2PointNILMManager:
                 appliances = session.execute(text(query)).fetchall()
 
             if len(appliances) < 1:
-                logger.error("Aucun appareil avec assez de signatures (minimum 2)")
+                logger.error("No appliance with enough signatures (minimum 2)")
                 return {"error": "insufficient_data", "min_appliances": 1}
 
             appliance_ids = [row[0] for row in appliances]
             appliance_names = [row[1] for row in appliances]
 
-            # Charger les signatures
+            # Load signatures
             all_signatures = {}
             with db_manager.get_session() as session:
                 for appliance_id in appliance_ids:
@@ -130,13 +130,13 @@ class Seq2PointNILMManager:
                     result = session.execute(text(query), {"appliance_id": appliance_id})
                     all_signatures[appliance_id] = [dict(row._mapping) for row in result]
 
-            # Charger les profiles pour change point detector
+            # Load profiles for the change point detector
             logger.info("Loading signature profiles...")
             for appliance_id, signatures in all_signatures.items():
                 app_idx = appliance_ids.index(appliance_id)
                 appliance_name = appliance_names[app_idx]
                 for sig in signatures:
-                    # Charger les données de signature
+                    # Load signature data
                     agg, app_pwr = Seq2PointMultiOutputModel._load_signature_data_static(sig)
                     if app_pwr is None or len(app_pwr) == 0:
                         continue
@@ -150,11 +150,11 @@ class Seq2PointNILMManager:
             total_profiles = sum(len(data["profiles"]) for data in (self.change_point_detector.signature_profiles.values()))
             logger.info(f"{len(self.change_point_detector.signature_profiles)} " f"appliances, {total_profiles} profiles")
 
-            # Entraîner avec l'architecture choisie
+            # Train with the chosen architecture
             if self.architecture == "multioutput":
-                logger.info("Multi-Output training " "(outputs parallèles + attention)")
+                logger.info("Multi-Output training " "(parallel outputs + attention)")
 
-                # Créer ou réutiliser modèle Multi-Output
+                # Create or reuse the Multi-Output model
                 if fine_tune and self.multioutput_model is not None:
                     logger.info("Reusing Multi-Output model " "for fine-tuning")
                 else:
@@ -165,14 +165,14 @@ class Seq2PointNILMManager:
                 metrics = self.multioutput_model.train(all_signatures, model_name, epochs=30, batch_size=32, use_feedback=True, fine_tune=fine_tune)
 
                 if not metrics:
-                    logger.error("Multi-Output training impossible " "(données insuffisantes)")
+                    logger.error("Multi-Output training impossible " "(insufficient data)")
                     return {"error": "insufficient_training_data"}
 
                 model_path = Path(settings.nilm_model_path) / (f"{model_name}.keras")
                 self.multioutput_model.save(str(model_path), metadata=metrics)
                 architecture_name = "MultiOutput"
 
-            # Formater la réponse pour compatibilité frontend
+            # Format the response for frontend compatibility
             return {
                 "model_name": model_name,
                 "model_type": f"{architecture_name}-{self.model_type}",
@@ -197,27 +197,27 @@ class Seq2PointNILMManager:
             }
 
         except Exception as e:
-            logger.error(f"Erreur entraînement global: {e}", exc_info=True)
+            logger.error(f"Global training error: {e}", exc_info=True)
             return {"error": str(e)}
 
     def _filter_against_negative_signatures(self, detections):
         """
-        Filtre les détections qui ressemblent aux signatures négatives.
+        Filter out detections that look like negative signatures.
 
-        Une signature négative est créée quand l'utilisateur invalide
-        une détection. On compare durée, puissance moyenne et énergie
-        pour rejeter les false positives similaires.
+        A negative signature is created when the user invalidates a
+        detection. We compare duration, average power, and energy to
+        reject similar false positives.
 
         Args:
-            detections: Liste de détections à filtrer
+            detections: List of detections to filter
 
         Returns:
-            Liste de détections filtrées (sans les false positives)
+            Filtered list of detections (false positives removed)
         """
         if not detections:
             return []
 
-        # Charger les signatures négatives depuis la base
+        # Load negative signatures from the database
         negative_sigs = {}
         try:
             with db_manager.engine.connect() as conn:
@@ -264,12 +264,12 @@ class Seq2PointNILMManager:
 
                 total_negs = sum(len(s) for s in negative_sigs.values())
                 if total_negs > 0:
-                    logger.info(f"Filtrage contre {total_negs} signatures négatives")
+                    logger.info(f"Filtering against {total_negs} negative signatures")
         except Exception as e:
-            logger.error(f"Erreur chargement signatures négatives: {e}")
-            return detections  # Retourner sans filtrer si erreur
+            logger.error(f"Error loading negative signatures: {e}")
+            return detections  # Return unfiltered on error
 
-        # Filtrer les détections
+        # Filter the detections
         filtered = []
         rejected_count = 0
 
@@ -278,55 +278,55 @@ class Seq2PointNILMManager:
             negs = negative_sigs.get(app_id, [])
 
             if not negs:
-                # Pas de signatures négatives pour cet appareil
+                # No negative signatures for this appliance
                 filtered.append(det)
                 continue
 
             is_false_positive = False
 
-            # DEBUG: Log de la détection à analyser
+            # DEBUG: log the detection being analyzed
             logger.info(f"Analyzing detection: {det['duration_seconds']}s, " f"{det['avg_power']:.1f}W, {det.get('energy_wh', 0):.1f}Wh")
 
             for neg in negs:
-                # Critère 1: Durée similaire (±50% car change points)
+                # Criterion 1: similar duration (±50%, since these are change points)
                 duration_ratio = det["duration_seconds"] / neg["duration_seconds"] if neg["duration_seconds"] > 0 else 0
 
-                # DEBUG: Log détaillé de la comparaison
+                # DEBUG: detailed comparison log
                 logger.debug(
-                    f"  vs signature négative #{neg['id']}: " f"{neg['duration_seconds']:.0f}s, " f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
+                    f"  vs negative signature #{neg['id']}: " f"{neg['duration_seconds']:.0f}s, " f"{neg['avg_power']:.1f}W, {neg['energy_wh']:.1f}Wh"
                 )
-                logger.debug(f"Ratios: durée={duration_ratio:.2f}, " f"seuils=[0.50, 1.50]")
+                logger.debug(f"Ratios: duration={duration_ratio:.2f}, " f"thresholds=[0.50, 1.50]")
 
                 if not (0.50 <= duration_ratio <= 1.50):
-                    logger.debug("✗ Durée hors limite")
+                    logger.debug("Duration out of range")
                     continue
 
-                logger.debug("✓ Durée OK")
+                logger.debug("Duration OK")
 
-                # Critère 2: Puissance moyenne similaire (±15% assoupli)
+                # Criterion 2: similar average power (±15%, relaxed)
                 if neg["avg_power"] > 0:
                     power_ratio = det["avg_power"] / neg["avg_power"]
-                    logger.debug(f"Puissance: ratio={power_ratio:.2f}, " f"seuils=[0.85, 1.15]")
+                    logger.debug(f"Power: ratio={power_ratio:.2f}, " f"thresholds=[0.85, 1.15]")
                     if not (0.85 <= power_ratio <= 1.15):
-                        logger.debug("✗ Puissance hors limite")
+                        logger.debug("Power out of range")
                         continue
-                    logger.debug("✓ Puissance OK")
+                    logger.debug("Power OK")
 
-                # Critère 3: Énergie similaire (±20% assoupli)
+                # Criterion 3: similar energy (±20%, relaxed)
                 det_energy = det.get("energy_wh", 0)
                 if neg["energy_wh"] > 0 and det_energy > 0:
                     energy_ratio = det_energy / neg["energy_wh"]
-                    logger.debug(f"Énergie: ratio={energy_ratio:.2f}, " f"seuils=[0.80, 1.20]")
+                    logger.debug(f"Energy: ratio={energy_ratio:.2f}, " f"thresholds=[0.80, 1.20]")
                     if not (0.80 <= energy_ratio <= 1.20):
-                        logger.debug("✗ Énergie hors limite")
+                        logger.debug("Energy out of range")
                         continue
-                    logger.debug("✓ Énergie OK")
+                    logger.debug("Energy OK")
 
-                # Tous les critères correspondent → faux positif
+                # All criteria match -> false positive
                 is_false_positive = True
                 logger.debug(
-                    f" Détection rejetée (similaire à signature "
-                    f"négative #{neg['id']}): {det.get('appliance_name')} - "
+                    f"Detection rejected (similar to negative "
+                    f"signature #{neg['id']}): {det.get('appliance_name')} - "
                     f"{det['duration_seconds']}s, "
                     f"{det['avg_power']:.1f}W"
                 )
@@ -344,15 +344,15 @@ class Seq2PointNILMManager:
 
     def _load_signature_profiles(self):
         """
-        Charge les profiles de signatures depuis la base de données.
-        Inclut les données morphologiques si available.
+        Load signature profiles from the database.
+        Includes morphological data if available.
 
-        Utilisé pour le pattern matching dans la détection.
+        Used for pattern matching during detection.
         """
         import json as json_module
 
         with db_manager.get_session() as session:
-            # Récupérer les appliances actifs avec leurs signatures
+            # Fetch active appliances with their signatures
             appliances_query = """
                 SELECT DISTINCT appliance_id, ca.name
                 FROM nilm_signatures cs
@@ -361,7 +361,7 @@ class Seq2PointNILMManager:
             appliances = session.execute(text(appliances_query)).fetchall()
 
             for appliance_id, appliance_name in appliances:
-                # Récupérer signatures avec morphology_analysis
+                # Fetch signatures with morphology_analysis
                 sig_query = """
                     SELECT
                         id,
@@ -383,18 +383,18 @@ class Seq2PointNILMManager:
                     power_data_json = row[3]
                     morphology_json = row[4]
 
-                    # Charger power_data depuis JSON ou linky_realtime
+                    # Load power_data from JSON or linky_realtime
                     appliance_power = None
 
                     if power_data_json:
-                        # Utiliser power_data stocké
+                        # Use stored power_data
                         try:
                             power_data = json_module.loads(power_data_json)
                             appliance_power = np.array(power_data.get("values", []))
                         except Exception as e:
-                            logger.warning(f"Erreur lecture power_data " f"sig {sig_id}: {e}")
+                            logger.warning(f"Error reading power_data " f"for sig {sig_id}: {e}")
 
-                    # Fallback: charger depuis linky_realtime
+                    # Fallback: load from linky_realtime
                     if appliance_power is None or len(appliance_power) == 0:
                         signature = {"id": sig_id, "appliance_id": appliance_id, "start_time": start_time, "end_time": end_time}
                         aggregate_power, appliance_power = Seq2PointMultiOutputModel._load_signature_data_static(signature)
@@ -404,15 +404,15 @@ class Seq2PointNILMManager:
 
                     duration = int((end_time - start_time).total_seconds())
 
-                    # Parser morphology_analysis
+                    # Parse morphology_analysis
                     morphology = None
                     if morphology_json:
                         try:
                             morphology = json_module.loads(morphology_json)
                         except Exception as e:
-                            logger.warning(f"Erreur lecture morphology " f"sig {sig_id}: {e}")
+                            logger.warning(f"Error reading morphology " f"for sig {sig_id}: {e}")
 
-                    # Ajouter le profil avec morphologie
+                    # Add the profile with morphology
                     self.change_point_detector.add_signature_profile(
                         appliance_id=appliance_id,
                         appliance_name=appliance_name,
@@ -423,31 +423,31 @@ class Seq2PointNILMManager:
                     )
 
         total_profiles = sum(len(data["profiles"]) for data in self.change_point_detector.signature_profiles.values())
-        logger.info(f"Profils chargés: " f"{len(self.change_point_detector.signature_profiles)} " f"appliances, {total_profiles} profiles")
+        logger.info(f"Profiles loaded: " f"{len(self.change_point_detector.signature_profiles)} " f"appliances, {total_profiles} profiles")
 
     def disaggregate(self, start_time, end_time):
         """
-        Désagrège la consommation totale pour tous les appliances.
-        Utilise l'architecture Multi-Output avec détection hybride.
+        Disaggregate total consumption across all appliances.
+        Uses the Multi-Output architecture with hybrid detection.
 
         Args:
-            start_time: Début de la période
-            end_time: Fin de la période
+            start_time: Period start
+            end_time: Period end
 
         Returns:
-            Liste de détections par appareil
+            List of detections per appliance
         """
         if self.multioutput_model is None:
-            logger.error("Aucun modèle Multi-Output chargé pour la désagrégation")
+            logger.error("No Multi-Output model loaded for disaggregation")
             return []
 
-        # Charger les profiles de signatures si nécessaire
+        # Load signature profiles if needed
         if not self.change_point_detector.signature_profiles:
-            logger.info("Chargement des profiles de signatures pour détection...")
+            logger.info("Loading signature profiles for detection...")
             self._load_signature_profiles()
 
         try:
-            # Charger la consommation totale
+            # Load total consumption
             with db_manager.get_session() as session:
                 query = """
                     SELECT time, papp
@@ -458,31 +458,31 @@ class Seq2PointNILMManager:
                 result = session.execute(text(query), {"start_time": start_time, "end_time": end_time})
                 data = result.fetchall()
                 if not data:
-                    logger.warning("Aucune donnée pour désagrégation")
+                    logger.warning("No data for disaggregation")
                     return []
                 timestamps = [row[0] for row in data]
                 aggregate_power = np.array([row[1] for row in data], dtype=np.float32)
-            logger.info(f"Désagrégation sur {len(aggregate_power)} points")
+            logger.info(f"Disaggregating over {len(aggregate_power)} points")
 
             ##########################################################
-            # APPROCHE HYBRIDE : Change Point Detection + Pattern Matching
+            # HYBRID APPROACH: Change Point Detection + Pattern Matching
             ##########################################################
 
-            logger.info("=== Détection Hybride " "(Change Point + Pattern Matching) ===")
+            logger.info("=== Hybrid Detection " "(Change Point + Pattern Matching) ===")
 
-            # Étape 1 : Détecter les change points dans l'agrégé
+            # Step 1: detect change points in the aggregate
             change_points = self.change_point_detector.detect_change_points(aggregate_power)
 
             if not change_points:
-                logger.warning("Aucun change point détecté")
+                logger.warning("No change point detected")
                 return []
 
-            # Étape 2 : Extraire les patterns (timestamps → durée en vraies secondes)
+            # Step 2: extract patterns (timestamps -> duration in real seconds)
             patterns = self.change_point_detector.extract_patterns(
                 aggregate_power, change_points, timestamps=timestamps
             )
 
-            # ─── PATH A : Change Point + Pattern Matching ────────────────────
+            # ─── PATH A: Change Point + Pattern Matching ─────────────────────
             path_a_detections = []
             if patterns:
                 for pattern_data in patterns:
@@ -500,7 +500,7 @@ class Seq2PointNILMManager:
                                 "signature_id": matched_signature_id,
                                 "start_time": timestamps[start_idx],
                                 "end_time": timestamps[min(end_idx, len(timestamps) - 1)],
-                                "duration_seconds": pattern_data["duration"],  # vraies secondes
+                                "duration_seconds": pattern_data["duration"],  # real seconds
                                 "avg_power": pattern_data["avg_power"],
                                 "max_power": pattern_data["max_power"],
                                 "energy_wh": pattern_data["energy_wh"],
@@ -525,30 +525,30 @@ class Seq2PointNILMManager:
                                 f"conf={confidence:.2%}"
                             )
             else:
-                logger.info("PATH A: aucun pattern extrait (pas de change points nets)")
+                logger.info("PATH A: no pattern extracted (no clear change points)")
 
-            logger.info(f"PATH A: {len(path_a_detections)} détections")
+            logger.info(f"PATH A: {len(path_a_detections)} detections")
 
-            # ─── PATH B : Seq2Point Sliding Window Inference ─────────────────
-            # Détecte les cycles complexes (lave-linge, frigo, four) que les
-            # change points ne capturent pas bien.
+            # ─── PATH B: Seq2Point Sliding Window Inference ──────────────────
+            # Detects complex cycles (washing machine, fridge, oven) that
+            # change points don't capture well.
             path_b_detections = []
             try:
-                # Intervalle d'échantillonnage estimé
+                # Estimated sampling interval
                 if len(timestamps) > 1:
                     sample_interval = (timestamps[-1] - timestamps[0]).total_seconds() / (len(timestamps) - 1)
                 else:
                     sample_interval = 8.0
                 min_duration_samples = max(1, int(settings.nilm_min_duration_seconds / sample_interval))
 
-                # Stride adaptatif : plus grand = plus rapide sur Pi, moins précis
+                # Adaptive stride: larger = faster on the Pi, less precise
                 stride = max(1, min(10, len(aggregate_power) // 5000))
-                logger.info(f"PATH B: inférence Seq2Point stride={stride} ({len(aggregate_power)} pts)")
+                logger.info(f"PATH B: Seq2Point inference stride={stride} ({len(aggregate_power)} pts)")
 
                 predictions_dict = self.multioutput_model.predict(aggregate_power, stride=stride)
 
                 for app_id, signal in predictions_dict.items():
-                    # Nom et puissance attendue depuis les profiles de signatures
+                    # Name and expected power from signature profiles
                     app_name = f"appliance_{app_id}"
                     expected_power = None
                     for aid, pdata in self.change_point_detector.signature_profiles.items():
@@ -559,10 +559,10 @@ class Seq2PointNILMManager:
                                 expected_power = float(np.median(powers))
                             break
 
-                    # Seuil adaptatif : 30% de la puissance attendue, min 50 W
+                    # Adaptive threshold: 30% of expected power, min 50 W
                     threshold_w = max(50.0, (expected_power or settings.nilm_min_power_threshold) * 0.30)
 
-                    # Lissage anti-bruit (fenêtre = ~1/4 de la durée min)
+                    # Noise-smoothing (window = ~1/4 of the min duration)
                     smooth_w = max(3, min_duration_samples // 4)
                     signal_smooth = np.convolve(signal, np.ones(smooth_w) / smooth_w, mode="same")
                     signal_smooth = np.maximum(signal_smooth, 0)
@@ -585,45 +585,45 @@ class Seq2PointNILMManager:
                         logger.info(f"PATH B: {app_name} → {len(segments)} segments")
 
             except Exception as e:
-                logger.warning(f"PATH B échoué (non bloquant): {e}", exc_info=True)
+                logger.warning(f"PATH B failed (non-blocking): {e}", exc_info=True)
 
-            logger.info(f"PATH B: {len(path_b_detections)} détections")
+            logger.info(f"PATH B: {len(path_b_detections)} detections")
 
-            # ─── FUSION + DEDUP ───────────────────────────────────────────────
+            # ─── MERGE + DEDUP ─────────────────────────────────────────────────
             all_detections = path_a_detections + path_b_detections
             all_detections = self._dedup_detections(all_detections)
 
-            logger.info(f"Total après fusion/dedup: {len(all_detections)}")
+            logger.info(f"Total after merge/dedup: {len(all_detections)}")
 
-            # Filtrer signatures négatives
+            # Filter out negative signatures
             all_detections = self._filter_against_negative_signatures(all_detections)
 
-            # Seuil de confiance abaissé (l'utilisateur valide dans l'UI)
+            # Confidence threshold lowered (the user validates in the UI)
             min_confidence = 0.25
             before = len(all_detections)
             all_detections = [d for d in all_detections if d.get("confidence_score", 0) >= min_confidence]
             if before > len(all_detections):
-                logger.info(f"Filtrage confiance: {before - len(all_detections)} rejetées (<{min_confidence:.0%})")
+                logger.info(f"Confidence filtering: {before - len(all_detections)} rejected (<{min_confidence:.0%})")
 
-            logger.info(f"Total détections finales: {len(all_detections)}")
+            logger.info(f"Total final detections: {len(all_detections)}")
             return all_detections
 
         except Exception as e:
-            logger.error(f"Erreur désagrégation: {e}", exc_info=True)
+            logger.error(f"Disaggregation error: {e}", exc_info=True)
             return []
 
     def _dedup_detections(self, detections):
         """
-        Fusionne les détections doublons entre PATH A et PATH B.
+        Merge duplicate detections between PATH A and PATH B.
 
-        Deux détections du même appareil qui se chevauchent à plus de 50%
-        de la durée de la plus courte sont considérées comme le même événement.
-        On garde celle avec le score de confiance le plus élevé.
+        Two detections of the same appliance that overlap by more than 50%
+        of the shorter one's duration are treated as the same event. The
+        one with the higher confidence score is kept.
         """
         if not detections:
             return []
 
-        # Grouper par appliance_id
+        # Group by appliance_id
         by_appliance = {}
         for d in detections:
             app_id = d["appliance_id"]
@@ -631,7 +631,7 @@ class Seq2PointNILMManager:
 
         merged = []
         for app_id, dets in by_appliance.items():
-            # Trier par start_time
+            # Sort by start_time
             sorted_dets = sorted(dets, key=lambda d: d["start_time"])
             kept = []
             for d in sorted_dets:
@@ -646,7 +646,7 @@ class Seq2PointNILMManager:
                     dur_k = (k["end_time"] - k["start_time"]).total_seconds()
                     shorter = min(dur_d, dur_k)
                     if shorter > 0 and overlap_s / shorter > 0.50:
-                        # Doublon — garder le meilleur score
+                        # Duplicate — keep the higher score
                         if d.get("confidence_score", 0) > k.get("confidence_score", 0):
                             kept.remove(k)
                             kept.append(d)
@@ -660,20 +660,20 @@ class Seq2PointNILMManager:
 
     def _merge_consecutive_cycles(self, cycles, max_gap_seconds=120):
         """
-        Fusionne les cycles consécutifs séparés par moins de max_gap_seconds.
-        Générique : fonctionne pour tous les appliances.
+        Merge consecutive cycles separated by less than max_gap_seconds.
+        Generic: works for any appliance.
 
         Args:
-            cycles: Liste de cycles détectés par KMeans
-            max_gap_seconds: Gap maximal en secondes pour fusionner deux cycles
+            cycles: List of cycles detected by KMeans
+            max_gap_seconds: Max gap in seconds to merge two cycles
 
         Returns:
-            Liste de cycles fusionnés
+            List of merged cycles
         """
         if not cycles or len(cycles) == 0:
             return []
 
-        # Trier les cycles par start_idx
+        # Sort cycles by start_idx
         sorted_cycles = sorted(cycles, key=lambda c: c["start_idx"])
 
         merged = []
@@ -682,54 +682,54 @@ class Seq2PointNILMManager:
         for i in range(1, len(sorted_cycles)):
             cycle = sorted_cycles[i]
 
-            # Calculer le gap entre la fin du cycle fusionné actuel et le début du prochain
+            # Compute the gap between the current merged cycle's end and the next one's start
             gap = cycle["start_idx"] - current_merged["end_idx"]
 
             if gap <= max_gap_seconds:
-                # Fusionner : étendre le cycle actuel
+                # Merge: extend the current cycle
                 current_merged["end_idx"] = cycle["end_idx"]
                 current_merged["duration_seconds"] = current_merged["end_idx"] - current_merged["start_idx"]
-                # Recalculer avg_power et max_power (moyenne pondérée)
-                # Note: on garde la max_power la plus élevée
+                # Recompute avg_power and max_power (weighted average)
+                # Note: we keep the higher max_power
                 current_merged["max_power"] = max(current_merged["max_power"], cycle["max_power"])
-                # Pour avg_power, on fait une moyenne simple (approximation)
+                # For avg_power, use a simple average (approximation)
                 current_merged["avg_power"] = (current_merged["avg_power"] + cycle["avg_power"]) / 2
-                # Sommer l'énergie
+                # Sum the energy
                 current_merged["energy_wh"] = current_merged["energy_wh"] + cycle["energy_wh"]
             else:
-                # Gap trop grand : sauvegarder le cycle fusionné actuel et commencer un nouveau
+                # Gap too large: save the current merged cycle and start a new one
                 merged.append(current_merged)
                 current_merged = cycle.copy()
 
-        # Ajouter le dernier cycle fusionné
+        # Add the last merged cycle
         merged.append(current_merged)
 
         return merged
 
     def _find_active_segments(self, active_mask, timestamps, predictions, min_duration):
         """
-        Trouve les segments actifs dans les prédictions, en détectant les gaps
-        pour fragmenter les longues périodes en cycles individuels.
+        Find active segments in the predictions, detecting gaps to split
+        long periods into individual cycles.
 
         Args:
-            active_mask: Masque booléen des prédictions actives
-            timestamps: Timestamps correspondants
-            predictions: Prédictions de puissance
-            min_duration: Durée minimale en secondes
+            active_mask: Boolean mask of active predictions
+            timestamps: Corresponding timestamps
+            predictions: Power predictions
+            min_duration: Minimum duration in seconds
 
         Returns:
-            Liste de segments actifs
+            List of active segments
         """
         segments = []
 
-        # Padding pour gérer les indices
+        # Padding to handle indices
         half_window = (settings.effective_sequence_length - 1) // 2
 
-        # Paramètres de détection de gaps (périodes inactives entre deux cycles)
-        # Un gap est détecté si la puissance reste < 20% du threshold pendant min_gap_duration
-        # Pour un ballon d'eau chaude (3500W), un gap = puissance < 100W
-        gap_threshold = settings.nilm_min_power_threshold * 0.2  # 20% du seuil (= 100W avec threshold=500W)
-        min_gap_duration = 120  # 2 minutes minimum pour considérer un vrai gap (fin de chauffe)
+        # Gap detection parameters (inactive periods between two cycles)
+        # A gap is detected if power stays < 20% of the threshold for min_gap_duration
+        # For a water heater (3500W), a gap = power < 100W
+        gap_threshold = settings.nilm_min_power_threshold * 0.2  # 20% of threshold (= 100W with threshold=500W)
+        min_gap_duration = 120  # 2 minutes minimum to consider a real gap (end of heating cycle)
 
         in_segment = False
         start_idx = 0
@@ -739,23 +739,23 @@ class Seq2PointNILMManager:
             current_power = predictions[i] if i < len(predictions) else 0
 
             if active_mask[i] and not in_segment:
-                # Début d'un nouveau segment
+                # Start of a new segment
                 in_segment = True
                 start_idx = i
                 gap_start = None
 
             elif in_segment:
-                # Dans un segment actif
+                # Inside an active segment
                 if current_power < gap_threshold:
-                    # Puissance faible, début potentiel d'un gap
+                    # Low power, potential start of a gap
                     if gap_start is None:
                         gap_start = i
                     elif (i - gap_start) >= min_gap_duration:
-                        # Gap confirmé : fin du segment actuel
+                        # Gap confirmed: end of the current segment
                         duration = gap_start - start_idx
 
                         if duration >= min_duration:
-                            # Enregistrer le segment avant le gap
+                            # Record the segment before the gap
                             orig_start = start_idx + half_window
                             orig_end = gap_start + half_window
 
@@ -775,15 +775,15 @@ class Seq2PointNILMManager:
                                 }
                                 segments.append(segment)
 
-                        # Réinitialiser pour chercher le prochain segment
+                        # Reset to look for the next segment
                         in_segment = False
                         start_idx = i
                         gap_start = None
                 else:
-                    # Puissance élevée, réinitialiser le compteur de gap
+                    # High power, reset the gap counter
                     gap_start = None
 
-                # Vérifier aussi si on sort du masque actif (cas standard)
+                # Also check whether we're leaving the active mask (standard case)
                 if not active_mask[i]:
                     duration = i - start_idx
 
@@ -808,7 +808,7 @@ class Seq2PointNILMManager:
                     in_segment = False
                     gap_start = None
 
-        # Dernier segment si actif
+        # Last segment if still active
         if in_segment:
             duration = len(active_mask) - start_idx
             if duration >= min_duration:

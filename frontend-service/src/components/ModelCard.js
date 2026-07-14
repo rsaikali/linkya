@@ -30,7 +30,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import api from "../services/api";
 import websocket, { detectionsWS } from "../services/sse";
-import { formatDateTime, formatDurationMinutes, formatHumanizedDate, formatTimeOnly } from "../utils/dateUtils";
+import { formatDurationMinutes, formatHumanizedDate, formatTimeOnly } from "../utils/dateUtils";
 import MaterialIcon from "./common/MaterialIcon";
 
 function ModelCard() {
@@ -281,7 +281,7 @@ function ModelCard() {
         </CardContent>
       </Card>
 
-      {/* Dialog: détections du modèle sélectionné */}
+      {/* Dialog: detections for the selected model */}
       <Dialog
         open={detectionsDialog.open}
         onClose={() => setDetectionsDialog({ open: false, model: null })}

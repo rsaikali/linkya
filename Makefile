@@ -1,4 +1,4 @@
-.PHONY: help build up down logs restart clean status deploy train detect lint
+.PHONY: help build up down logs restart clean status deploy train detect lint test
 
 # docker-compose.yml = PROD. docker-compose.override.yml (dev) is auto-loaded
 # by `docker compose` locally. On the Pi, deploy uses -f to skip the override.
@@ -48,3 +48,7 @@ detect: ## Trigger detection (full history) via API
 lint: ## flake8 + isort check
 	@flake8 backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src || true
 	@isort --check-only --diff backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src || true
+
+test: ## Run backend-service + nilm-service test suites (uv-managed venvs)
+	@cd backend-service && uv sync --group dev -q && uv run python -m pytest tests/ -v
+	@cd nilm-service && uv sync --group dev -q && uv run python -m pytest tests/ -v

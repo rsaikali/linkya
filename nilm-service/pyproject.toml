@@ -12,13 +12,21 @@ dependencies = [
     "sqlalchemy>=2.0.35",
     "pydantic>=2.9.2",
     "tensorflow-cpu>=2.16,<2.18; platform_machine == \"x86_64\"",
-    "tensorflow>=2.16,<2.18; platform_machine == \"aarch64\"",
+    "tensorflow>=2.16,<2.18; platform_machine == \"aarch64\" or platform_machine == \"arm64\"",
     "numpy>=1.26,<2.1",
     "pandas>=2.2.0",
     "scikit-learn>=1.5.0",
     "scipy>=1.14.0",
     "hmmlearn>=0.3.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[tool.uv]
+package = false
 
 [build-system]
 requires = ["hatchling"]

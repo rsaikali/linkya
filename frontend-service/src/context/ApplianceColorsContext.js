@@ -24,7 +24,7 @@ const COLOR_PALETTE = [
   '#2d3436', // Dark Slate
 ];
 
-// Liste d'icônes Material Symbols pour appareils domestiques
+// List of Material Symbols icons for household appliances
 const ICON_LIST = [
   { name: 'power', label: 'Generic appliance' },
   { name: 'electrical_services', label: 'Electrical device' },
@@ -52,7 +52,7 @@ const ICON_LIST = [
   { name: 'print', label: 'Printer' },
 ];
 
-// Utilitaires pour gérer les cookies
+// Cookie helpers
 const setCookie = (name, value, days = 365) => {
   const expires = new Date();
   expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
@@ -80,32 +80,32 @@ const getApplianceIconsFromCookie = () => {
   return icons ? JSON.parse(icons) : {};
 };
 
-// Fonction pour obtenir une couleur aléatoire non utilisée
+// Function to get an unused random color
 const getRandomUnusedColor = (usedColors) => {
   const availableColors = COLOR_PALETTE.filter(color => !usedColors.includes(color));
-  
+
   if (availableColors.length > 0) {
     return availableColors[Math.floor(Math.random() * availableColors.length)];
   }
-  
-  // Si toutes les couleurs sont utilisées, retourner une couleur aléatoire
+
+  // If all colors are used, return a random one
   return COLOR_PALETTE[Math.floor(Math.random() * COLOR_PALETTE.length)];
 };
 
-// Fonction pour obtenir une icône par défaut
+// Function to get a default icon
 const getDefaultIcon = () => {
-  return ICON_LIST[0].name; // 'power' par défaut
+  return ICON_LIST[0].name; // 'power' by default
 };
 
-// Créer le Context
+// Create the Context
 const ApplianceColorsContext = createContext();
 
-// Provider du Context
+// Context Provider
 export function ApplianceColorsProvider({ children }) {
   const [applianceColors, setApplianceColors] = useState({});
   const [applianceIcons, setApplianceIcons] = useState({});
 
-  // Charger les couleurs et icônes depuis les cookies au montage
+  // Load colors and icons from cookies on mount
   useEffect(() => {
     const savedColors = getApplianceColorsFromCookie();
     const savedIcons = getApplianceIconsFromCookie();
@@ -113,7 +113,7 @@ export function ApplianceColorsProvider({ children }) {
     setApplianceIcons(savedIcons);
   }, []);
 
-  // Fonction pour mettre à jour la couleur d'un appareil
+  // Function to update an appliance's color
   const updateApplianceColor = (applianceId, color) => {
     const newColors = {
       ...applianceColors,
@@ -123,7 +123,7 @@ export function ApplianceColorsProvider({ children }) {
     setCookie('applianceColors', JSON.stringify(newColors));
   };
 
-  // Fonction pour mettre à jour l'icône d'un appareil
+  // Function to update an appliance's icon
   const updateApplianceIcon = (applianceId, icon) => {
     const newIcons = {
       ...applianceIcons,
@@ -133,29 +133,29 @@ export function ApplianceColorsProvider({ children }) {
     setCookie('applianceIcons', JSON.stringify(newIcons));
   };
 
-  // Fonction pour obtenir la couleur d'un appareil (pure - ne modifie pas l'état)
+  // Function to get an appliance's color (pure - does not modify state)
   const getApplianceColor = (applianceId) => {
     if (applianceColors[applianceId]) {
       return applianceColors[applianceId];
     }
-    
-    // Si l'appareil n'a pas de couleur, en retourner une aléatoire
-    // (elle sera sauvegardée par ensureApplianceColors si nécessaire)
+
+    // If the appliance has no color, return a random one
+    // (it will be saved by ensureApplianceColors if needed)
     const usedColors = Object.values(applianceColors);
     return getRandomUnusedColor(usedColors);
   };
 
-  // Fonction pour obtenir l'icône d'un appareil (pure - ne modifie pas l'état)
+  // Function to get an appliance's icon (pure - does not modify state)
   const getApplianceIcon = (applianceId) => {
     if (applianceIcons[applianceId]) {
       return applianceIcons[applianceId];
     }
-    
-    // Si l'appareil n'a pas d'icône, en retourner une par défaut
+
+    // If the appliance has no icon, return a default one
     return getDefaultIcon();
   };
 
-  // Initialiser les couleurs/icônes manquantes pour les nouveaux appareils
+  // Initialize missing colors/icons for new appliances
   const ensureApplianceColors = useCallback((applianceIds) => {
     let colorsUpdated = false;
     let iconsUpdated = false;
@@ -202,7 +202,7 @@ export function ApplianceColorsProvider({ children }) {
   );
 }
 
-// Hook personnalisé pour utiliser le Context
+// Custom hook to use the Context
 export function useApplianceColors() {
   const context = useContext(ApplianceColorsContext);
   if (!context) {

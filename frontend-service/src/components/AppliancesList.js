@@ -126,7 +126,7 @@ function AppliancesList() {
       await apiService.toggleHaPublish(appliance.id, newValue);
       await refreshAppliances();
     } catch (err) {
-      console.error('Erreur toggle HA publish:', err);
+      console.error('Error toggling HA publish:', err);
     } finally {
       setTogglingHa(null);
     }

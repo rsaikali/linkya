@@ -11,10 +11,10 @@ from ..events import emit
 logger = logging.getLogger(__name__)
 
 
-class RedisTrainingCallback(callbacks.Callback):
-    """Name kept for backward compat; now pushes progress over HTTP→SSE
-    (no Redis). Emits `training_progress` per epoch and `training_complete`
-    at the end. The backend fans these out on /api/events."""
+class TrainingProgressCallback(callbacks.Callback):
+    """Pushes training progress over HTTP to the backend's events bus.
+    Emits `training_progress` per epoch and `training_complete` at the end.
+    The backend fans these out on /api/events (SSE)."""
 
     def __init__(self, model_name, total_epochs, batch_update_freq=10):
         super().__init__()

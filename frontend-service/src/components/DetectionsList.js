@@ -47,12 +47,12 @@ import {
 } from "../utils/dateUtils";
 import MaterialIcon from "./common/MaterialIcon";
 
-// Icône Google Material Symbols pour Delete
+// Google Material Symbols icon for Delete
 const DeleteIcon = () => (
   <MaterialIcon sx={{ fontSize: 20 }}>delete</MaterialIcon>
 );
 
-// Icône Google Material Symbols pour qualité de détection
+// Google Material Symbols icon for detection quality
 const QualityIcon = ({ confidence }) => {
   const theme = useTheme();
 
@@ -70,7 +70,7 @@ const QualityIcon = ({ confidence }) => {
 };
 
 /**
- * Composant affichant les détections d'appareils récentes
+ * Component showing recent appliance detections
  */
 function DetectionsList() {
   const { visibleDetections, loading, errors, refreshDetections } = useData();
@@ -83,20 +83,20 @@ function DetectionsList() {
   const [isTraining, setIsTraining] = useState(false);
   const [hasModel, setHasModel] = useState(false);
 
-  // Vérifier si un modèle existe
+  // Check whether a model exists
   useEffect(() => {
     const checkModel = async () => {
       try {
         const response = await api.get("/api/nilm/models");
         setHasModel(response.data.models.length > 0);
       } catch (error) {
-        console.error("Erreur lors de la vérification du modèle:", error);
+        console.error("Error checking model:", error);
       }
     };
     checkModel();
   }, []);
 
-  // Écouter les événements WebSocket d'entraînement
+  // Listen for training SSE events
   useEffect(() => {
     const handleTrainingStart = () => {
       setIsTraining(true);
@@ -104,13 +104,13 @@ function DetectionsList() {
 
     const handleTrainingComplete = () => {
       setIsTraining(false);
-      // Recharger le statut du modèle
+      // Reload model status
       setTimeout(async () => {
         try {
           const response = await api.get("/api/nilm/models");
           setHasModel(response.data.models.length > 0);
         } catch (error) {
-          console.error("Erreur lors de la vérification du modèle:", error);
+          console.error("Error checking model:", error);
         }
       }, 1000);
     };
@@ -161,7 +161,7 @@ function DetectionsList() {
     }
   }, [visibleDetections, ensureApplianceColors]);
 
-  // No need to fetch detections or setup WebSocket - DataContext handles it all
+  // No need to fetch detections or set up SSE - DataContext handles it all
   const totalDetections = visibleDetections.length;
   const totalKwh = visibleDetections.reduce(
     (sum, d) => sum + (d.energy_consumed != null ? d.energy_consumed / 1000 : 0),
@@ -206,10 +206,10 @@ function DetectionsList() {
         "success"
       );
       handleCloseDeleteAllDialog();
-      // Rafraîchir la liste
+      // Refresh the list
       refreshDetections();
     } catch (error) {
-      console.error("Erreur lors de la suppression des détections:", error);
+      console.error("Error deleting detections:", error);
       const errorMsg =
         error.response?.data?.detail ||
         "Erreur lors de la suppression des détections";
@@ -271,7 +271,7 @@ function DetectionsList() {
           avatar={<InsightsIcon />}
         />
 
-        {/* Toolbar avec actions */}
+        {/* Toolbar with actions */}
         <Toolbar
           variant="dense"
           sx={{
@@ -438,7 +438,7 @@ function DetectionsList() {
         </CardContent>
       </Card>
 
-      {/* Dialog de confirmation de suppression de toutes les détections */}
+      {/* Confirmation dialog for deleting all detections */}
       <Dialog
         open={deleteAllDialogOpen}
         onClose={handleCloseDeleteAllDialog}
@@ -496,7 +496,7 @@ function DetectionsList() {
 }
 
 /**
- * Ligne de tableau pour une détection
+ * Table row for a detection
  */
 function DetectionRow({ detection, onValidate, onInvalidate }) {
   const { getApplianceColor, getApplianceIcon } = useApplianceColors();
@@ -513,7 +513,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
   const endTime = new Date(detection.end_time);
   const durationSeconds = Math.round((endTime - startTime) / 1000);
 
-  // Statut de validation
+  // Validation status
   const isValidated =
     detection.user_validated === true && detection.is_correct === true;
   const isInvalidated =
@@ -549,7 +549,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
       const names = (data.appliances || []).map((a) => a.name);
       setApplianceOptions(names);
     } catch (err) {
-      console.error("Erreur lors du chargement des appareils:", err);
+      console.error("Error loading appliances:", err);
     }
   };
 
@@ -713,7 +713,7 @@ function DetectionRow({ detection, onValidate, onInvalidate }) {
           </MenuItem>
         </Menu>
 
-        {/* Dialog pour réassigner la détection */}
+        {/* Dialog to reassign the detection */}
         <Dialog
           open={reassignDialogOpen}
           onClose={() => setReassignDialogOpen(false)}

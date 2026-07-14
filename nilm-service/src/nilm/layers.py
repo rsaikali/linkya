@@ -9,8 +9,8 @@ from tensorflow.keras import layers
 @tf.keras.utils.register_keras_serializable(package="custom_layers")
 class MultiHeadAttentionLayer(layers.Layer):
     """
-    Multi-Head Attention pour mieux capturer les patterns de multiples
-    appliances simultanés.
+    Multi-Head Attention to better capture patterns across multiple
+    simultaneous appliances.
     """
 
     def __init__(self, num_heads=4, key_dim=32, **kwargs):
@@ -25,7 +25,7 @@ class MultiHeadAttentionLayer(layers.Layer):
             inputs: (batch, sequence, features)
 
         Returns:
-            Attended features de même shape
+            Attended features of the same shape
         """
         return self.attention(inputs, inputs)
 
