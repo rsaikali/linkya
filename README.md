@@ -70,6 +70,11 @@ Open **http://localhost** (or your machine's IP).
 
 ## How to use
 
+> **Note**: the UI is currently French-first (*Consommation*, *Entraîner*, ...).
+> Everything is understandable from the screenshots below; English i18n is on
+> the roadmap.
+
+
 ### Annotate signatures
 
 The power curve of the last 30 days loads automatically (backfilled from HA history). Select a time range when you know the appliance was running, name it, done.
