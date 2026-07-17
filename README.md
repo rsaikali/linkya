@@ -1,19 +1,19 @@
-# Linkya — NILM for Home Assistant
+# Linkya - NILM for Home Assistant
 
 [![CI](https://github.com/rsaikali/linkya/actions/workflows/ci.yml/badge.svg)](https://github.com/rsaikali/linkya/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Linkya** detects appliances that don't have a smart plug — water heater, dryer, oven — from your Linky smart meter's aggregate power curve, and publishes them to Home Assistant as native sensors.
+**Linkya** detects appliances that don't have a smart plug (water heater, dryer, oven from your Linky smart meter's aggregate power curve, and publishes them to Home Assistant as native sensors.
 
 ![Linkya interface: appliances, annotated Linky consumption curve with signatures and detections](docs/img/linkya-screenshot.png)
 
 ## The problem
 
-Home Assistant measures everything with a smart plug: TV, fridge, oven, router. Consumption is covered, appliance by appliance — except what can't be plugged in. My water heater is hardwired straight to the breaker panel, no way to slip a smart plug in. It runs several times a day, a few kilowatt-hours each cycle — probably my biggest single cost after winter heating — and I had no measurement of it.
+Home Assistant measures everything with a smart plug: TV, fridge, oven, router. Consumption is covered, appliance by appliance, except what can't be plugged in. My water heater is hardwired straight to the breaker panel, no way to slip a smart plug in. It runs several times a day, a few kilowatt-hours each cycle, probably my biggest single cost after winter heating, and I had no measurement of it.
 
-**NILM** (Non-Intrusive Load Monitoring): infer each appliance's usage from the meter's aggregate signal alone. No extra hardware, no wiring — just the Linky curve you already have.
+**NILM** (Non-Intrusive Load Monitoring): infer each appliance's usage from the meter's aggregate signal alone. No extra hardware, no wiring, just the Linky curve you already have.
 
-Under the hood, Linkya trains a **Seq2Point** model (LSTM/GRU + attention) on signatures *you* draw on *your own* curve — not a public dataset of someone else's water heater. That trade-off (a few dozen manual signatures upfront) is what makes detection accurate where generic models approximate.
+Under the hood, Linkya trains a **Seq2Point** model (LSTM/GRU + attention) on signatures *you* draw on *your own* curve (not a public dataset of someone else's water heater). That trade-off (a few dozen manual signatures upfront) is what makes detection accurate where generic models approximate.
 
 ## What you need
 
@@ -24,7 +24,7 @@ Under the hood, Linkya trains a **Seq2Point** model (LSTM/GRU + attention) on si
 
 ## Quick start
 
-### 1 — Prerequisites in HA
+### 1 - Prerequisites in HA
 
 **Enable `mqtt_statestream`** in `configuration.yaml`:
 
@@ -38,7 +38,7 @@ mqtt_statestream:
 
 **Get your Mosquitto credentials**: HA Settings → Add-ons → Mosquitto → Configuration → note a user/password.
 
-### 2 — Configure
+### 2 - Configure
 
 ```bash
 git clone https://github.com/rsaikali/linkya
@@ -58,7 +58,7 @@ HA_MQTT_USER=homeassistant
 HA_MQTT_PASSWORD=<your mqtt password>
 ```
 
-### 3 — Start
+### 3 - Start
 
 ```bash
 make build
@@ -81,7 +81,7 @@ The power curve of the last 30 days loads automatically (backfilled from HA hist
 
 ![Selecting a time range on the power curve to create a signature](docs/img/linkya-screenshot-select-time.png)
 
-A few dozen signatures are enough for a first training run — capturing a cycle takes a few seconds.
+A few dozen signatures are enough for a first training run, capturing a cycle takes a few seconds.
 
 ### Train
 
@@ -93,7 +93,7 @@ Detection runs automatically every 5 minutes on the last 2 hours. Trigger it man
 
 ### Refine with negative signatures
 
-A correct detection can be validated by the user and turned into a **positive signature** — the model learns to recognize the appliance more reliably. A bad detection can be invalidated and turned into a **negative signature** — the model learns not to confuse the appliance with something else.
+A correct detection can be validated by the user and turned into a **positive signature** (the model learns to recognize the appliance more reliably). A bad detection can be invalidated and turned into a **negative signature** (the model learns not to confuse the appliance with something else).
 
 ![An erroneous detection annotated as a negative signature](docs/img/linkya-screenshot-bad-detection.png)
 
@@ -101,15 +101,14 @@ A correct detection can be validated by the user and turned into a **positive si
 
 Toggle **Home Assistant** for any appliance you trust. Linkya then exposes, on a `Linkya NILM` device:
 
-- **`binary_sensor.nilm_{appliance}`** — ON while a cycle is running (live, via MQTT discovery). State history starts at toggle time (HA can't backfill past states).
-- **`sensor.nilm_{appliance}_confidence`** — confidence (%) of the last detection.
-- **`linkya:{appliance}_energy`** — kWh, published as **external statistics** (like the Tibber/EDF integrations) via the HA WebSocket API, not an MQTT entity. External statistics are the only way to write hourly energy *into the past* — NILM always detects a cycle after it happened, and re-detections rewrite history. Shows up directly in the Energy Dashboard.
-- **Diagnostic sensors** — model version, type, trained-at, train duration, signatures, epochs, train/val loss, detections total, last detection. No F1 (Linkya has no ground-truth labels).
+- **`binary_sensor.nilm_{appliance}`** : ON while a cycle is running (live, via MQTT discovery). State history starts at toggle time (HA can't backfill past states).
+- **`sensor.nilm_{appliance}_confidence`** : confidence (%) of the last detection.
+- **`linkya:{appliance}_energy`** : kWh, published as **external statistics** (like the Tibber/EDF integrations) via the HA WebSocket API, not an MQTT entity. External statistics are the only way to write hourly energy *into the past* as NILM always detects a cycle after it happened, and re-detections rewrite history. Shows up directly in the Energy Dashboard.
+- **Diagnostic sensors** : model version, type, trained-at, train duration, signatures, epochs, train/val loss, detections total, last detection. No F1 (Linkya has no ground-truth labels).
 
 ## Architecture
 
-Five services. No broker, no TimescaleDB, no nginx — the FastAPI backend serves
-the React build and a single SSE stream for live UI updates.
+Five services. The FastAPI backend serves the React build and a single SSE stream for live UI updates.
 
 ```
 HA (sensor.linky_sinsts)
@@ -137,7 +136,7 @@ Browser ─→ backend (FastAPI: REST + SSE + React build) ─→ PostgreSQL
 | `ha-ingest` | asyncio | HA MQTT statestream + History API backfill |
 | `ha-publish` | asyncio | detections → HA MQTT discovery (binary + confidence + diagnostics) |
 
-Live UI updates use one SSE endpoint (`GET /api/events`) — no WebSocket on the frontend side.
+Live UI updates use one SSE endpoint (`GET /api/events`).
 
 ## Access
 
@@ -161,15 +160,15 @@ make deploy   # prod build + restart (Pi / CD), skips the dev override
 
 ## NILM model
 
-Seq2Point multi-output GRU with attention (TensorFlow/Keras). Trained on user-annotated signatures from the aggregate Linky curve — not a public dataset, so it learns *your* water heater, not an average one. Detection combines two paths: change-point detection + pattern matching (energy, duration, power shape) for clean on/off cycles, and Seq2Point sliding-window inference for more complex ones. Negative-signature feedback loop reduces false positives over time.
+Seq2Point multi-output GRU with attention (TensorFlow/Keras). Trained on user-annotated signatures from the aggregate Linky curve, not a public dataset, so it learns *your* water heater, not an average one. Detection combines two paths: change-point detection + pattern matching (energy, duration, power shape) for clean on/off cycles, and Seq2Point sliding-window inference for more complex ones. Negative-signature feedback loop reduces false positives over time.
 
 **Works well for**: water heater, dryer, EV charger, oven (high-power, clear on/off pattern).
-**Harder to detect**: appliances with more complex, variable cycles (washing machine, dishwasher) need more signatures to stabilize; identical appliances (e.g. two identical space heaters) share the same electrical signature — Linkya sees *something* is on, but can't always tell which one. That's a physical limit of the aggregate signal, not a bug.
+**Harder to detect**: appliances with more complex, variable cycles (washing machine, dishwasher) need more signatures to stabilize; identical appliances (e.g. two identical space heaters) share the same electrical signature so Linkya sees *something* is on, but can't always tell which one. That's a physical limit of the aggregate signal, not a bug.
 
 **References**:
-- Hart, G.W. (1992). [Nonintrusive appliance load monitoring](https://ieeexplore.ieee.org/document/192069) — the founding NILM paper.
-- Zhang et al. (2018). [Sequence-to-Point Learning with Neural Networks for NILM](https://arxiv.org/abs/1612.09106) — the reference architecture Linkya builds on.
-- [NILMTK](https://github.com/nilmtk/nilmtk) — the academic reference toolkit (not used directly; built for research, not embedded deployment).
+- Hart, G.W. (1992). [Nonintrusive appliance load monitoring](https://ieeexplore.ieee.org/document/192069) - the founding NILM paper.
+- Zhang et al. (2018). [Sequence-to-Point Learning with Neural Networks for NILM](https://arxiv.org/abs/1612.09106) - the reference architecture Linkya builds on.
+- [NILMTK](https://github.com/nilmtk/nilmtk) - the academic reference toolkit (not used directly; built for research, not embedded deployment).
 
 ## Environment variables
 
@@ -185,4 +184,4 @@ See `.env.example` for the full list with comments. Required:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
