@@ -92,6 +92,8 @@ make test                                 # backend-service + nilm-service test 
 make lint                                 # flake8 + isort
 ```
 
+**Toolchain note**: flake8 + isort + black — not ruff (the default elsewhere in the workspace). Kept as-is deliberately, not retrofitted. `black --check` is enforced in CI (2026-07-25); run `black backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src` locally before committing if you touch these dirs.
+
 ## Config (`.env`, source of truth `.env.example`)
 
 `HA_URL`, `HA_TOKEN`, `HA_ENTITY_PAPP`, `HA_BACKFILL_DAYS`, `HA_MQTT_*`, `LOCAL_DB_*`, `NILM_URL`, `BACKEND_URL`, `BACKEND_BIND` (prod LAN bind IP, never 0.0.0.0), `NILM_*`.

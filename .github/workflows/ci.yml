@@ -19,11 +19,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install flake8 isort
+      - run: pip install flake8 isort black
       - name: flake8
         run: flake8 backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src
       - name: isort
         run: isort --check-only backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src
+      - name: black
+        run: black --check backend-service/src nilm-service/src ha-ingest-service/src ha-publish-service/src
 
   test:
     name: Tests
