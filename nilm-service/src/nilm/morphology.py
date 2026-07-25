@@ -18,7 +18,6 @@ import numpy as np
 from scipy import signal, stats
 from scipy.fft import fft, fftfreq
 
-
 logger = logging.getLogger(__name__)
 
 

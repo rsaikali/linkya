@@ -14,16 +14,12 @@ class PublishRepository:
     def get_active_appliances(self) -> list[dict]:
         """Return all appliances with ha_publish=True."""
         with self.engine.connect() as conn:
-            rows = conn.execute(
-                text(
-                    """
+            rows = conn.execute(text("""
                     SELECT id, name, ha_entity_id
                     FROM nilm_appliances
                     WHERE ha_publish = TRUE
                     ORDER BY name
-                    """
-                )
-            ).fetchall()
+                    """)).fetchall()
         return [{"id": r[0], "name": r[1], "ha_entity_id": r[2]} for r in rows]
 
     def is_currently_active(self, appliance_id: int) -> bool:
@@ -36,16 +32,14 @@ class PublishRepository:
         """
         with self.engine.connect() as conn:
             row = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT id FROM nilm_detections
                     WHERE appliance_id = :id
                       AND start_time <= NOW()
                       AND end_time >= NOW() - make_interval(mins => :buffer)
                     ORDER BY end_time DESC
                     LIMIT 1
-                    """
-                ),
+                    """),
                 {"id": appliance_id, "buffer": int(settings.active_buffer_minutes)},
             ).fetchone()
         return row is not None
@@ -54,15 +48,13 @@ class PublishRepository:
         """Confidence score (0–100 %) of the most recent detection for this appliance."""
         with self.engine.connect() as conn:
             val = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT ROUND(confidence_score::numeric * 100, 1)
                     FROM nilm_detections
                     WHERE appliance_id = :id
                     ORDER BY created_at DESC
                     LIMIT 1
-                    """
-                ),
+                    """),
                 {"id": appliance_id},
             ).scalar()
         return float(val) if val is not None else None
@@ -72,48 +64,32 @@ class PublishRepository:
         Returns None when no model has been trained yet."""
         with self.engine.connect() as conn:
             # Champion first, fallback to latest.
-            m = conn.execute(
-                text(
-                    """
+            m = conn.execute(text("""
                     SELECT model_name, model_type, training_date, num_signatures,
                            num_classes, training_duration_seconds, metrics
                     FROM nilm_models
                     WHERE is_champion = TRUE
                     ORDER BY training_date DESC
                     LIMIT 1
-                    """
-                )
-            ).fetchone()
+                    """)).fetchone()
             if not m:
-                m = conn.execute(
-                    text(
-                        """
+                m = conn.execute(text("""
                         SELECT model_name, model_type, training_date, num_signatures,
                                num_classes, training_duration_seconds, metrics
                         FROM nilm_models
                         ORDER BY training_date DESC
                         LIMIT 1
-                        """
-                    )
-                ).fetchone()
+                        """)).fetchone()
             if not m:
                 return None
 
-            det = conn.execute(
-                text("SELECT COUNT(*), MAX(created_at) FROM nilm_detections")
-            ).fetchone()
-            avg_conf = conn.execute(
-                text(
-                    """
+            det = conn.execute(text("SELECT COUNT(*), MAX(created_at) FROM nilm_detections")).fetchone()
+            avg_conf = conn.execute(text("""
                     SELECT ROUND(AVG(confidence_score)::numeric * 100, 1)
                     FROM nilm_detections
                     WHERE created_at >= NOW() - INTERVAL '30 days'
-                    """
-                )
-            ).scalar()
-            last_run = conn.execute(
-                text("SELECT value FROM nilm_meta WHERE key = 'last_detect_run'")
-            ).scalar()
+                    """)).scalar()
+            last_run = conn.execute(text("SELECT value FROM nilm_meta WHERE key = 'last_detect_run'")).scalar()
 
         metrics = m[6] if isinstance(m[6], dict) else json.loads(m[6] or "{}")
         apps = metrics.get("appliances") or []

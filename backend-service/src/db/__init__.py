@@ -8,7 +8,6 @@ from .manager import DatabaseManager, db_manager
 from .models import ModelRepository
 from .signatures import SignatureRepository
 
-
 __all__ = [
     "DatabaseBase",
     "format_datetime",

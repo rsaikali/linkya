@@ -9,7 +9,6 @@ from ..config import settings
 from ..db import db_manager
 from ..ha_backfill import run_ha_backfill
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/nilm", tags=["NILM"])
 
@@ -63,8 +62,7 @@ async def trigger_publish(background_tasks: BackgroundTasks):
                 continue
             try:
                 result = await run_ha_backfill(settings.ha_url, settings.ha_token, appliance, detections)
-                logger.info("publish %s: %d h → %.3f kWh", appliance["name"],
-                            result.get("hours_injected", 0), result.get("total_kwh", 0.0))
+                logger.info("publish %s: %d h → %.3f kWh", appliance["name"], result.get("hours_injected", 0), result.get("total_kwh", 0.0))
                 results.append({"name": appliance["name"], **result})
             except Exception as e:
                 logger.error("publish %s failed: %s", appliance["name"], e)

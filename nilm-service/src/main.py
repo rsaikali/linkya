@@ -23,7 +23,6 @@ from . import jobs
 from .config import settings
 from .database import db_manager
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ class SignatureIn(BaseModel):
     start_time: str
     end_time: str
     is_negative: bool = False
-    auto_train: bool = True   # False during bulk CSV import
+    auto_train: bool = True  # False during bulk CSV import
 
 
 @app.get("/healthz")
@@ -89,16 +88,12 @@ def add_signature(sig: SignatureIn):
 @app.get("/models")
 def list_models():
     with db_manager.engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
+        rows = conn.execute(text("""
                 SELECT id, model_name, model_type, training_date,
                        num_signatures, num_classes, metrics,
                        training_duration_seconds, is_champion
                 FROM nilm_models ORDER BY training_date DESC
-                """
-            )
-        ).fetchall()
+                """)).fetchall()
     return {
         "models": [
             {

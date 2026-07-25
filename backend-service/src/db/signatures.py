@@ -18,8 +18,7 @@ class SignatureRepository(DatabaseBase):
         Returns:
             List of signatures with their details
         """
-        query = text(
-            """
+        query = text("""
             SELECT
                 cs.id,
                 cs.appliance_id,
@@ -46,8 +45,7 @@ class SignatureRepository(DatabaseBase):
             FROM nilm_signatures cs
             WHERE cs.appliance_id = :appliance_id
             ORDER BY cs.start_time DESC
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             result = conn.execute(query, {"appliance_id": appliance_id})
@@ -75,17 +73,13 @@ class SignatureRepository(DatabaseBase):
         Returns:
             Dictionary with the number of deleted signatures
         """
-        count_query = text(
-            """
+        count_query = text("""
             SELECT COUNT(*) FROM nilm_signatures
-        """
-        )
+        """)
 
-        delete_query = text(
-            """
+        delete_query = text("""
             DELETE FROM nilm_signatures
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             # Count signatures to delete
@@ -108,8 +102,7 @@ class SignatureRepository(DatabaseBase):
             Deleted signature information or None if not found
         """
         # Retrieve information before deletion
-        get_query = text(
-            """
+        get_query = text("""
             SELECT
                 s.id,
                 s.appliance_id,
@@ -121,15 +114,12 @@ class SignatureRepository(DatabaseBase):
             FROM nilm_signatures s
             JOIN nilm_appliances a ON s.appliance_id = a.id
             WHERE s.id = :signature_id
-        """
-        )
+        """)
 
-        delete_query = text(
-            """
+        delete_query = text("""
             DELETE FROM nilm_signatures
             WHERE id = :signature_id
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             # Retrieve signature info
@@ -177,8 +167,7 @@ class SignatureRepository(DatabaseBase):
             List of signatures with appliance_name,
             start_time, end_time, is_negative
         """
-        query = text(
-            """
+        query = text("""
             SELECT
                 cs.id,
                 ca.id as appliance_id,
@@ -201,8 +190,7 @@ class SignatureRepository(DatabaseBase):
             FROM nilm_signatures cs
             JOIN nilm_appliances ca ON cs.appliance_id = ca.id
             ORDER BY cs.start_time DESC
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             result = conn.execute(query)

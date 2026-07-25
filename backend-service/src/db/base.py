@@ -7,7 +7,6 @@ from sqlalchemy.orm import sessionmaker
 
 from ..config import settings
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,9 +32,7 @@ _shared_session_factory = None
 def _get_engine():
     global _shared_engine
     if _shared_engine is None:
-        _shared_engine = create_engine(
-            settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20
-        )
+        _shared_engine = create_engine(settings.local_db_url, pool_pre_ping=True, pool_size=10, max_overflow=20)
     return _shared_engine
 
 

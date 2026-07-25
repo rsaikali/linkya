@@ -6,7 +6,6 @@ import logging
 
 import numpy as np
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -207,7 +206,7 @@ class ChangePointPatternDetector:
                                 {
                                     "start_idx": start,
                                     "end_idx": end,
-                                    "duration": duration_seconds,   # seconds (fixed)
+                                    "duration": duration_seconds,  # seconds (fixed)
                                     "duration_samples": duration_samples,
                                     "pattern": pattern,
                                     "avg_power": float(np.mean(pattern)),
@@ -242,7 +241,7 @@ class ChangePointPatternDetector:
             return None
 
         pattern = pattern_data["pattern"]
-        pattern_duration = pattern_data["duration"]    # seconds (fixed)
+        pattern_duration = pattern_data["duration"]  # seconds (fixed)
         pattern_power = pattern_data["avg_power"]
         pattern_energy = pattern_data.get("energy_wh", 0.0)
 
@@ -312,9 +311,7 @@ class ChangePointPatternDetector:
                 morphology_score = 0.0
                 has_morphology = pattern_morphology and "morphology" in profile
                 if has_morphology:
-                    morphology_score = self._compute_morphology_similarity(
-                        pattern_morphology, profile["morphology"]
-                    )
+                    morphology_score = self._compute_morphology_similarity(pattern_morphology, profile["morphology"])
 
                 # --- Combined score ---
                 # Energy = the most stable feature across appliance types
@@ -324,19 +321,10 @@ class ChangePointPatternDetector:
                 # Morphology = bonus when available
                 if has_morphology:
                     combined_score = (
-                        energy_score * 0.35
-                        + duration_score * 0.25
-                        + power_score * 0.20
-                        + abs_correlation * 0.10
-                        + morphology_score * 0.10
+                        energy_score * 0.35 + duration_score * 0.25 + power_score * 0.20 + abs_correlation * 0.10 + morphology_score * 0.10
                     )
                 else:
-                    combined_score = (
-                        energy_score * 0.40
-                        + duration_score * 0.30
-                        + power_score * 0.20
-                        + abs_correlation * 0.10
-                    )
+                    combined_score = energy_score * 0.40 + duration_score * 0.30 + power_score * 0.20 + abs_correlation * 0.10
 
                 logger.info(
                     f"  Profile#{i}: energy={energy_score:.3f}, dur={duration_score:.3f}, "
@@ -359,10 +347,7 @@ class ChangePointPatternDetector:
         logger.info(f"Matching done: best_score={best_score:.3f}, threshold={threshold}")
 
         if best_match and best_match[3] > threshold:
-            logger.info(
-                f"Match found: {best_match[1]} "
-                f"(sig_id={best_match[2]}, confidence={best_match[3]:.3f})"
-            )
+            logger.info(f"Match found: {best_match[1]} " f"(sig_id={best_match[2]}, confidence={best_match[3]:.3f})")
             return best_match
         else:
             logger.info(f"No match (best={best_score:.3f} < {threshold})")

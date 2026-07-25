@@ -13,20 +13,14 @@ class DatabaseManager:
     def init_db(self):
         """Create linky_realtime on plain PostgreSQL (no TimescaleDB)."""
         with self.engine.begin() as conn:
-            conn.execute(
-                text(
-                    """
+            conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS linky_realtime (
                         time  TIMESTAMPTZ NOT NULL,
                         papp  INTEGER     NOT NULL,
                         PRIMARY KEY (time)
                     );
-                    """
-                )
-            )
-            conn.execute(
-                text("CREATE INDEX IF NOT EXISTS idx_linky_realtime_time ON linky_realtime (time DESC);")
-            )
+                    """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_linky_realtime_time ON linky_realtime (time DESC);"))
         logger.info("linky_realtime table ready")
 
     def get_last_timestamp(self):
@@ -40,13 +34,11 @@ class DatabaseManager:
             return 0
         with self.engine.begin() as conn:
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO linky_realtime (time, papp)
                     VALUES (:time, :papp)
                     ON CONFLICT (time) DO UPDATE SET papp = EXCLUDED.papp
-                    """
-                ),
+                    """),
                 rows,
             )
         return len(rows)
@@ -55,13 +47,11 @@ class DatabaseManager:
         """Upsert a single real-time point."""
         with self.engine.begin() as conn:
             conn.execute(
-                text(
-                    """
+                text("""
                     INSERT INTO linky_realtime (time, papp)
                     VALUES (:time, :papp)
                     ON CONFLICT (time) DO UPDATE SET papp = EXCLUDED.papp
-                    """
-                ),
+                    """),
                 {"time": ts, "papp": papp},
             )
 

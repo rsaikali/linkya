@@ -11,7 +11,6 @@ from ..db import db_manager
 from ..events import bus
 from ..ha_backfill import run_ha_backfill
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Events"])
 
@@ -62,9 +61,7 @@ async def _auto_ha_backfill():
             logger.info("auto-backfill %s: no detections, skip", appliance["name"])
             continue
         try:
-            result = await run_ha_backfill(
-                settings.ha_url, settings.ha_token, appliance, detections
-            )
+            result = await run_ha_backfill(settings.ha_url, settings.ha_token, appliance, detections)
             logger.info(
                 "auto-backfill %s: %d h → %.3f kWh",
                 appliance["name"],
@@ -95,9 +92,7 @@ async def push_event(
     # Re-publish energy statistics after every detection run: cycles are
     # always detected late, so each run rewrites recent (or full) history.
     # Skip cron runs that found nothing — no history change to publish.
-    if evt.type == "detection_complete" and (
-        evt.data.get("full_detect") or evt.data.get("num_detections", 0) > 0
-    ):
+    if evt.type == "detection_complete" and (evt.data.get("full_detect") or evt.data.get("num_detections", 0) > 0):
         background_tasks.add_task(_auto_ha_backfill)
 
     return {"ok": True}

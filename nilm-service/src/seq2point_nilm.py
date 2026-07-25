@@ -23,7 +23,6 @@ from .database import db_manager
 from .nilm.detectors import ChangePointPatternDetector
 from .nilm.models import Seq2PointMultiOutputModel
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -221,8 +220,7 @@ class Seq2PointNILMManager:
         negative_sigs = {}
         try:
             with db_manager.engine.connect() as conn:
-                query = text(
-                    """
+                query = text("""
                     SELECT
                         cs.id,
                         cs.appliance_id,
@@ -238,8 +236,7 @@ class Seq2PointNILMManager:
                     FROM nilm_signatures cs
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
-                """
-                )
+                """)
 
                 result = conn.execute(query)
 
@@ -478,19 +475,15 @@ class Seq2PointNILMManager:
                 return []
 
             # Step 2: extract patterns (timestamps -> duration in real seconds)
-            patterns = self.change_point_detector.extract_patterns(
-                aggregate_power, change_points, timestamps=timestamps
-            )
+            patterns = self.change_point_detector.extract_patterns(aggregate_power, change_points, timestamps=timestamps)
 
             # ─── PATH A: Change Point + Pattern Matching ─────────────────────
             path_a_detections = []
             if patterns:
                 for pattern_data in patterns:
-                    match_result = self.change_point_detector.match_pattern(
-                        pattern_data, pattern_morphology=pattern_data.get("morphology")
-                    )
+                    match_result = self.change_point_detector.match_pattern(pattern_data, pattern_morphology=pattern_data.get("morphology"))
                     if match_result:
-                        (appliance_id, appliance_name, matched_signature_id, confidence) = match_result
+                        appliance_id, appliance_name, matched_signature_id, confidence = match_result
                         start_idx = pattern_data["start_idx"]
                         end_idx = pattern_data["end_idx"]
                         if start_idx < len(timestamps) and end_idx <= len(timestamps):
@@ -568,9 +561,7 @@ class Seq2PointNILMManager:
                     signal_smooth = np.maximum(signal_smooth, 0)
 
                     active_mask = signal_smooth > threshold_w
-                    segments = self._find_active_segments(
-                        active_mask, timestamps, signal_smooth, min_duration_samples
-                    )
+                    segments = self._find_active_segments(active_mask, timestamps, signal_smooth, min_duration_samples)
 
                     for seg in segments:
                         seg["appliance_id"] = app_id

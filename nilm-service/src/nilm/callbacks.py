@@ -7,7 +7,6 @@ from tensorflow.keras import callbacks
 
 from ..events import emit
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,19 +32,25 @@ class TrainingProgressCallback(callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         progress = round((self.current_epoch / self.total_epochs) * 100, 1)
-        emit("training_progress", {
-            "phase": "epoch",
-            "epoch": self.current_epoch,
-            "total_epochs": self.total_epochs,
-            "progress": progress,
-            "metrics": {k: float(v) for k, v in logs.items()},
-        })
+        emit(
+            "training_progress",
+            {
+                "phase": "epoch",
+                "epoch": self.current_epoch,
+                "total_epochs": self.total_epochs,
+                "progress": progress,
+                "metrics": {k: float(v) for k, v in logs.items()},
+            },
+        )
 
     def on_train_end(self, logs=None):
         logs = logs or {}
         elapsed = (datetime.now(timezone.utc) - self.start_time).total_seconds() if self.start_time else 0
-        emit("training_progress", {
-            "phase": "done",
-            "epochs_completed": self.current_epoch,
-            "duration_seconds": round(elapsed, 1),
-        })
+        emit(
+            "training_progress",
+            {
+                "phase": "done",
+                "epochs_completed": self.current_epoch,
+                "duration_seconds": round(elapsed, 1),
+            },
+        )

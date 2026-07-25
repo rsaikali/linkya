@@ -12,7 +12,6 @@ from sqlalchemy.orm import sessionmaker
 
 from .config import settings
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -142,19 +141,11 @@ class DatabaseManager:
                 # Create tables if they don't exist
                 self.metadata.create_all(self.engine)
                 # Key/value meta (e.g. last_detect_run heartbeat)
-                conn.execute(
-                    text("CREATE TABLE IF NOT EXISTS nilm_meta (key TEXT PRIMARY KEY, value TEXT)")
-                )
-                conn.execute(
-                    text("ALTER TABLE nilm_models ADD COLUMN IF NOT EXISTS is_champion BOOLEAN NOT NULL DEFAULT FALSE")
-                )
-                conn.execute(
-                    text("ALTER TABLE nilm_detections ADD COLUMN IF NOT EXISTS model_name TEXT")
-                )
+                conn.execute(text("CREATE TABLE IF NOT EXISTS nilm_meta (key TEXT PRIMARY KEY, value TEXT)"))
+                conn.execute(text("ALTER TABLE nilm_models ADD COLUMN IF NOT EXISTS is_champion BOOLEAN NOT NULL DEFAULT FALSE"))
+                conn.execute(text("ALTER TABLE nilm_detections ADD COLUMN IF NOT EXISTS model_name TEXT"))
                 # Energy HWM removed: energy now goes to HA as external statistics.
-                conn.execute(
-                    text("ALTER TABLE nilm_appliances DROP COLUMN IF EXISTS energy_hwm_kwh")
-                )
+                conn.execute(text("ALTER TABLE nilm_appliances DROP COLUMN IF EXISTS energy_hwm_kwh"))
                 conn.commit()
                 logger.info("NILM tables created successfully")
 
@@ -186,8 +177,7 @@ class DatabaseManager:
         try:
             with self.engine.connect() as conn:
                 # Epoch-floor bucketing — plain PostgreSQL (no TimescaleDB).
-                query = text(
-                    """
+                query = text("""
                     SELECT
                         to_timestamp(floor(extract(epoch FROM time) / :secs) * :secs) AS bucket_time,
                         AVG(papp) AS avg_papp
@@ -195,8 +185,7 @@ class DatabaseManager:
                     WHERE time >= :start_time AND time <= :end_time
                     GROUP BY bucket_time
                     ORDER BY bucket_time ASC
-                    """
-                )
+                    """)
 
                 result = conn.execute(query, {"secs": int(resample_seconds), "start_time": start_time, "end_time": end_time})
 
@@ -226,8 +215,7 @@ class DatabaseManager:
         try:
             # Check for overlaps
             with self.engine.connect() as conn:
-                overlap_query = text(
-                    """
+                overlap_query = text("""
                     SELECT id, start_time, end_time
                     FROM nilm_signatures
                     WHERE appliance_id = :appliance_id
@@ -238,8 +226,7 @@ class DatabaseManager:
                             AND end_time <= :end_time)
                     )
                     LIMIT 1
-                """
-                )
+                """)
 
                 result = conn.execute(overlap_query, {"appliance_id": appliance_id, "start_time": start_time, "end_time": end_time})
 
@@ -285,8 +272,7 @@ class DatabaseManager:
                 morphology_analysis = analyzer.analyze(power_values, start_time)
 
             with self.get_session() as session:
-                query = text(
-                    """
+                query = text("""
                     INSERT INTO nilm_signatures
                     (appliance_id, start_time, end_time, power_data,
                      avg_power, power_std, energy_consumed, num_points,
@@ -297,8 +283,7 @@ class DatabaseManager:
                         :morphology_analysis, :is_negative, NOW()
                     )
                     RETURNING id
-                """
-                )
+                """)
 
                 result = session.execute(
                     query,
@@ -427,12 +412,10 @@ class DatabaseManager:
         try:
             with self.engine.begin() as conn:
                 conn.execute(
-                    text(
-                        """
+                    text("""
                         INSERT INTO nilm_meta (key, value) VALUES (:k, :v)
                         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                        """
-                    ),
+                        """),
                     {"k": key, "v": str(value)},
                 )
         except SQLAlchemyError as e:
@@ -442,9 +425,7 @@ class DatabaseManager:
         """Count of positive (non-negative) signatures across all appliances."""
         try:
             with self.engine.connect() as conn:
-                result = conn.execute(
-                    text("SELECT COUNT(*) FROM nilm_signatures WHERE is_negative = FALSE")
-                )
+                result = conn.execute(text("SELECT COUNT(*) FROM nilm_signatures WHERE is_negative = FALSE"))
                 return result.scalar() or 0
         except SQLAlchemyError as e:
             logger.error(f"Error in count_positive_signatures: {e}")

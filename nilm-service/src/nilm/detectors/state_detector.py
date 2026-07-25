@@ -7,7 +7,6 @@ import logging
 import numpy as np
 from sklearn.cluster import KMeans
 
-
 logger = logging.getLogger(__name__)
 
 

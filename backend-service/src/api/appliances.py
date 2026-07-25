@@ -10,7 +10,6 @@ from ..events import bus
 from ..ha_backfill import run_ha_backfill
 from ..models import ApplianceUpdate, HaPublishUpdate
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/appliances", tags=["Appliances"])
 

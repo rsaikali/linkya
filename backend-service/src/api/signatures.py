@@ -14,7 +14,6 @@ from ..db import db_manager
 from ..events import bus
 from ..models import SignatureCreate
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/signatures", tags=["Signatures"])
 
@@ -47,9 +46,7 @@ async def get_all_signatures():
 @router.post("")
 async def create_signature(signature: SignatureCreate):
     try:
-        result = await _nilm_add_signature(
-            signature.appliance_name, signature.start_time, signature.end_time, False
-        )
+        result = await _nilm_add_signature(signature.appliance_name, signature.start_time, signature.end_time, False)
     except httpx.HTTPError as e:
         logger.error("nilm add signature failed: %s", e)
         raise HTTPException(status_code=502, detail="Service NILM injoignable")
@@ -123,14 +120,17 @@ async def import_signatures(file: UploadFile):
             success += 1
             if success % 5 == 0:
                 total = len(rows)
-                bus.publish("import_progress", {
-                    "done": success,
-                    "total": total,
-                    "total_lines": total,
-                    "success_count": success,
-                    "error_count": len(errors),
-                    "progress_percent": round(success / total * 100),
-                })
+                bus.publish(
+                    "import_progress",
+                    {
+                        "done": success,
+                        "total": total,
+                        "total_lines": total,
+                        "success_count": success,
+                        "error_count": len(errors),
+                        "progress_percent": round(success / total * 100),
+                    },
+                )
         except Exception as e:
             errors.append({"line": line_num, "error": str(e)})
 
@@ -146,13 +146,16 @@ async def import_signatures(file: UploadFile):
             logger.warning("post-import train trigger failed: %s", e)
 
     total_rows = len(rows)
-    bus.publish("import_complete", {
-        "success": success,
-        "errors": len(errors),
-        "total_lines": total_rows,
-        "success_count": success,
-        "error_count": len(errors),
-    })
+    bus.publish(
+        "import_complete",
+        {
+            "success": success,
+            "errors": len(errors),
+            "total_lines": total_rows,
+            "success_count": success,
+            "error_count": len(errors),
+        },
+    )
     return {
         "status": "completed",
         "signatures_deleted": deleted["signatures_deleted"],

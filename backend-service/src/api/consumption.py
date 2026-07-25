@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 
 from ..db import db_manager
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/consumption", tags=["Consumption"])
 
@@ -16,7 +15,7 @@ router = APIRouter(prefix="/api/consumption", tags=["Consumption"])
 # page load.  TTL = 55s so the browser Cache-Control (55s) and this always
 # stay in sync — one fresh DB query per minute maximum.
 _HISTORY_CACHE_TTL = 55
-_history_cache: dict = {}   # key → (payload, expires_at)
+_history_cache: dict = {}  # key → (payload, expires_at)
 
 
 def _cache_key(interval: str) -> str:

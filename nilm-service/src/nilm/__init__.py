@@ -13,7 +13,6 @@ from .morphology import MorphologyAnalyzer
 from .preprocessing import Seq2PointPreprocessor
 from .utils import normalize_name_for_tensorflow
 
-
 __all__ = [
     "TrainingProgressCallback",
     "MultiHeadAttentionLayer",

@@ -18,7 +18,6 @@ from ..layers import MultiHeadAttentionLayer
 from ..losses import asymmetric_loss, focal_loss_fixed
 from ..preprocessing import Seq2PointPreprocessor
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -435,14 +434,12 @@ class Seq2PointMultiOutputModel:
 
         try:
             with db_manager.engine.connect() as conn:
-                query = text(
-                    """
+                query = text("""
                     SELECT time, papp
                     FROM linky_realtime
                     WHERE time >= :start_time AND time <= :end_time
                     ORDER BY time
-                """
-                )
+                """)
 
                 result = conn.execute(query, {"start_time": signature["start_time"], "end_time": signature["end_time"]})
 
@@ -508,14 +505,12 @@ class Seq2PointMultiOutputModel:
         negative_sigs = {}
         try:
             with db_manager.get_session() as session:
-                query = text(
-                    """
+                query = text("""
                     SELECT id, appliance_id, start_time, end_time
                     FROM nilm_signatures
                     WHERE is_negative = TRUE
                     ORDER BY created_at DESC
-                """
-                )
+                """)
                 result = session.execute(query)
 
                 for row in result:
@@ -534,14 +529,12 @@ class Seq2PointMultiOutputModel:
 
         try:
             with db_manager.engine.connect() as conn:
-                query = text(
-                    """
+                query = text("""
                     SELECT papp
                     FROM linky_realtime
                     WHERE time >= :start_time AND time <= :end_time
                     ORDER BY time
-                """
-                )
+                """)
                 result = conn.execute(query, {"start_time": start_time, "end_time": end_time})
                 data = [row[0] for row in result if row[0] is not None]
 

@@ -3,7 +3,6 @@
 import json
 import re
 
-
 DISCOVERY_PREFIX = "homeassistant"
 STATE_PREFIX = "linkya/nilm"
 
@@ -35,20 +34,23 @@ def binary_state_topic(ha_entity_id: str) -> str:
 
 
 def binary_discovery_payload(name: str, ha_entity_id: str) -> str:
-    return json.dumps({
-        "name": f"NILM {name}",
-        "unique_id": f"linkya_{slug(ha_entity_id)}_state",
-        "state_topic": binary_state_topic(ha_entity_id),
-        "payload_on": "on",
-        "payload_off": "off",
-        "device_class": "running",
-        "icon": "mdi:washing-machine",
-        "device": _DEVICE,
-    })
+    return json.dumps(
+        {
+            "name": f"NILM {name}",
+            "unique_id": f"linkya_{slug(ha_entity_id)}_state",
+            "state_topic": binary_state_topic(ha_entity_id),
+            "payload_on": "on",
+            "payload_off": "off",
+            "device_class": "running",
+            "icon": "mdi:washing-machine",
+            "device": _DEVICE,
+        }
+    )
 
 
 # ── Legacy discovery topics (kept only to clear retained MQTT messages) ──────
 # Energy moved to HA external statistics (backend, recorder/import_statistics).
+
 
 def energy_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_energy/config"
@@ -60,6 +62,7 @@ def numeric_state_discovery_topic(ha_entity_id: str) -> str:
 
 # ── Confidence sensor per appliance (last detection) ─────────────────────────
 
+
 def confidence_discovery_topic(ha_entity_id: str) -> str:
     return f"{DISCOVERY_PREFIX}/sensor/{slug(ha_entity_id)}_confidence/config"
 
@@ -69,15 +72,17 @@ def confidence_state_topic(ha_entity_id: str) -> str:
 
 
 def confidence_discovery_payload(name: str, ha_entity_id: str) -> str:
-    return json.dumps({
-        "name": f"NILM {name} Confiance",
-        "unique_id": f"linkya_{slug(ha_entity_id)}_confidence",
-        "state_topic": confidence_state_topic(ha_entity_id),
-        "unit_of_measurement": "%",
-        "state_class": "measurement",
-        "icon": "mdi:percent",
-        "device": _DEVICE,
-    })
+    return json.dumps(
+        {
+            "name": f"NILM {name} Confiance",
+            "unique_id": f"linkya_{slug(ha_entity_id)}_confidence",
+            "state_topic": confidence_state_topic(ha_entity_id),
+            "unit_of_measurement": "%",
+            "state_class": "measurement",
+            "icon": "mdi:percent",
+            "device": _DEVICE,
+        }
+    )
 
 
 # ── Lab diagnostics (one shared JSON state topic, value_template per sensor) ──
@@ -90,31 +95,79 @@ STATS_SENSORS = [
     ("model_version", "NILM Modèle", {"icon": "mdi:tag"}),
     ("model_type", "NILM Architecture", {"icon": "mdi:chip"}),
     ("trained_at", "NILM Entraîné le", {"device_class": "timestamp"}),
-    ("train_duration_s", "NILM Durée entraînement", {
-        "unit_of_measurement": "s", "device_class": "duration",
-        "state_class": "measurement", "icon": "mdi:timer",
-    }),
-    ("num_signatures", "NILM Signatures", {
-        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:draw",
-    }),
-    ("num_appliances", "NILM Appareils", {
-        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:home-lightning-bolt",
-    }),
-    ("epochs", "NILM Epochs", {
-        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:counter",
-    }),
-    ("train_loss", "NILM Train loss", {
-        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:chart-line",
-    }),
-    ("val_loss", "NILM Val loss", {
-        "unit_of_measurement": "", "state_class": "measurement", "icon": "mdi:chart-line",
-    }),
-    ("avg_confidence_pct", "NILM Confiance détection (30j)", {
-        "unit_of_measurement": "%", "state_class": "measurement", "icon": "mdi:percent",
-    }),
-    ("detections_total", "NILM Détections total", {
-        "unit_of_measurement": "", "state_class": "total_increasing", "icon": "mdi:magnify",
-    }),
+    (
+        "train_duration_s",
+        "NILM Durée entraînement",
+        {
+            "unit_of_measurement": "s",
+            "device_class": "duration",
+            "state_class": "measurement",
+            "icon": "mdi:timer",
+        },
+    ),
+    (
+        "num_signatures",
+        "NILM Signatures",
+        {
+            "unit_of_measurement": "",
+            "state_class": "measurement",
+            "icon": "mdi:draw",
+        },
+    ),
+    (
+        "num_appliances",
+        "NILM Appareils",
+        {
+            "unit_of_measurement": "",
+            "state_class": "measurement",
+            "icon": "mdi:home-lightning-bolt",
+        },
+    ),
+    (
+        "epochs",
+        "NILM Epochs",
+        {
+            "unit_of_measurement": "",
+            "state_class": "measurement",
+            "icon": "mdi:counter",
+        },
+    ),
+    (
+        "train_loss",
+        "NILM Train loss",
+        {
+            "unit_of_measurement": "",
+            "state_class": "measurement",
+            "icon": "mdi:chart-line",
+        },
+    ),
+    (
+        "val_loss",
+        "NILM Val loss",
+        {
+            "unit_of_measurement": "",
+            "state_class": "measurement",
+            "icon": "mdi:chart-line",
+        },
+    ),
+    (
+        "avg_confidence_pct",
+        "NILM Confiance détection (30j)",
+        {
+            "unit_of_measurement": "%",
+            "state_class": "measurement",
+            "icon": "mdi:percent",
+        },
+    ),
+    (
+        "detections_total",
+        "NILM Détections total",
+        {
+            "unit_of_measurement": "",
+            "state_class": "total_increasing",
+            "icon": "mdi:magnify",
+        },
+    ),
     ("last_detection", "NILM Dernier cycle détecté", {"device_class": "timestamp"}),
     ("last_detect_run", "NILM Dernière exécution détection", {"device_class": "timestamp"}),
 ]

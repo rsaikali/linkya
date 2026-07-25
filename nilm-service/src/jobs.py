@@ -20,7 +20,6 @@ from .config import settings
 from .database import db_manager
 from .seq2point_nilm import Seq2PointNILMManager
 
-
 logger = logging.getLogger(__name__)
 
 LOCAL_TZ = timezone.utc
@@ -113,8 +112,7 @@ def run_training(min_signatures: int = 2) -> dict:
             with db_manager.get_session() as session:
                 # Insert new model as challenger (is_champion=False).
                 session.execute(
-                    text(
-                        """
+                    text("""
                         INSERT INTO nilm_models
                         (model_name, model_type, architecture, training_date,
                          num_signatures, num_classes, metrics, model_path,
@@ -123,8 +121,7 @@ def run_training(min_signatures: int = 2) -> dict:
                         (:model_name, :model_type, cast(:architecture as jsonb),
                          :training_date, :num_signatures, :num_classes,
                          cast(:metrics as jsonb), :model_path, :duration, FALSE)
-                        """
-                    ),
+                        """),
                     {
                         "model_name": model_name,
                         "model_type": model_type_str,
@@ -138,9 +135,7 @@ def run_training(min_signatures: int = 2) -> dict:
                     },
                 )
                 # Auto-promote when no champion exists yet (first model).
-                has_champion = session.execute(
-                    text("SELECT COUNT(*) FROM nilm_models WHERE is_champion=TRUE")
-                ).scalar() or 0
+                has_champion = session.execute(text("SELECT COUNT(*) FROM nilm_models WHERE is_champion=TRUE")).scalar() or 0
                 if not has_champion:
                     session.execute(
                         text("UPDATE nilm_models SET is_champion=TRUE WHERE model_name=:name"),
@@ -179,13 +174,9 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
             global _loaded_model_name
             with db_manager.engine.connect() as conn:
                 # Champion first, fallback to latest.
-                row = conn.execute(
-                    text("SELECT model_name FROM nilm_models WHERE is_champion=TRUE LIMIT 1")
-                ).first()
+                row = conn.execute(text("SELECT model_name FROM nilm_models WHERE is_champion=TRUE LIMIT 1")).first()
                 if not row:
-                    row = conn.execute(
-                        text("SELECT model_name FROM nilm_models ORDER BY training_date DESC LIMIT 1")
-                    ).first()
+                    row = conn.execute(text("SELECT model_name FROM nilm_models ORDER BY training_date DESC LIMIT 1")).first()
                 if not row:
                     return {"status": "skipped", "message": "Aucun modèle disponible"}
                 active_model = row.model_name
@@ -262,12 +253,15 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
                         },
                     ).scalar()
                     num_saved += 1
-                    events.emit("detection_new", {
-                        "id": det_id,
-                        "name": ev["appliance_name"],
-                        "avg_power": ev.get("avg_power"),
-                        "confidence_score": ev["confidence_score"],
-                    })
+                    events.emit(
+                        "detection_new",
+                        {
+                            "id": det_id,
+                            "name": ev["appliance_name"],
+                            "avg_power": ev.get("avg_power"),
+                            "confidence_score": ev["confidence_score"],
+                        },
+                    )
 
             result = {
                 "status": "success",
@@ -308,9 +302,7 @@ def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, i
                 ).scalar()
 
         try:
-            signature_id = db_manager.add_signature(
-                appliance_id=appliance_id, start_time=start_time, end_time=end_time, is_negative=is_negative
-            )
+            signature_id = db_manager.add_signature(appliance_id=appliance_id, start_time=start_time, end_time=end_time, is_negative=is_negative)
         except ValueError as ve:
             return {"status": "error", "error_type": "validation", "message": str(ve)}
         if not signature_id:

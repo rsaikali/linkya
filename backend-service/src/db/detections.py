@@ -7,7 +7,6 @@ from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -16,8 +15,7 @@ class DetectionRepository(DatabaseBase):
 
     def get_detected_appliances(self, start_time=None, end_time=None, model_name=None):
         """Detections with optional time and model filters."""
-        query = text(
-            """
+        query = text("""
             SELECT
                 cd.id AS detection_id,
                 cd.appliance_id,
@@ -43,8 +41,7 @@ class DetectionRepository(DatabaseBase):
                    OR cd.user_validated = FALSE
                    OR cd.is_correct = TRUE)
             ORDER BY cd.start_time DESC
-            """
-        )
+            """)
 
         with self.engine.connect() as conn:
             result = conn.execute(
@@ -87,8 +84,7 @@ class DetectionRepository(DatabaseBase):
         Per-appliance NILM scorecard over the last N days.
         Returns None if the appliance is unknown.
         """
-        query = text(
-            """
+        query = text("""
             WITH app AS (
                 SELECT id, name FROM nilm_appliances WHERE name = :appliance_name
             ),
@@ -128,13 +124,10 @@ class DetectionRepository(DatabaseBase):
                 (SELECT training_date FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS trained_at,
                 (SELECT metrics FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS model_metrics
             FROM det_stats d, det_total dt, total_consumption t, sig_count s
-            """
-        )
+            """)
 
         with self.engine.connect() as conn:
-            row = conn.execute(
-                query, {"appliance_name": appliance_name, "window_days": window_days}
-            ).fetchone()
+            row = conn.execute(query, {"appliance_name": appliance_name, "window_days": window_days}).fetchone()
 
         if not row or row[1] is None:
             return None
@@ -170,8 +163,7 @@ class DetectionRepository(DatabaseBase):
         Returns both NILM-detected kWh (days) and total meter kWh (total_days)
         so the caller can overlay them and compute a meaningful % share.
         """
-        query = text(
-            """
+        query = text("""
             WITH app AS (
                 SELECT id FROM nilm_appliances WHERE name = :appliance_name
             ),
@@ -207,12 +199,9 @@ class DetectionRepository(DatabaseBase):
             LEFT JOIN daily_kwh dk    ON ds.day = dk.day
             LEFT JOIN total_daily td  ON ds.day = td.day
             ORDER BY ds.day
-            """
-        )
+            """)
         with self.engine.connect() as conn:
-            rows = conn.execute(
-                query, {"appliance_name": appliance_name, "days": days}
-            ).fetchall()
+            rows = conn.execute(query, {"appliance_name": appliance_name, "days": days}).fetchall()
 
         if not rows:
             return None
@@ -228,8 +217,7 @@ class DetectionRepository(DatabaseBase):
         Last N detection cycles with decimal hour and duration_min.
         Also computes peak_hours: the 2 most frequent hour buckets (integer).
         """
-        query = text(
-            """
+        query = text("""
             SELECT
                 EXTRACT(HOUR FROM d.start_time) +
                 EXTRACT(MINUTE FROM d.start_time) / 60.0 AS hour,
@@ -244,12 +232,9 @@ class DetectionRepository(DatabaseBase):
               AND (d.user_validated IS NULL OR d.is_correct = TRUE)
             ORDER BY d.start_time DESC
             LIMIT :limit
-            """
-        )
+            """)
         with self.engine.connect() as conn:
-            rows = conn.execute(
-                query, {"appliance_name": appliance_name, "limit": limit}
-            ).fetchall()
+            rows = conn.execute(query, {"appliance_name": appliance_name, "limit": limit}).fetchall()
 
         if not rows:
             return None
@@ -264,6 +249,7 @@ class DetectionRepository(DatabaseBase):
 
         # Top-2 hour buckets by frequency (integer hour bins)
         from collections import Counter
+
         hour_counts = Counter(int(c["hour"]) for c in cycles)
         peak_hours = [h for h, _ in hour_counts.most_common(2)]
         peak_hours.sort()
@@ -289,8 +275,7 @@ class DetectionRepository(DatabaseBase):
             or None if the detection doesn't exist
         """
         # Check that the detection exists and retrieve its information
-        check_query = text(
-            """
+        check_query = text("""
             SELECT
                 cd.id,
                 cd.appliance_id,
@@ -300,8 +285,7 @@ class DetectionRepository(DatabaseBase):
             FROM nilm_detections cd
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             result = conn.execute(check_query, {"detection_id": detection_id}).fetchone()
@@ -318,12 +302,10 @@ class DetectionRepository(DatabaseBase):
             }
 
             # Delete the detection
-            delete_query = text(
-                """
+            delete_query = text("""
                 DELETE FROM nilm_detections
                 WHERE id = :detection_id
-            """
-            )
+            """)
 
             conn.execute(delete_query, {"detection_id": detection_id})
             conn.commit()
@@ -339,19 +321,15 @@ class DetectionRepository(DatabaseBase):
         """
         with self.engine.connect() as conn:
             # Count detections first
-            count_query = text(
-                """
+            count_query = text("""
                 SELECT COUNT(*) FROM nilm_detections
-            """
-            )
+            """)
             count = conn.execute(count_query).scalar() or 0
 
             # Delete all detections
-            delete_query = text(
-                """
+            delete_query = text("""
                 DELETE FROM nilm_detections
-            """
-            )
+            """)
             conn.execute(delete_query)
             conn.commit()
 
@@ -374,8 +352,7 @@ class DetectionRepository(DatabaseBase):
             or None if the detection doesn't exist
         """
         # Check that the detection exists and retrieve its information
-        check_query = text(
-            """
+        check_query = text("""
             SELECT
                 cd.id,
                 cd.appliance_id,
@@ -386,8 +363,7 @@ class DetectionRepository(DatabaseBase):
             FROM nilm_detections cd
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             result = conn.execute(check_query, {"detection_id": detection_id}).fetchone()
@@ -413,15 +389,13 @@ class DetectionRepository(DatabaseBase):
             # Decide if a signature should be created (dedup check). The actual
             # creation is delegated to the API layer (calls nilm service).
             existing = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT COUNT(*) FROM nilm_signatures
                     WHERE appliance_id = :appliance_id
                       AND start_time = :start_time
                       AND end_time = :end_time
                       AND is_negative = :is_negative
-                    """
-                ),
+                    """),
                 {"appliance_id": result[1], "start_time": start_time, "end_time": end_time, "is_negative": not is_correct},
             ).scalar()
 
@@ -434,15 +408,13 @@ class DetectionRepository(DatabaseBase):
                 }
 
             # Update detection as validated
-            update_query = text(
-                """
+            update_query = text("""
                 UPDATE nilm_detections
                 SET user_validated = :user_validated,
                     is_correct = :is_correct,
                     validated_at = NOW()
                 WHERE id = :detection_id
-            """
-            )
+            """)
 
             conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": is_correct})
 
@@ -469,8 +441,7 @@ class DetectionRepository(DatabaseBase):
         from .appliances import ApplianceRepository
 
         # Check that the detection exists and retrieve its information
-        check_query = text(
-            """
+        check_query = text("""
             SELECT
                 cd.id,
                 cd.appliance_id,
@@ -480,8 +451,7 @@ class DetectionRepository(DatabaseBase):
             FROM nilm_detections cd
             JOIN nilm_appliances ca ON cd.appliance_id = ca.id
             WHERE cd.id = :detection_id
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             result = conn.execute(check_query, {"detection_id": detection_id}).fetchone()
@@ -498,15 +468,13 @@ class DetectionRepository(DatabaseBase):
             correct_appliance_id = appliance_repo.get_or_create_appliance(correct_appliance_name)
 
             # Check if positive signature already exists
-            check_positive_query = text(
-                """
+            check_positive_query = text("""
                 SELECT COUNT(*) FROM nilm_signatures
                 WHERE appliance_id = :appliance_id
                   AND start_time = :start_time
                   AND end_time = :end_time
                   AND is_negative = FALSE
-            """
-            )
+            """)
 
             existing_positive = conn.execute(
                 check_positive_query, {"appliance_id": correct_appliance_id, "start_time": start_time, "end_time": end_time}
@@ -522,15 +490,13 @@ class DetectionRepository(DatabaseBase):
                 }
 
             # Mark detection as incorrect to hide it from the list
-            update_query = text(
-                """
+            update_query = text("""
                 UPDATE nilm_detections
                 SET user_validated = :user_validated,
                     is_correct = :is_correct,
                     validated_at = NOW()
                 WHERE id = :detection_id
-            """
-            )
+            """)
 
             conn.execute(update_query, {"detection_id": detection_id, "user_validated": True, "is_correct": False})
             logger.info(f"Detection {detection_id} reassigned from " f"{incorrect_appliance_name} to {correct_appliance_name}")
@@ -550,16 +516,14 @@ class DetectionRepository(DatabaseBase):
         """All validated detections for HA statistics backfill, ordered chronologically."""
         with self.engine.connect() as conn:
             rows = conn.execute(
-                text(
-                    """
+                text("""
                     SELECT start_time, end_time, energy_consumed
                     FROM nilm_detections
                     WHERE appliance_id = :id
                       AND energy_consumed IS NOT NULL
                       AND energy_consumed > 0
                     ORDER BY start_time ASC
-                    """
-                ),
+                    """),
                 {"id": appliance_id},
             ).fetchall()
         return [{"start_time": r[0], "end_time": r[1], "energy_wh": float(r[2])} for r in rows]

@@ -6,7 +6,6 @@ from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -20,8 +19,7 @@ class ModelRepository(DatabaseBase):
         Returns:
             Dictionary with model information or None if no model exists
         """
-        query = text(
-            """
+        query = text("""
             SELECT
                 id,
                 model_name,
@@ -36,8 +34,7 @@ class ModelRepository(DatabaseBase):
             FROM nilm_models
             ORDER BY training_date DESC
             LIMIT 1
-        """
-        )
+        """)
 
         with self.engine.connect() as conn:
             result = conn.execute(query).fetchone()

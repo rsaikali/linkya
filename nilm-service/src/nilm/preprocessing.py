@@ -7,7 +7,6 @@ import logging
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
-
 logger = logging.getLogger(__name__)
 
 

@@ -28,7 +28,6 @@ from .discovery import (
     stats_discovery_topic,
 )
 
-
 RECONNECT_DELAY = 10
 
 
@@ -40,9 +39,9 @@ async def publish_loop(client: aiomqtt.Client):
     - confidence of last detection.
     Plus lab-diagnostic stats sensors on the Linkya NILM device.
     """
-    known: set[str] = set()   # ha_entity_ids with discovery already published
-    stats_announced = False   # lab-diagnostic sensors discovery published once
-    legacy_cleared = False    # legacy retained topics cleared once
+    known: set[str] = set()  # ha_entity_ids with discovery already published
+    stats_announced = False  # lab-diagnostic sensors discovery published once
+    legacy_cleared = False  # legacy retained topics cleared once
 
     while True:
         # ── One-time cleanup: remove legacy retained discovery topics ─────
@@ -113,9 +112,7 @@ async def publish_loop(client: aiomqtt.Client):
 
 
 async def run():
-    logger.info(
-        f"ha-publish: connecting to {settings.ha_mqtt_host}:{settings.ha_mqtt_port}"
-    )
+    logger.info(f"ha-publish: connecting to {settings.ha_mqtt_host}:{settings.ha_mqtt_port}")
     while True:
         try:
             async with aiomqtt.Client(

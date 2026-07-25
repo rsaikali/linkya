@@ -4,7 +4,6 @@ from sqlalchemy import text
 
 from .base import DatabaseBase, format_datetime
 
-
 # Map interval label → bucket size in seconds (epoch-floor bucketing).
 _INTERVAL_SECONDS = {
     "1 minute": 60,
@@ -36,19 +35,16 @@ class ConsumptionRepository(DatabaseBase):
         Bucketing uses epoch-floor (works on vanilla PostgreSQL, no TimescaleDB).
         """
         if interval in ("raw", "none"):
-            query = text(
-                """
+            query = text("""
                 SELECT time, papp AS avg_papp, papp AS max_papp, papp AS min_papp
                 FROM linky_realtime
                 WHERE time >= :start_time AND time <= :end_time
                 ORDER BY time ASC
-                """
-            )
+                """)
             params = {"start_time": start_time, "end_time": end_time}
         else:
             secs = _INTERVAL_SECONDS.get(interval, 300)
-            query = text(
-                """
+            query = text("""
                 SELECT
                     to_timestamp(floor(extract(epoch FROM time) / :secs) * :secs) AS bucket,
                     AVG(papp) AS avg_papp,
@@ -58,8 +54,7 @@ class ConsumptionRepository(DatabaseBase):
                 WHERE time >= :start_time AND time <= :end_time
                 GROUP BY bucket
                 ORDER BY bucket ASC
-                """
-            )
+                """)
             params = {"secs": secs, "start_time": start_time, "end_time": end_time}
 
         with self.engine.connect() as conn:

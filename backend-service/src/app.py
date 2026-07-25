@@ -12,7 +12,6 @@ from fastapi.staticfiles import StaticFiles
 from .api import appliances_router, consumption_router, detections_router, events_router, nilm_router, signatures_router, system_router
 from .config import settings
 
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 

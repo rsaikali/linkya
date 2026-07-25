@@ -15,7 +15,6 @@ from datetime import datetime, timedelta, timezone
 
 import websockets
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -73,11 +72,13 @@ def _build_full_hourly_stats(detections: list[dict]) -> list[dict]:
     hour = first_hour
     while hour <= now:
         cum += hourly_add.get(hour, 0.0)
-        stats.append({
-            "start": hour.isoformat(),
-            "state": round(cum, 4),
-            "sum": round(cum, 4),
-        })
+        stats.append(
+            {
+                "start": hour.isoformat(),
+                "state": round(cum, 4),
+                "sum": round(cum, 4),
+            }
+        )
         hour += timedelta(hours=1)
 
     return stats
@@ -129,28 +130,34 @@ async def run_ha_backfill(
         if auth_resp.get("type") != "auth_ok":
             raise RuntimeError(f"HA auth failed: {auth_resp}")
 
-        clear_resp = await _ws_send_recv(ws, {
-            "id": next_id(),
-            "type": "recorder/clear_statistics",
-            "statistic_ids": [statistic_id],
-        })
+        clear_resp = await _ws_send_recv(
+            ws,
+            {
+                "id": next_id(),
+                "type": "recorder/clear_statistics",
+                "statistic_ids": [statistic_id],
+            },
+        )
         logger.info(f"Cleared statistics for {statistic_id}: {clear_resp.get('success')}")
 
         # Inject full hourly history (carry-forward, no gaps)
         logger.info(f"Injecting {len(stats)} hourly buckets → {stats[-1]['sum']} kWh total")
-        import_resp = await _ws_send_recv(ws, {
-            "id": next_id(),
-            "type": "recorder/import_statistics",
-            "metadata": {
-                "has_mean": False,
-                "has_sum": True,
-                "name": energy_name,
-                "source": "linkya",
-                "statistic_id": statistic_id,
-                "unit_of_measurement": "kWh",
+        import_resp = await _ws_send_recv(
+            ws,
+            {
+                "id": next_id(),
+                "type": "recorder/import_statistics",
+                "metadata": {
+                    "has_mean": False,
+                    "has_sum": True,
+                    "name": energy_name,
+                    "source": "linkya",
+                    "statistic_id": statistic_id,
+                    "unit_of_measurement": "kWh",
+                },
+                "stats": stats,
             },
-            "stats": stats,
-        })
+        )
 
     return {
         "status": "ok" if import_resp.get("success") else "error",
