@@ -105,4 +105,11 @@ make lint                                 # flake8 + isort
 - `nilm/detectors/change_point_detector.py` — energy/duration/shape matching.
 - `nilm/models/multioutput_model.py` — multi-output Keras model.
 
+**Concurrent loads (PATH A, since 2026-10-22)** — radiators / dishwasher switching during a water-heater cycle used to close or evict its cycle:
+- `extract_patterns` pairs each up edge with the down edge of the **same height (±10 %)**, not the next down. A down smaller than an open up is a partial drop (another load went off first); one down equal to the sum of several open ups closes them all. A taller down with nothing matching falls back to the oldest up (legacy behaviour).
+- Each pattern has the **other loads' steps subtracted** over the overlap before matching. Known limit: a multi-step appliance whose edges stop together is now split per edge (only the water heater exists today).
+- `fill_gaps` forward-fills the event-driven `linky_realtime` onto a regular grid (gaps ≤ 2 h; HA only emits changes, a stable house leaves holes of an hour+). `disaggregate` also carries the last known level in at `start_time`.
+- Negative signatures are filtered **before** dedup (a rejected load nested in a real cycle must not evict it).
+- Known limits: cycles shorter than the shortest signature (~600 s) are not matched (ratio filter 0.5-1.5); loads with steps within ±10 % of the heater (≈3.1 kW) can still be confused. Replay A/B on real data: 10-18/19/20 identical, 10-22 long cycle recovered, radiators no longer detected as the heater (10-21).
+
 TensorFlow comes from pyproject (`tensorflow-cpu` on x86_64, `tensorflow` on aarch64/arm64).

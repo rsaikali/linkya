@@ -3,10 +3,33 @@ Change point detection and pattern matching for NILM.
 """
 
 import logging
+from datetime import datetime
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+def fill_gaps(timestamps, values, max_gap_s=7200):
+    """
+    Forward-fill the Linky series onto a regular grid.
+
+    HA only emits a point when the value changes, so a stable house leaves long
+    holes (78 min on 2026-10-22). A hole is a flat line, not missing data:
+    index-based windows (change points, PATH B) need regular sampling.
+    Gaps longer than max_gap_s are left as holes (real outage).
+
+    Returns (timestamps, values) on a grid of the median sampling step (1-30 s).
+    """
+    if len(timestamps) < 2:
+        return timestamps, values
+    t = np.array([ts.timestamp() for ts in timestamps])
+    step = float(np.clip(np.median(np.diff(t)), 1.0, 30.0))
+    grid = np.arange(t[0], t[-1] + step / 2, step)
+    idx = np.searchsorted(t, grid, side="right") - 1
+    keep = (t[np.minimum(idx + 1, len(t) - 1)] - t[idx]) <= max_gap_s
+    tz = timestamps[0].tzinfo
+    return [datetime.fromtimestamp(g, tz) for g in grid[keep]], np.asarray(values)[idx[keep]]
 
 
 class ChangePointPatternDetector:
@@ -19,6 +42,8 @@ class ChangePointPatternDetector:
     3. Compare against known signature profiles
     4. Reconstruct complete cycles
     """
+
+    AMPLITUDE_TOLERANCE = 0.10  # a down edge closes an up edge of the same height +-10 %
 
     def __init__(self, min_power_change=500, min_duration=300):
         """
@@ -165,65 +190,93 @@ class ChangePointPatternDetector:
         patterns = []
         analyzer = MorphologyAnalyzer()
 
-        # Group change points into segments
-        i = 0
-        while i < len(change_points):
-            cp = change_points[i]
+        pairs = self._pair_change_points(change_points)
 
-            if cp["direction"] == "up":
-                # Look for the matching DOWN change point
-                end_idx = None
-                for j in range(i + 1, len(change_points)):
-                    if change_points[j]["direction"] == "down":
-                        end_idx = j
-                        break
+        for p in sorted(pairs, key=lambda p: p["start"]):
+            if not p["closed"]:
+                continue
+            start, end = p["start"], p["end"]
+            duration_samples = end - start
 
-                if end_idx is not None:
-                    start = cp["index"]
-                    end = change_points[end_idx]["index"]
-                    duration_samples = end - start
-
-                    # Duration in real seconds (fixes the unit bug)
-                    if timestamps and start < len(timestamps) and end < len(timestamps):
-                        duration_seconds = (timestamps[end] - timestamps[start]).total_seconds()
-                    else:
-                        duration_seconds = duration_samples * sample_interval
-
-                    if duration_samples >= min_duration_samples:
-                        pattern = aggregate_power[start:end]
-
-                        if len(pattern) > 0 and np.max(pattern) > self.min_power_change:
-                            try:
-                                morphology = analyzer.analyze(pattern.tolist(), start_time=None)
-                            except Exception as e:
-                                logger.warning(f"Error computing pattern morphology: {e}")
-                                morphology = None
-
-                            # Correct energy: avg_power × real_duration / 3600
-                            energy_wh = float(np.mean(pattern)) * duration_seconds / 3600.0
-
-                            patterns.append(
-                                {
-                                    "start_idx": start,
-                                    "end_idx": end,
-                                    "duration": duration_seconds,  # seconds (fixed)
-                                    "duration_samples": duration_samples,
-                                    "pattern": pattern,
-                                    "avg_power": float(np.mean(pattern)),
-                                    "max_power": float(np.max(pattern)),
-                                    "energy_wh": energy_wh,
-                                    "morphology": morphology,
-                                }
-                            )
-
-                    i = end_idx + 1
-                else:
-                    i += 1
+            # Duration in real seconds (fixes the unit bug)
+            if timestamps and start < len(timestamps) and end < len(timestamps):
+                duration_seconds = (timestamps[end] - timestamps[start]).total_seconds()
             else:
-                i += 1
+                duration_seconds = duration_samples * sample_interval
+
+            if duration_samples >= min_duration_samples:
+                # Remove the other loads that switched on/off inside this cycle
+                pattern = np.asarray(aggregate_power[start:end], dtype=float).copy()
+                for q in pairs:
+                    lo, hi = max(start, q["start"]), min(end, q["end"])
+                    if q is not p and lo < hi:
+                        pattern[lo - start : hi - start] -= q["amp"]
+                pattern = np.clip(pattern, 0.0, None)
+
+                if len(pattern) > 0 and np.max(pattern) > self.min_power_change:
+                    try:
+                        morphology = analyzer.analyze(pattern.tolist(), start_time=None)
+                    except Exception as e:
+                        logger.warning(f"Error computing pattern morphology: {e}")
+                        morphology = None
+
+                    # Correct energy: avg_power × real_duration / 3600
+                    energy_wh = float(np.mean(pattern)) * duration_seconds / 3600.0
+
+                    patterns.append(
+                        {
+                            "start_idx": start,
+                            "end_idx": end,
+                            "duration": duration_seconds,  # seconds (fixed)
+                            "duration_samples": duration_samples,
+                            "pattern": pattern,
+                            "avg_power": float(np.mean(pattern)),
+                            "max_power": float(np.max(pattern)),
+                            "energy_wh": energy_wh,
+                            "morphology": morphology,
+                        }
+                    )
 
         logger.info(f"Patterns extracted: {len(patterns)} (interval ~{sample_interval:.1f}s/pt)")
         return patterns
+
+    def _pair_change_points(self, change_points):
+        """
+        Pair each up edge with the down edge that ends it, by amplitude, so a
+        concurrent load (radiator, dishwasher) cannot close another appliance's cycle.
+
+        Returns [{"start", "end", "amp", "closed"}]. closed=True is a complete cycle;
+        closed=False is a partial drop of a larger up edge (another load went off
+        first): it only serves to be subtracted from the cycle it overlaps.
+        """
+        tol = self.AMPLITUDE_TOLERANCE
+        open_ups = []  # [{"idx", "amp"}], amp = height still open
+        pairs = []
+        for cp in change_points:
+            if cp["direction"] == "up":
+                open_ups.append({"idx": cp["index"], "amp": cp["amplitude"]})
+                continue
+            drop = -cp["amplitude"]
+            same = [u for u in open_ups if abs(u["amp"] - drop) <= tol * u["amp"]]
+            bigger = [u for u in open_ups if u["amp"] > drop * (1 + tol)]
+            if same:
+                up = min(same, key=lambda u: abs(u["amp"] - drop))
+                pairs.append({"start": up["idx"], "end": cp["index"], "amp": up["amp"], "closed": True})
+                open_ups.remove(up)
+            elif bigger:
+                up = bigger[-1]
+                pairs.append({"start": up["idx"], "end": cp["index"], "amp": drop, "closed": False})
+                up["amp"] -= drop
+            elif open_ups and abs(sum(u["amp"] for u in open_ups) - drop) <= tol * drop:
+                # One edge for several loads stopping together: close them all
+                for up in open_ups:
+                    pairs.append({"start": up["idx"], "end": cp["index"], "amp": up["amp"], "closed": True})
+                open_ups = []
+            elif open_ups:
+                # Drop taller than every open edge (noisy amplitudes): oldest edge, as before
+                up = open_ups.pop(0)
+                pairs.append({"start": up["idx"], "end": cp["index"], "amp": up["amp"], "closed": True})
+        return pairs
 
     def match_pattern(self, pattern_data, pattern_morphology=None):
         """

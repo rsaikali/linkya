@@ -21,6 +21,7 @@ from sqlalchemy import text
 from .config import settings
 from .database import db_manager
 from .nilm.detectors import ChangePointPatternDetector
+from .nilm.detectors.change_point_detector import fill_gaps
 from .nilm.models import Seq2PointMultiOutputModel
 
 logger = logging.getLogger(__name__)
@@ -457,8 +458,21 @@ class Seq2PointNILMManager:
                 if not data:
                     logger.warning("No data for disaggregation")
                     return []
+                # HA only emits changes: carry the last known level in at start_time so a
+                # window opening inside a flat period still sees the edge that follows.
+                prev = session.execute(
+                    text(
+                        "SELECT papp FROM linky_realtime "
+                        "WHERE time < :start_time AND time >= :start_time - interval '2 hours' "
+                        "ORDER BY time DESC LIMIT 1"
+                    ),
+                    {"start_time": start_time},
+                ).fetchone()
+                if prev:
+                    data = [(start_time, prev[0])] + list(data)
                 timestamps = [row[0] for row in data]
                 aggregate_power = np.array([row[1] for row in data], dtype=np.float32)
+            timestamps, aggregate_power = fill_gaps(timestamps, aggregate_power)
             logger.info(f"Disaggregating over {len(aggregate_power)} points")
 
             ##########################################################
@@ -582,12 +596,14 @@ class Seq2PointNILMManager:
 
             # ─── MERGE + DEDUP ─────────────────────────────────────────────────
             all_detections = path_a_detections + path_b_detections
+
+            # Filter out negative signatures BEFORE dedup: a rejected load nested in a real
+            # cycle (dishwasher during the water heater) must not evict it as a "duplicate".
+            all_detections = self._filter_against_negative_signatures(all_detections)
+
             all_detections = self._dedup_detections(all_detections)
 
             logger.info(f"Total after merge/dedup: {len(all_detections)}")
-
-            # Filter out negative signatures
-            all_detections = self._filter_against_negative_signatures(all_detections)
 
             # Confidence threshold lowered (the user validates in the UI)
             min_confidence = 0.25
