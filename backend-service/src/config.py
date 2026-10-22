@@ -30,7 +30,9 @@ class Settings:
 
     @property
     def local_db_url(self):
-        return f"postgresql://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
+        return (
+            f"postgresql+psycopg2://{self.local_db_user}:{self.local_db_password}" f"@{self.local_db_host}:{self.local_db_port}/{self.local_db_name}"
+        )
 
 
 settings = Settings()
