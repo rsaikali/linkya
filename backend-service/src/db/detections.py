@@ -121,8 +121,8 @@ class DetectionRepository(DatabaseBase):
                 ROUND(d.confidence_avg::numeric, 3) AS confidence_avg,
                 ROUND(t.total_kwh::numeric, 3) AS total_kwh,
                 s.cnt AS signatures_count,
-                (SELECT training_date FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS trained_at,
-                (SELECT metrics FROM nilm_models ORDER BY training_date DESC LIMIT 1) AS model_metrics
+                (SELECT training_date FROM nilm_models ORDER BY is_champion DESC, training_date DESC LIMIT 1) AS trained_at,
+                (SELECT metrics FROM nilm_models ORDER BY is_champion DESC, training_date DESC LIMIT 1) AS model_metrics
             FROM det_stats d, det_total dt, total_consumption t, sig_count s
             """)
 

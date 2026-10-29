@@ -202,6 +202,16 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
             events.emit("detection_start", {"model_name": active_model})
             events_list = nilm_manager.disaggregate(start_time, end_time)
 
+            if full_detect:
+                # A full detect rewrites the whole table: refuse to replace a populated history with a much smaller one.
+                with db_manager.engine.connect() as conn:
+                    existing = conn.execute(text("SELECT COUNT(*) FROM nilm_detections")).scalar() or 0
+                if existing >= 20 and len(events_list) < 0.5 * existing:
+                    msg = f"full detect aborted: {len(events_list)} detections would replace {existing}"
+                    logger.error(msg)
+                    events.emit("detection_complete", {"status": "error", "message": msg})
+                    return {"status": "error", "message": msg}
+
             num_saved = num_skipped = 0
             with db_manager.get_session() as session:
                 # Wipe existing detections for the window, then insert fresh ones.
@@ -249,7 +259,7 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
                             "conf": ev["confidence_score"],
                             "cls": ev.get("prediction_class"),
                             "feat": json.dumps(ev.get("features", {})),
-                            "model": active_model,
+                            "model": ev.get("model_name") or active_model,
                         },
                     ).scalar()
                     num_saved += 1
@@ -277,6 +287,19 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
         except Exception as e:
             logger.error("detection error: %s", e, exc_info=True)
             return {"status": "error", "message": str(e)}
+
+
+def _matched_covers_everything() -> bool:
+    """True when the matched filter serves every appliance with signatures: the legacy network is not needed, skip auto-training."""
+    if settings.nilm_engine != "matched":
+        return False
+    try:
+        from . import matched_engine
+
+        return matched_engine.cached_cover()
+    except Exception as e:
+        logger.warning("matched cover check failed: %s", e)
+        return False
 
 
 def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, is_negative: bool = False, auto_train: bool = True) -> dict:
@@ -310,7 +333,7 @@ def add_signature(appliance_name: str, start_time_str: str, end_time_str: str, i
 
         # Auto-train on positive signatures: at 2, then every 5th (Pi-friendly).
         # Coalesced — bursts collapse to one queued run.
-        if auto_train and not is_negative:
+        if auto_train and not is_negative and not _matched_covers_everything():
             n = db_manager.count_positive_signatures()
             if n >= 2 and (n - 2) % 5 == 0:
                 if request_training():

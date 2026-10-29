@@ -426,6 +426,47 @@ class Seq2PointNILMManager:
     def disaggregate(self, start_time, end_time):
         """
         Disaggregate total consumption across all appliances.
+
+        Appliances with a signature-learned edge profile go through the matched filter (matched_engine); the others,
+        and everything when NILM_ENGINE=legacy, use the hybrid change point + Seq2Point detection below.
+        """
+        matched, handled, covered = [], set(), False
+        if settings.nilm_engine in ("matched", "shadow"):
+            try:
+                from . import matched_engine
+
+                matched, handled, covered = matched_engine.detect(start_time, end_time)
+                logger.info("Matched filter: %d detection(s) for %s", len(matched), sorted(handled) or "no appliance")
+            except Exception as e:
+                logger.error("Matched filter failed, falling back to legacy: %s", e, exc_info=True)
+                matched, handled, covered = [], set(), False
+        if settings.nilm_engine == "shadow":
+            # observe only: the legacy matcher keeps writing, the matched filter is compared in the logs
+            legacy = self._disaggregate_legacy(start_time, end_time)
+            mine = [d for d in legacy if d.get("appliance_name") in handled]
+            clash = lambda a, b: a["start_time"] < b["end_time"] and a["end_time"] > b["start_time"]  # noqa: E731
+            only_matched = [m for m in matched if not any(clash(m, x) for x in mine)]
+            only_legacy = [x for x in mine if not any(clash(m, x) for m in matched)]
+            logger.info(
+                "Shadow %s..%s: matched %d / legacy %d; only matched %d %s; only legacy %d %s",
+                start_time,
+                end_time,
+                len(matched),
+                len(mine),
+                len(only_matched),
+                [m["start_time"].strftime("%m-%d %H:%M") for m in only_matched][:6],
+                len(only_legacy),
+                [x["start_time"].strftime("%m-%d %H:%M") for x in only_legacy][:6],
+            )
+            return legacy
+        if covered:
+            return matched
+        legacy = self._disaggregate_legacy(start_time, end_time)
+        return [d for d in legacy if d.get("appliance_name") not in handled] + matched
+
+    def _disaggregate_legacy(self, start_time, end_time):
+        """
+        Hybrid detection (change point + Seq2Point) over all appliances.
         Uses the Multi-Output architecture with hybrid detection.
 
         Args:

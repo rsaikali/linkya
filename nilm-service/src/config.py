@@ -27,6 +27,10 @@ class Settings:
         self.nilm_min_power_threshold = int(os.getenv("NILM_MIN_POWER_THRESHOLD", "15"))
         self.nilm_min_duration_seconds = int(os.getenv("NILM_MIN_DURATION_SECONDS", "30"))
 
+        # Detection engine: "matched" = edge matched filter learned from each appliance's signatures (appliances without
+        # a usable profile fall back to the legacy matcher); "legacy" = change point + Seq2Point only.
+        self.nilm_engine = os.getenv("NILM_ENGINE", "matched").lower()  # matched | shadow | legacy
+
         # Model configuration (S2P, LSTM, GRU)
         self.nilm_model_path = os.getenv("NILM_MODEL_PATH", "/app/models")
         # Manual sequence length override (if None, computed automatically)

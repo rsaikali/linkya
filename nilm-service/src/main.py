@@ -85,6 +85,14 @@ def add_signature(sig: SignatureIn):
     return jobs.add_signature(sig.appliance_name, sig.start_time, sig.end_time, sig.is_negative, sig.auto_train)
 
 
+@app.get("/engines")
+def engines():
+    """Which engine serves each appliance, and why (matched-filter profile report)."""
+    from . import matched_engine
+
+    return matched_engine.status()
+
+
 @app.get("/models")
 def list_models():
     with db_manager.engine.connect() as conn:

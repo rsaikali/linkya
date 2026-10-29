@@ -105,6 +105,15 @@ async def _get_nilm(path: str) -> dict:
         return r.json()
 
 
+@router.get("/engines")
+async def get_engines():
+    """Detection engine per appliance (matched filter profile or legacy matcher) and the reason."""
+    try:
+        return await _get_nilm("/engines")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"nilm service unavailable: {e}")
+
+
 @router.get("/scorecard")
 async def get_scorecard(
     appliance: str = Query(..., description="Appliance name"),
