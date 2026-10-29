@@ -44,6 +44,7 @@ class ChangePointPatternDetector:
     """
 
     AMPLITUDE_TOLERANCE = 0.10  # a down edge closes an up edge of the same height +-10 %
+    MAX_OPEN_SECONDS = 4 * 3600  # an up edge with no down edge after this long is stale: drop it
 
     def __init__(self, min_power_change=500, min_duration=300):
         """
@@ -190,7 +191,7 @@ class ChangePointPatternDetector:
         patterns = []
         analyzer = MorphologyAnalyzer()
 
-        pairs = self._pair_change_points(change_points)
+        pairs = self._pair_change_points(change_points, timestamps, sample_interval)
 
         for p in sorted(pairs, key=lambda p: p["start"]):
             if not p["closed"]:
@@ -240,7 +241,7 @@ class ChangePointPatternDetector:
         logger.info(f"Patterns extracted: {len(patterns)} (interval ~{sample_interval:.1f}s/pt)")
         return patterns
 
-    def _pair_change_points(self, change_points):
+    def _pair_change_points(self, change_points, timestamps=None, sample_interval=8.0):
         """
         Pair each up edge with the down edge that ends it, by amplitude, so a
         concurrent load (radiator, dishwasher) cannot close another appliance's cycle.
@@ -248,14 +249,25 @@ class ChangePointPatternDetector:
         Returns [{"start", "end", "amp", "closed"}]. closed=True is a complete cycle;
         closed=False is a partial drop of a larger up edge (another load went off
         first): it only serves to be subtracted from the cycle it overlaps.
+
+        An up edge whose down edge was never seen (data hole, missed edge) is dropped after
+        MAX_OPEN_SECONDS: left open it would be paired, by amplitude, with a later real cycle's
+        down edge, and the error would cascade over a long window (full detect).
         """
         tol = self.AMPLITUDE_TOLERANCE
+
+        def age_s(up_idx, idx):
+            if timestamps and idx < len(timestamps) and up_idx < len(timestamps):
+                return (timestamps[idx] - timestamps[up_idx]).total_seconds()
+            return (idx - up_idx) * sample_interval
+
         open_ups = []  # [{"idx", "amp"}], amp = height still open
         pairs = []
         for cp in change_points:
             if cp["direction"] == "up":
                 open_ups.append({"idx": cp["index"], "amp": cp["amplitude"]})
                 continue
+            open_ups = [u for u in open_ups if age_s(u["idx"], cp["index"]) <= self.MAX_OPEN_SECONDS]
             drop = -cp["amplitude"]
             same = [u for u in open_ups if abs(u["amp"] - drop) <= tol * u["amp"]]
             bigger = [u for u in open_ups if u["amp"] > drop * (1 + tol)]

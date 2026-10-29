@@ -83,3 +83,17 @@ def test_loads_stopping_together_each_get_a_cycle():
     ts, y = _series((100, 500, 1175.0), (200, 500, 1508.0), (300, 500, 2994.0))
     p = next(p for p in _patterns(ts, y) if abs(p["start_idx"] - 300) < 6)
     assert abs(p["avg_power"] - (BASE + 2994.0)) < 50
+
+
+def test_stale_up_edge_does_not_swallow_later_cycle():
+    # Regression (full detect 2026-10-29): an up edge whose down edge is never seen stayed open
+    # for the whole window and was paired, by amplitude, with a later real cycle's down edge.
+    ts, _ = _series(n=4000)
+    d = ChangePointPatternDetector(min_power_change=500, min_duration=60)
+    cps = [
+        {"index": 50, "direction": "up", "amplitude": HEATER},  # down edge never seen
+        {"index": 3000, "direction": "up", "amplitude": HEATER + 40},  # 6.5 h later
+        {"index": 3200, "direction": "down", "amplitude": -HEATER},
+    ]
+    pairs = d._pair_change_points(cps, timestamps=ts, sample_interval=STEP_S)
+    assert [(p["start"], p["end"]) for p in pairs if p["closed"]] == [(3000, 3200)]
