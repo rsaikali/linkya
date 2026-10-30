@@ -26,8 +26,8 @@ K_WIDE = 6.5  # looser band for one edge when the other one is almost exact (edg
 K_EXACT = 2.0
 MIN_SIGNATURES = 15  # positive signatures needed for a profile
 MAX_REL_SPREAD = 0.08  # edge height spread (sigma / mu) above which the appliance is not a repeatable on/off load
-SIGMA_FLOOR = 0.01  # relative floor on sigma
-VERSION = 2  # bump when the profile content changes: invalidates cached profiles
+SIGMA_FLOOR = 0.015  # relative floor on sigma: mains voltage moves a resistive load's edges by 1.3-1.9 % (measured on 331 cycles)
+VERSION = 3  # bump when the profile content changes: invalidates cached profiles
 MIN_COVERAGE = 0.6  # share of the signatures the retained modes must explain
 MIN_SELF_PRECISION = 0.3  # share of detections that must fall on the appliance's own signatures (they are not exhaustive)
 
