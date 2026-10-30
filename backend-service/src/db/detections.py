@@ -104,9 +104,14 @@ class DetectionRepository(DatabaseBase):
                 WHERE d.appliance_id = (SELECT id FROM app)
             ),
             total_consumption AS (
-                SELECT COALESCE(SUM(papp) / 3600000.0, 0.0) AS total_kwh
-                FROM linky_realtime
-                WHERE time >= NOW() - make_interval(days => :window_days)
+                -- Linky energy index (exact); falls back to summing power samples (an underestimate) when no index is stored yet
+                SELECT COALESCE(
+                    (SELECT MAX(kwh) - MIN(kwh) FROM linky_energy
+                      WHERE time >= NOW() - make_interval(days => :window_days) HAVING COUNT(*) >= 2),
+                    (SELECT SUM(papp) / 3600000.0 FROM linky_realtime
+                      WHERE time >= NOW() - make_interval(days => :window_days)),
+                    0.0
+                ) AS total_kwh
             ),
             sig_count AS (
                 SELECT COUNT(*)::int AS cnt
@@ -196,12 +201,23 @@ class DetectionRepository(DatabaseBase):
                   AND (d.user_validated IS NULL OR d.is_correct = TRUE)
                 GROUP BY DATE(d.start_time)
             ),
+            counter_daily AS (
+                -- Linky energy index: a day's consumption is the index at its end minus the index at the end of the previous day
+                SELECT day, COALESCE(mx - LAG(mx) OVER (ORDER BY day), mx - mn) AS kwh
+                FROM (
+                    SELECT DATE(time) AS day, MAX(kwh) AS mx, MIN(kwh) AS mn
+                    FROM linky_energy
+                    WHERE time >= NOW() - make_interval(days => :days + 1)
+                    GROUP BY DATE(time)
+                ) t
+            ),
             total_daily AS (
-                SELECT
-                    DATE(time) AS day,
-                    COALESCE(SUM(papp) / 3600000.0, 0.0) AS kwh
+                SELECT day, kwh FROM counter_daily
+                UNION ALL
+                SELECT DATE(time) AS day, COALESCE(SUM(papp) / 3600000.0, 0.0) AS kwh
                 FROM linky_realtime
                 WHERE time >= NOW() - make_interval(days => :days)
+                  AND NOT EXISTS (SELECT 1 FROM counter_daily)
                 GROUP BY DATE(time)
             )
             SELECT ds.day,

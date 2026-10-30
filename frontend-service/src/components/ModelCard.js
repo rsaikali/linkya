@@ -45,6 +45,17 @@ function ModelCard() {
   const [detectionsDialog, setDetectionsDialog] = useState({ open: false, model: null });
   const [modelDetections, setModelDetections] = useState([]);
   const [detectionsLoading, setDetectionsLoading] = useState(false);
+  const [engines, setEngines] = useState(null);
+
+  // Which engine serves each appliance (matched filter learned from signatures, or the legacy network)
+  const loadEngines = useCallback(async () => {
+    try {
+      const res = await api.get("/api/nilm/engines");
+      setEngines(res.data);
+    } catch {
+      setEngines(null);
+    }
+  }, []);
 
   const loadModels = useCallback(async () => {
     try {
@@ -59,10 +70,11 @@ function ModelCard() {
 
   useEffect(() => {
     loadModels();
+    loadEngines();
     const onDeleted = () => { setModels([]); setLoading(false); };
     window.addEventListener("models-deleted", onDeleted);
     return () => window.removeEventListener("models-deleted", onDeleted);
-  }, [loadModels]);
+  }, [loadModels, loadEngines]);
 
   useEffect(() => {
     const onStart = (data) => {
@@ -93,12 +105,22 @@ function ModelCard() {
 
   // Refresh after backfill (detect run) in case a new model was trained
   useEffect(() => {
-    const onBackfill = () => loadModels();
+    const onBackfill = () => {
+      loadModels();
+      loadEngines();
+    };
     detectionsWS.on("ha_backfill_complete", onBackfill);
     return () => detectionsWS.off("ha_backfill_complete", onBackfill);
-  }, [loadModels]);
+  }, [loadModels, loadEngines]);
 
   const champion = models.find((m) => m.is_champion);
+
+  const engineRows = engines?.appliances ? Object.entries(engines.appliances) : [];
+  const matchedRows = engineRows.filter(([, a]) => a.engine === "matched" && engines.setting !== "legacy");
+  const allMatched = engineRows.length > 0 && matchedRows.length === engineRows.length;
+  const profileDate = matchedRows.length && engines.profile_built_at
+    ? formatHumanizedDate(new Date(engines.profile_built_at * 1000).toISOString())
+    : null;
 
   const handleOpenDetections = async (model) => {
     setDetectionsDialog({ open: true, model });
@@ -151,10 +173,10 @@ function ModelCard() {
       color="primary"
       sx={{ height: 22, fontSize: "0.7rem" }}
     />
-  ) : champion ? (
+  ) : champion || allMatched ? (
     <Chip
       icon={<CheckCircle sx={{ fontSize: 14 }} />}
-      label="Champion actif"
+      label={allMatched ? "Filtre adapté actif" : "Champion actif"}
       size="small"
       color="success"
       sx={{ height: 22, fontSize: "0.7rem" }}
@@ -175,6 +197,8 @@ function ModelCard() {
           subheader={
             isTraining
               ? `Entraînement en cours — ${Math.round(trainingProgress)}%`
+              : allMatched
+              ? `Filtre adapté · profil appris${profileDate ? ` ${profileDate}` : ""}`
               : champion
               ? `Champion : ${champion.model_name} · entraîné ${formatHumanizedDate(champion.training_date)}`
               : "Aucun modèle entraîné"
@@ -201,6 +225,26 @@ function ModelCard() {
             <Box sx={{ display: "flex", gap: 1 }}>
               <CircularProgress size={16} />
               <Typography variant="caption" color="text.secondary">Chargement…</Typography>
+            </Box>
+          )}
+
+          {engineRows.length > 0 && (
+            <Box sx={{ mb: 1 }}>
+              {engineRows.map(([name, a]) => (
+                <Typography key={name} variant="caption" sx={{ display: "block" }}>
+                  <strong>{name}</strong> —{" "}
+                  {a.engine === "matched" && engines.setting !== "legacy"
+                    ? `filtre adapté (${a.positive_signatures} signatures${
+                        a.modes?.length ? `, ${a.modes.map((m) => `${m.power_w} W`).join(" / ")}` : ""
+                      })`
+                    : `réseau legacy (${a.reason || "pas de profil"})`}
+                </Typography>
+              ))}
+              {allMatched && models.length > 0 && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                  Réseau legacy ci-dessous : inactif, gardé en secours.
+                </Typography>
+              )}
             </Box>
           )}
 

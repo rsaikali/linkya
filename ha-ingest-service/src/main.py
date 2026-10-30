@@ -8,9 +8,10 @@ from loguru import logger
 
 from .config import settings
 from .database import db_manager
-from .ha_client import backfill
+from .ha_client import backfill, sync_energy
 
 RECONNECT_DELAY = 5  # seconds between MQTT reconnect attempts
+ENERGY_SYNC_INTERVAL = 600  # seconds between pulls of the Linky energy index from HA
 
 
 async def mqtt_loop():
@@ -50,6 +51,16 @@ async def mqtt_loop():
             await asyncio.sleep(RECONNECT_DELAY)
 
 
+async def energy_loop():
+    """Keep linky_energy (Linky energy index) up to date; the index changes slowly, a periodic pull is enough."""
+    while True:
+        try:
+            await sync_energy()
+        except Exception as e:
+            logger.warning(f"Energy sync failed: {e}")
+        await asyncio.sleep(ENERGY_SYNC_INTERVAL)
+
+
 async def main():
     logger.info("ha-ingest starting")
 
@@ -58,7 +69,7 @@ async def main():
 
     await backfill()
 
-    await mqtt_loop()
+    await asyncio.gather(mqtt_loop(), energy_loop())
 
 
 if __name__ == "__main__":

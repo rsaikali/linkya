@@ -6,6 +6,7 @@ class Settings:
         self.ha_url = os.getenv("HA_URL", "http://homeassistant.local:8123")
         self.ha_token = os.getenv("HA_TOKEN", "")
         self.ha_entity_papp = os.getenv("HA_ENTITY_PAPP", "sensor.linky_sinsts")
+        self.ha_entity_energy = os.getenv("HA_ENTITY_ENERGY", "sensor.linky_east")  # Linky energy index (kWh, total_increasing)
         self.ha_backfill_days = int(os.getenv("HA_BACKFILL_DAYS", "30"))
 
         self.ha_mqtt_host = os.getenv("HA_MQTT_HOST", "homeassistant.local")

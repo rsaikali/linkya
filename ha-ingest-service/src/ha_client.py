@@ -16,7 +16,25 @@ async def backfill():
     Resumes from last known timestamp; falls back to HA_BACKFILL_DAYS.
     Fetches day by day to avoid huge payloads.
     """
-    last_ts = db_manager.get_last_timestamp()
+    await _pull(
+        settings.ha_entity_papp,
+        db_manager.get_last_timestamp(),
+        lambda points: [{"time": ts, "papp": int(v)} for ts, v in points],
+        db_manager.bulk_insert,
+    )
+
+
+async def sync_energy():
+    """Pull HA history of the Linky energy index (sensor.linky_east, kWh) into linky_energy: the reference for total consumption."""
+    await _pull(
+        settings.ha_entity_energy,
+        db_manager.get_last_energy_timestamp(),
+        lambda points: [{"time": ts, "kwh": v} for ts, v in points],
+        db_manager.bulk_insert_energy,
+    )
+
+
+async def _pull(entity, last_ts, to_rows, insert):
     now = datetime.now(timezone.utc)
 
     if last_ts and last_ts.tzinfo is None:
@@ -25,10 +43,11 @@ async def backfill():
     start = last_ts if last_ts else now - timedelta(days=settings.ha_backfill_days)
 
     if (now - start).total_seconds() < 60:
-        logger.info("DB up to date, skipping backfill")
+        logger.debug(f"{entity} up to date, skipping backfill")
         return
 
-    logger.info(f"Backfill from {start.isoformat()} ({(now - start).days}d)")
+    log = logger.info if now - start >= timedelta(days=1) else logger.debug  # periodic pulls stay quiet
+    log(f"Backfill {entity} from {start.isoformat()} ({(now - start).days}d)")
 
     headers = {
         "Authorization": f"Bearer {settings.ha_token}",
@@ -41,29 +60,30 @@ async def backfill():
     async with httpx.AsyncClient(timeout=30) as client:
         while current < now:
             chunk_end = min(current + timedelta(days=1), now)
-            rows = await _fetch_chunk(client, headers, current, chunk_end)
+            rows = to_rows(await _fetch_points(client, headers, current, chunk_end, entity))
             if rows:
-                inserted = db_manager.bulk_insert(rows)
+                inserted = insert(rows)
                 total += inserted
                 logger.debug(f"  {current.date()} → {inserted} points")
             current = chunk_end
             await asyncio.sleep(0.2)  # be gentle with HA
 
-    logger.info(f"Backfill complete: {total} points inserted")
+    log(f"Backfill {entity} complete: {total} points inserted")
 
 
-async def _fetch_chunk(
+async def _fetch_points(
     client: httpx.AsyncClient,
     headers: dict,
     start: datetime,
     end: datetime,
-) -> list[dict]:
+    entity: str,
+) -> list[tuple[datetime, float]]:
     # Use Z suffix (no +00:00) to avoid URL-encoding issues with the + character
     start_iso = start.strftime("%Y-%m-%dT%H:%M:%SZ")
     end_iso = end.strftime("%Y-%m-%dT%H:%M:%SZ")
     url = f"{settings.ha_url}/api/history/period/{start_iso}"
     params = {
-        "filter_entity_id": settings.ha_entity_papp,
+        "filter_entity_id": entity,
         "end_time": end_iso,
         "minimal_response": "true",
         "no_attributes": "true",
@@ -80,17 +100,16 @@ async def _fetch_chunk(
     if not data or not data[0]:
         return []
 
-    rows = []
+    points = []
     for point in data[0]:
         state = point.get("state", "")
         if state in ("unavailable", "unknown", ""):
             continue
         try:
-            papp = int(float(state))
+            value = float(state)
             ts_str = point.get("last_changed") or point.get("last_updated", "")
-            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-            rows.append({"time": ts, "papp": papp})
+            points.append((datetime.fromisoformat(ts_str.replace("Z", "+00:00")), value))
         except (ValueError, KeyError):
             continue
 
-    return rows
+    return points

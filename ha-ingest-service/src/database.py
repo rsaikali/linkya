@@ -21,7 +21,34 @@ class DatabaseManager:
                     );
                     """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_linky_realtime_time ON linky_realtime (time DESC);"))
-        logger.info("linky_realtime table ready")
+            conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS linky_energy (
+                        time  TIMESTAMPTZ      NOT NULL,
+                        kwh   DOUBLE PRECISION NOT NULL,
+                        PRIMARY KEY (time)
+                    );
+                    """))
+        logger.info("linky_realtime and linky_energy tables ready")
+
+    def get_last_energy_timestamp(self):
+        with self.engine.connect() as conn:
+            result = conn.execute(text("SELECT MAX(time) FROM linky_energy")).fetchone()
+            return result[0] if result and result[0] else None
+
+    def bulk_insert_energy(self, rows: list[dict]):
+        """Upsert a list of {time, kwh} rows (Linky energy index)."""
+        if not rows:
+            return 0
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO linky_energy (time, kwh)
+                    VALUES (:time, :kwh)
+                    ON CONFLICT (time) DO UPDATE SET kwh = EXCLUDED.kwh
+                    """),
+                rows,
+            )
+        return len(rows)
 
     def get_last_timestamp(self):
         with self.engine.connect() as conn:
