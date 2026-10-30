@@ -1,6 +1,7 @@
 """Read appliances, current state, and lab stats."""
 
 import json
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine, text
 
@@ -80,6 +81,7 @@ class PublishRepository:
                         ORDER BY training_date DESC
                         LIMIT 1
                         """)).fetchone()
+            engine_status = conn.execute(text("SELECT value FROM nilm_meta WHERE key = 'engine_status'")).scalar()
             if not m:
                 return None
 
@@ -90,6 +92,23 @@ class PublishRepository:
                     WHERE created_at >= NOW() - INTERVAL '30 days'
                     """)).scalar()
             last_run = conn.execute(text("SELECT value FROM nilm_meta WHERE key = 'last_detect_run'")).scalar()
+
+        try:  # matched filter serving every appliance: that is "the model" now, not the legacy network
+            matched = (json.loads(engine_status) if engine_status else {}).get("model")
+        except ValueError:
+            matched = None
+        if matched:
+            return {
+                "model_version": matched["name"],
+                "model_type": matched["type"],
+                "trained_at": datetime.fromtimestamp(matched["trained_at"], timezone.utc).isoformat() if matched.get("trained_at") else None,
+                "num_signatures": matched["num_signatures"],
+                "num_appliances": matched["num_appliances"],
+                "avg_confidence_pct": float(avg_conf) if avg_conf is not None else None,
+                "detections_total": det[0] if det else 0,
+                "last_detection": det[1].isoformat() if det and det[1] else None,
+                "last_detect_run": last_run,
+            }
 
         metrics = m[6] if isinstance(m[6], dict) else json.loads(m[6] or "{}")
         apps = metrics.get("appliances") or []

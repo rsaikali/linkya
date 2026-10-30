@@ -182,7 +182,7 @@ def stats_discovery_payload(key: str, name: str, opts: dict) -> str:
         "name": name,
         "unique_id": f"linkya_nilm_{key}",
         "state_topic": STATS_STATE_TOPIC,
-        "value_template": f"{{{{ value_json.{key} }}}}",
+        "value_template": f"{{{{ value_json.{key} | default(None) }}}}",  # keys without a value (matched filter has no loss) stay unknown
         "entity_category": "diagnostic",
         "device": _DEVICE,
         **opts,

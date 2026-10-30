@@ -282,11 +282,22 @@ def run_detection(hours=None, min_confidence: float = 0.25) -> dict:
             }
             events.emit("detection_complete", result)
             logger.info("Detection: %d saved, %d skipped (full=%s)", num_saved, num_skipped, full_detect)
+            _publish_engine_status()
             return result
 
         except Exception as e:
             logger.error("detection error: %s", e, exc_info=True)
             return {"status": "error", "message": str(e)}
+
+
+def _publish_engine_status():
+    """Store which engine serves each appliance (nilm_meta) so the backend scorecard and ha-publish can show the real model."""
+    try:
+        from . import matched_engine
+
+        db_manager.set_meta("engine_status", json.dumps(matched_engine.status()))
+    except Exception as e:
+        logger.warning("engine status not stored: %s", e)
 
 
 def _matched_covers_everything() -> bool:

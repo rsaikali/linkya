@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import text
 
@@ -128,6 +129,7 @@ class DetectionRepository(DatabaseBase):
 
         with self.engine.connect() as conn:
             row = conn.execute(query, {"appliance_name": appliance_name, "window_days": window_days}).fetchone()
+            meta = conn.execute(text("SELECT value FROM nilm_meta WHERE key = 'engine_status'")).scalar()
 
         if not row or row[1] is None:
             return None
@@ -144,6 +146,15 @@ class DetectionRepository(DatabaseBase):
                     val_loss = (app.get("metrics") or {}).get("val_loss")
                     break
 
+        trained_at, engine = m["trained_at"], "legacy"
+        try:  # the matched filter has no network: show when its profile was learned, no val_loss
+            status = json.loads(meta) if meta else {}
+            app_status = (status.get("appliances") or {}).get(appliance_name) or {}
+            if status.get("setting") == "matched" and app_status.get("engine") == "matched" and app_status.get("trained_at"):
+                trained_at, val_loss, engine = datetime.fromtimestamp(app_status["trained_at"], timezone.utc), None, "matched"
+        except (ValueError, TypeError):
+            pass
+
         return {
             "appliance": m["appliance_name"],
             "window_days": window_days,
@@ -153,8 +164,9 @@ class DetectionRepository(DatabaseBase):
             "cycles": int(m["cycles"]) if m["cycles"] is not None else 0,
             "confidence_avg": (float(m["confidence_avg"]) if m["confidence_avg"] is not None else None),
             "signatures_count": int(m["signatures_count"]) if m["signatures_count"] is not None else 0,
-            "trained_at": format_datetime(m["trained_at"]),
+            "trained_at": format_datetime(trained_at),
             "val_loss": round(float(val_loss), 4) if val_loss is not None else None,
+            "engine": engine,
         }
 
     def get_history(self, appliance_name: str, days: int = 30) -> dict | None:

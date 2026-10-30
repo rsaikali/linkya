@@ -110,6 +110,7 @@ def status():
             "engine": engine,
             "reason": why,
             "positive_signatures": pos,
+            "trained_at": cache.get("built_at") if engine == "matched" else None,
             "modes": [
                 {
                     "up_w": round(m["mu_up"]),
@@ -120,11 +121,22 @@ def status():
                 for m in (modes or [])
             ],
         }
+    served = [n for n, a in out.items() if a["engine"] == "matched"]
+    model = None  # what HA shows as "the model" when the matched filter serves every appliance
+    if settings.nilm_engine == "matched" and served and len(served) == len(out):
+        model = {
+            "name": "matched_filter_v%d" % mf.VERSION,
+            "type": "MatchedFilter",
+            "trained_at": cache.get("built_at"),
+            "num_signatures": sum(out[n]["positive_signatures"] for n in served),
+            "num_appliances": len(served),
+        }
     return {
         "setting": settings.nilm_engine,
         "profile_built_at": cache.get("built_at"),
         "profile_current": _fingerprint_ok(cache, fp),
         "appliances": out,
+        "model": model,
     }
 
 
