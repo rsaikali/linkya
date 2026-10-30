@@ -2,7 +2,7 @@
 
 Endpoints (internal, Docker-network only):
   POST /train            → train a fresh model (background)
-  POST /detect           → detect over full history (background)
+  POST /detect[?hours=N] → detect over full history, or only the last N hours (background)
   POST /signatures       → add a user signature (sync)
   POST /models/delete    → delete all models
   GET  /healthz
@@ -75,8 +75,9 @@ def train():
 
 
 @app.post("/detect")
-def detect():
-    queued = jobs.request_detection(None, 0.25)
+def detect(hours: int | None = None):
+    """Full history by default; ?hours=N re-detects only the last N hours (rewrites that window, keeps older history)."""
+    queued = jobs.request_detection(hours, 0.25)
     return {"status": "started" if queued else "already_pending", "message": "Détection lancée"}
 
 
